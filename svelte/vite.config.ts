@@ -55,6 +55,12 @@ const config: VitestConfig = {
 		fs: {
 			// Allow serving files from one level up from the project root (includes node_modules)
 			allow: ['..']
+		},
+		watch: {
+			// Paraglide emits one module per message into this directory. Watching
+			// its own output turns a single compile into hundreds of page reloads,
+			// which makes the running app unusable.
+			ignored: ['**/src/lib/i18n/paraglide/**']
 		}
 	},
 	test: {

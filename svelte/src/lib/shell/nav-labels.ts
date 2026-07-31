@@ -8,7 +8,7 @@ const SECTION_LABELS: Record<string, () => string> = {
 const ITEM_LABELS: Record<string, () => string> = {
 	dashboard: m.nav_dashboard,
 	projects: m.nav_projects,
-	money: m.nav_money,
+	budget: m.nav_budget,
 	contacts: m.nav_contacts,
 	households: m.nav_households,
 	campaigns: m.nav_campaigns,

@@ -19,6 +19,7 @@ import type * as campaignMembers_mutations from "../campaignMembers/mutations.js
 import type * as campaignMembers_queries from "../campaignMembers/queries.js";
 import type * as campaigns_mutations from "../campaigns/mutations.js";
 import type * as campaigns_queries from "../campaigns/queries.js";
+import type * as contacts_detail from "../contacts/detail.js";
 import type * as contacts_mutations from "../contacts/mutations.js";
 import type * as contacts_queries from "../contacts/queries.js";
 import type * as costTemplates_mutations from "../costTemplates/mutations.js";
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   "campaignMembers/queries": typeof campaignMembers_queries;
   "campaigns/mutations": typeof campaigns_mutations;
   "campaigns/queries": typeof campaigns_queries;
+  "contacts/detail": typeof contacts_detail;
   "contacts/mutations": typeof contacts_mutations;
   "contacts/queries": typeof contacts_queries;
   "costTemplates/mutations": typeof costTemplates_mutations;

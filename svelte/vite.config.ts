@@ -57,9 +57,14 @@ const config: VitestConfig = {
 			allow: ['..']
 		},
 		watch: {
-			// Paraglide emits one module per message into this directory. Watching
-			// its own output turns a single compile into hundreds of page reloads,
-			// which makes the running app unusable.
+			// Paraglide's output is generated, and watching it is actively harmful:
+			// it rewrites every message module on each compile, so one compile
+			// became hundreds of page reloads. Watching only part of it is worse
+			// still — the plugin's writes to the barrel files feed its own
+			// recompile and the dev server never finishes starting.
+			//
+			// Consequence: a NEW message key needs a dev-server restart to appear.
+			// `pnpm dev` recompiles on boot, so restarting is the whole fix.
 			ignored: ['**/src/lib/i18n/paraglide/**']
 		}
 	},

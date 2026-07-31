@@ -15,6 +15,8 @@ import type * as allocations_queries from "../allocations/queries.js";
 import type * as auth from "../auth.js";
 import type * as budgets_mutations from "../budgets/mutations.js";
 import type * as budgets_queries from "../budgets/queries.js";
+import type * as campaignMembers_mutations from "../campaignMembers/mutations.js";
+import type * as campaignMembers_queries from "../campaignMembers/queries.js";
 import type * as campaigns_mutations from "../campaigns/mutations.js";
 import type * as campaigns_queries from "../campaigns/queries.js";
 import type * as contacts_mutations from "../contacts/mutations.js";
@@ -85,6 +87,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "budgets/mutations": typeof budgets_mutations;
   "budgets/queries": typeof budgets_queries;
+  "campaignMembers/mutations": typeof campaignMembers_mutations;
+  "campaignMembers/queries": typeof campaignMembers_queries;
   "campaigns/mutations": typeof campaigns_mutations;
   "campaigns/queries": typeof campaigns_queries;
   "contacts/mutations": typeof contacts_mutations;

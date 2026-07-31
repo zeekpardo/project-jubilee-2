@@ -40,6 +40,7 @@ export const CAMPAIGN_NAV: NavItem[] = [
 		capability: 'projects:read',
 		usesObjectLabel: true
 	},
+	{ key: 'campaignContacts', href: '/app/contacts', icon: Contact, capability: 'contacts:read' },
 	{ key: 'budget', href: '/app/budget', icon: Wallet, capability: 'money:read' },
 	{ key: 'settings', href: '/app/settings', icon: Settings, capability: 'settings:manage' }
 ];

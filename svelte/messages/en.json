@@ -375,5 +375,21 @@
 	"org_campaignLabel": "Word for a campaign",
 	"org_campaignLabelPlural": "Plural",
 	"org_settingsSaved": "Settings saved",
-	"money_transactionUpdated": "Transaction saved"
+	"money_transactionUpdated": "Transaction saved",
+	"campaignContacts_title": "People",
+	"campaignContacts_subtitle": "Everyone taking part in this campaign.",
+	"campaignContacts_add": "Add person",
+	"campaignContacts_empty": "Nobody in this campaign yet",
+	"campaignContacts_emptyBody": "Add someone who already exists, or create a new person.",
+	"campaignContacts_chooseExisting": "Choose existing",
+	"campaignContacts_createNew": "Create new",
+	"campaignContacts_allContacts": "All contacts",
+	"campaignContacts_added": "Added to the campaign",
+	"campaignContacts_removed": "Removed from the campaign",
+	"campaignContacts_removeBody": "This removes them from this campaign only. The contact stays in your organization.",
+	"campaignContacts_alreadyIn": "Everyone already belongs to this campaign",
+	"campaignRole_sponsor": "Sponsor",
+	"campaignRole_attendee": "Attendee",
+	"campaignRole_lead": "Lead",
+	"campaignRole_staff": "Staff"
 }

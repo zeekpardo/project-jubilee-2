@@ -406,6 +406,23 @@ const campaignAssignments = defineTable({
 	.index('by_orgId_and_userId_and_campaignId', ['orgId', 'userId', 'campaignId'])
 	.index('by_campaignId', ['campaignId']);
 
+// A contact's place in a campaign. Someone can be a sponsor of one campaign
+// and an attendee of another, so the role lives on the link rather than on the
+// person. Deliberately separate from projectMembers: being part of a campaign
+// does not require being attached to one of its projects.
+const campaignMemberships = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+	contactId: v.id('contacts'),
+	// sponsor | attendee | lead | staff. Text rather than a union so a new role
+	// is additive.
+	role: v.string()
+})
+	// unique(campaignId, contactId, role)
+	.index('by_campaignId_and_contactId', ['campaignId', 'contactId'])
+	.index('by_campaignId', ['campaignId'])
+	.index('by_contactId', ['contactId']);
+
 export default defineSchema({
 	campaigns,
 	orgSettings,
@@ -423,5 +440,6 @@ export default defineSchema({
 	projectMembers,
 	customFieldCategories,
 	customFieldDefinitions,
-	campaignAssignments
+	campaignAssignments,
+	campaignMemberships
 });

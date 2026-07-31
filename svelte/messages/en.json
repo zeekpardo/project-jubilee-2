@@ -438,5 +438,6 @@
 	"contactDetail_source_subscriber": "Subscriber",
 	"contactDetail_source_manual": "Manual",
 	"contactDetail_source_import": "Import",
-	"contactDetail_source_campaign": "Campaign"
+	"contactDetail_source_campaign": "Campaign",
+	"households_removeMemberBody": "This removes them from the household. The contact itself is not deleted, and stays available to add elsewhere."
 }

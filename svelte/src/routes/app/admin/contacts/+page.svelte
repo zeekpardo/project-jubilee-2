@@ -12,6 +12,7 @@
 	import ContactFormDialog from '$lib/features/contacts/ContactFormDialog.svelte';
 	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
 	import type { ContactRow } from '$lib/features/contacts/types';
+	import { resolve } from '$app/paths';
 	import { Button } from '$lib/primitives/ui/button';
 	import { Input } from '$lib/primitives/ui/input';
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
@@ -94,7 +95,14 @@
 			<Table.Body>
 				{#each contacts as contact (contact._id)}
 					<Table.Row>
-						<Table.Cell class="font-medium">{contactDisplayName(contact)}</Table.Cell>
+						<Table.Cell class="font-medium">
+							<a
+								href={resolve('/app/admin/contacts/[id]', { id: contact._id })}
+								class="hover:underline"
+							>
+								{contactDisplayName(contact)}
+							</a>
+						</Table.Cell>
 						<Table.Cell class="text-muted-foreground">{contact.email ?? '—'}</Table.Cell>
 						<Table.Cell class="text-muted-foreground">{contact.phone ?? '—'}</Table.Cell>
 						<Table.Cell class="text-muted-foreground">{contact.organization ?? '—'}</Table.Cell>

@@ -46,7 +46,11 @@ export const updateContact = mutation({
 		contactId: v.id('contacts'),
 		...contactFields,
 		// every field is optional on update
-		firstName: v.optional(v.string())
+		firstName: v.optional(v.string()),
+		// null clears these two, which a plain optional cannot express: the patch
+		// loop below turns it into an unset field.
+		transparency: v.optional(v.union(transparencyValidator, v.null())),
+		preferredContact: v.optional(v.union(preferredContactValidator, v.null()))
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
@@ -56,9 +60,15 @@ export const updateContact = mutation({
 
 		const patch: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(updates)) {
-			if (value !== undefined) {
-				patch[key] = value;
+			if (value === undefined) continue;
+			// These two are closed unions with no empty member, so choosing "None"
+			// sends null. Patching undefined removes the field, which is what an
+			// unset choice means; skipping it would silently keep the old value.
+			if (value === null) {
+				patch[key] = undefined;
+				continue;
 			}
+			patch[key] = value;
 		}
 
 		// email and emailLower are always written as a pair, so the dedup key can

@@ -19,6 +19,15 @@ export async function deleteProjectCascade(
 		await ctx.db.delete('budgets', budget._id);
 	}
 
+	// Only the link rows go; the contacts themselves are org-level people.
+	const members = await ctx.db
+		.query('projectMembers')
+		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
+		.collect();
+	for (const member of members) {
+		await ctx.db.delete('projectMembers', member._id);
+	}
+
 	const documents = await ctx.db
 		.query('documents')
 		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
@@ -42,6 +51,69 @@ export async function deleteProjectCascade(
 	}
 
 	await ctx.db.delete('projects', projectId);
+}
+
+export async function deleteHouseholdCascade(
+	ctx: MutationCtx,
+	householdId: Id<'households'>
+): Promise<void> {
+	// Only the link rows go; the contacts themselves are org-level people.
+	const members = await ctx.db
+		.query('householdMembers')
+		.withIndex('by_householdId', (q) => q.eq('householdId', householdId))
+		.collect();
+	for (const member of members) {
+		await ctx.db.delete('householdMembers', member._id);
+	}
+
+	await ctx.db.delete('households', householdId);
+}
+
+export async function deleteContactCascade(
+	ctx: MutationCtx,
+	contactId: Id<'contacts'>
+): Promise<void> {
+	const contact = await ctx.db.get('contacts', contactId);
+	if (!contact) return;
+
+	// Donor attribution is cleared, never cascaded: the money still moved, so
+	// the transaction and the ledger total have to survive.
+	const transactions = await ctx.db
+		.query('transactions')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const transaction of transactions) {
+		await ctx.db.patch('transactions', transaction._id, { contactId: undefined });
+	}
+
+	const householdLinks = await ctx.db
+		.query('householdMembers')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const link of householdLinks) {
+		await ctx.db.delete('householdMembers', link._id);
+	}
+
+	const projectLinks = await ctx.db
+		.query('projectMembers')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const link of projectLinks) {
+		await ctx.db.delete('projectMembers', link._id);
+	}
+
+	// A household outlives its primary contact; other members may remain.
+	const households = await ctx.db
+		.query('households')
+		.withIndex('by_orgId', (q) => q.eq('orgId', contact.orgId))
+		.collect();
+	for (const household of households) {
+		if (household.primaryContactId === contactId) {
+			await ctx.db.patch('households', household._id, { primaryContactId: undefined });
+		}
+	}
+
+	await ctx.db.delete('contacts', contactId);
 }
 
 export async function deleteCampaignCascade(

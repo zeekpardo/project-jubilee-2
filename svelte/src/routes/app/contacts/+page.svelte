@@ -3,20 +3,20 @@
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	import { toast } from 'svelte-sonner';
-	import { ConvexError } from 'convex/values';
 
 	import PageContainer from '$lib/shell/PageContainer.svelte';
 	import { getAccessContext } from '$lib/access';
 	import { contactDisplayName } from '$lib/features/contacts/contact-name';
 	import * as m from '$lib/i18n/messages';
 
+	import ContactFormDialog from '$lib/features/contacts/ContactFormDialog.svelte';
+	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
+	import type { ContactRow } from '$lib/features/contacts/types';
 	import { Button } from '$lib/primitives/ui/button';
 	import { Input } from '$lib/primitives/ui/input';
-	import { Label } from '$lib/primitives/ui/label';
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import * as Table from '$lib/primitives/ui/table';
-	import * as Dialog from '$lib/primitives/ui/dialog';
 
 	const { api } = getAuthContext();
 	const auth = useAuth();
@@ -34,45 +34,37 @@
 	const contacts = $derived(contactsResponse?.data ?? []);
 	const loading = $derived(contactsResponse?.isLoading ?? false);
 
-	let dialogOpen = $state(false);
-	let saving = $state(false);
-	let firstName = $state('');
-	let lastName = $state('');
-	let email = $state('');
-	let phone = $state('');
+	let formOpen = $state(false);
+	let editing = $state<ContactRow | null>(null);
+	let confirmOpen = $state(false);
+	let deleting = $state<ContactRow | null>(null);
 
-	function resetForm() {
-		firstName = '';
-		lastName = '';
-		email = '';
-		phone = '';
+	function openCreate() {
+		editing = null;
+		formOpen = true;
 	}
 
-	async function createContact(event: SubmitEvent) {
-		event.preventDefault();
-		if (!firstName.trim()) return;
-		saving = true;
-		try {
-			await client.mutation(api.contacts.mutations.createContact, {
-				firstName: firstName.trim(),
-				lastName: lastName.trim() || undefined,
-				email: email.trim() || undefined,
-				phone: phone.trim() || undefined
-			});
-			resetForm();
-			dialogOpen = false;
-		} catch (error) {
-			toast.error(error instanceof ConvexError ? String(error.data) : m.state_error());
-		} finally {
-			saving = false;
-		}
+	function openEdit(contact: ContactRow) {
+		editing = contact;
+		formOpen = true;
+	}
+
+	function openDelete(contact: ContactRow) {
+		deleting = contact;
+		confirmOpen = true;
+	}
+
+	async function confirmDelete() {
+		if (!deleting) return;
+		await client.mutation(api.contacts.mutations.deleteContact, { contactId: deleting._id });
+		toast.success(m.contacts_saved());
 	}
 </script>
 
 <PageContainer title={m.contacts_title()} description={m.contacts_subtitle()} access={canRead}>
 	{#snippet action()}
 		{#if canWrite}
-			<Button onclick={() => (dialogOpen = true)}>{m.contacts_new()}</Button>
+			<Button onclick={openCreate}>{m.contacts_new()}</Button>
 		{/if}
 	{/snippet}
 
@@ -96,6 +88,7 @@
 					<Table.Head>{m.field_email()}</Table.Head>
 					<Table.Head>{m.field_phone()}</Table.Head>
 					<Table.Head>{m.field_organization()}</Table.Head>
+					<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
@@ -105,6 +98,16 @@
 						<Table.Cell class="text-muted-foreground">{contact.email ?? '—'}</Table.Cell>
 						<Table.Cell class="text-muted-foreground">{contact.phone ?? '—'}</Table.Cell>
 						<Table.Cell class="text-muted-foreground">{contact.organization ?? '—'}</Table.Cell>
+						<Table.Cell class="text-right whitespace-nowrap">
+							{#if canWrite}
+								<Button size="sm" variant="ghost" onclick={() => openEdit(contact)}>
+									{m.action_edit()}
+								</Button>
+								<Button size="sm" variant="ghost" onclick={() => openDelete(contact)}>
+									{m.action_delete()}
+								</Button>
+							{/if}
+						</Table.Cell>
 					</Table.Row>
 				{/each}
 			</Table.Body>
@@ -112,36 +115,11 @@
 	{/if}
 </PageContainer>
 
-<Dialog.Root bind:open={dialogOpen}>
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>{m.contacts_new()}</Dialog.Title>
-		</Dialog.Header>
-		<form class="flex flex-col gap-4" onsubmit={createContact}>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="flex flex-col gap-1.5">
-					<Label for="contact-first">{m.field_firstName()}</Label>
-					<Input id="contact-first" bind:value={firstName} required />
-				</div>
-				<div class="flex flex-col gap-1.5">
-					<Label for="contact-last">{m.field_lastName()}</Label>
-					<Input id="contact-last" bind:value={lastName} />
-				</div>
-			</div>
-			<div class="flex flex-col gap-1.5">
-				<Label for="contact-email">{m.field_email()}</Label>
-				<Input id="contact-email" type="email" bind:value={email} />
-			</div>
-			<div class="flex flex-col gap-1.5">
-				<Label for="contact-phone">{m.field_phone()}</Label>
-				<Input id="contact-phone" bind:value={phone} />
-			</div>
-			<Dialog.Footer>
-				<Button type="button" variant="outline" onclick={() => (dialogOpen = false)}>
-					{m.action_cancel()}
-				</Button>
-				<Button type="submit" loading={saving}>{m.action_create()}</Button>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+<ContactFormDialog bind:open={formOpen} contact={editing} />
+
+<ConfirmDialog
+	bind:open={confirmOpen}
+	title={m.contacts_delete()}
+	body={m.contacts_deleteBody()}
+	onConfirm={confirmDelete}
+/>

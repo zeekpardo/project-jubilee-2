@@ -2,24 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
-import { authComponent, createAuth } from '../auth';
-
-async function requireOrgId(ctx: MutationCtx): Promise<string> {
-	const user = await authComponent.safeGetAuthUser(ctx);
-	if (!user) {
-		throw new ConvexError('Not authenticated');
-	}
-
-	const auth = createAuth(ctx);
-	const organization = await auth.api.getFullOrganization({
-		headers: await authComponent.getHeaders(ctx)
-	});
-	if (!organization) {
-		throw new ConvexError('No active organization');
-	}
-
-	return organization.id;
-}
+import { requireOrgId } from '../model/auth';
 
 // At most one active version per campaign, so activating one clears the rest.
 async function deactivateOthers(

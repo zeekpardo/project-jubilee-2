@@ -1,24 +1,6 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
-import type { MutationCtx } from '../_generated/server';
-import { authComponent, createAuth } from '../auth';
-
-async function requireOrgId(ctx: MutationCtx): Promise<string> {
-	const user = await authComponent.safeGetAuthUser(ctx);
-	if (!user) {
-		throw new ConvexError('Not authenticated');
-	}
-
-	const auth = createAuth(ctx);
-	const organization = await auth.api.getFullOrganization({
-		headers: await authComponent.getHeaders(ctx)
-	});
-	if (!organization) {
-		throw new ConvexError('No active organization');
-	}
-
-	return organization.id;
-}
+import { requireOrgId } from '../model/auth';
 
 // Append-only: a rate-card change is a new version row, never an edit of an
 // existing one, so budgets keep the version they snapshotted.

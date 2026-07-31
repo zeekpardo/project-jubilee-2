@@ -1,26 +1,9 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
-import type { MutationCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { authComponent, createAuth } from '../auth';
 import { createCampaignModel } from '../model/campaigns';
-
-async function requireOrgId(ctx: MutationCtx): Promise<string> {
-	const user = await authComponent.safeGetAuthUser(ctx);
-	if (!user) {
-		throw new ConvexError('Not authenticated');
-	}
-
-	const auth = createAuth(ctx);
-	const organization = await auth.api.getFullOrganization({
-		headers: await authComponent.getHeaders(ctx)
-	});
-	if (!organization) {
-		throw new ConvexError('No active organization');
-	}
-
-	return organization.id;
-}
+import { requireOrgId } from '../model/auth';
+import { deleteCampaignCascade } from '../model/cascade';
 
 const statusValidator = v.union(v.literal('active'), v.literal('paused'), v.literal('archived'));
 const budgetShapeValidator = v.union(v.literal('flat'), v.literal('template'), v.literal('none'));
@@ -122,15 +105,7 @@ export const deleteCampaign = mutation({
 			throw new ConvexError('Campaign not found');
 		}
 
-		const stages = await ctx.db
-			.query('pipelineStages')
-			.withIndex('by_campaignId_and_order', (q) => q.eq('campaignId', args.campaignId))
-			.collect();
-		for (const stage of stages) {
-			await ctx.db.delete('pipelineStages', stage._id);
-		}
-
-		await ctx.db.delete('campaigns', args.campaignId);
+		await deleteCampaignCascade(ctx, args.campaignId);
 		return null;
 	}
 });

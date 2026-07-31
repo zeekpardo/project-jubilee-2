@@ -9,6 +9,8 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as budgets_mutations from "../budgets/mutations.js";
+import type * as budgets_queries from "../budgets/queries.js";
 import type * as campaigns_mutations from "../campaigns/mutations.js";
 import type * as campaigns_queries from "../campaigns/queries.js";
 import type * as costTemplates_mutations from "../costTemplates/mutations.js";
@@ -17,7 +19,10 @@ import type * as deviceAuthorization from "../deviceAuthorization.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
+import type * as model_auth from "../model/auth.js";
+import type * as model_budgets from "../model/budgets.js";
 import type * as model_campaigns from "../model/campaigns.js";
+import type * as model_cascade from "../model/cascade.js";
 import type * as model_emails_templates_baseEmail from "../model/emails/templates/baseEmail.js";
 import type * as model_emails_templates_emailTemplates from "../model/emails/templates/emailTemplates.js";
 import type * as model_emails_validateEmail from "../model/emails/validateEmail.js";
@@ -50,6 +55,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  "budgets/mutations": typeof budgets_mutations;
+  "budgets/queries": typeof budgets_queries;
   "campaigns/mutations": typeof campaigns_mutations;
   "campaigns/queries": typeof campaigns_queries;
   "costTemplates/mutations": typeof costTemplates_mutations;
@@ -58,7 +65,10 @@ declare const fullApi: ApiFromModules<{
   email: typeof email;
   http: typeof http;
   migrations: typeof migrations;
+  "model/auth": typeof model_auth;
+  "model/budgets": typeof model_budgets;
   "model/campaigns": typeof model_campaigns;
+  "model/cascade": typeof model_cascade;
   "model/emails/templates/baseEmail": typeof model_emails_templates_baseEmail;
   "model/emails/templates/emailTemplates": typeof model_emails_templates_emailTemplates;
   "model/emails/validateEmail": typeof model_emails_validateEmail;

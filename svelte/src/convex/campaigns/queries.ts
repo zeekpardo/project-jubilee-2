@@ -1,24 +1,6 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
-import type { QueryCtx } from '../_generated/server';
-import { authComponent, createAuth } from '../auth';
-
-async function activeOrgId(ctx: QueryCtx): Promise<string | null> {
-	const user = await authComponent.safeGetAuthUser(ctx);
-	if (!user) {
-		return null;
-	}
-
-	try {
-		const auth = createAuth(ctx);
-		const organization = await auth.api.getFullOrganization({
-			headers: await authComponent.getHeaders(ctx)
-		});
-		return organization?.id ?? null;
-	} catch {
-		return null;
-	}
-}
+import { activeOrgId } from '../model/auth';
 
 export const listCampaigns = query({
 	args: {},

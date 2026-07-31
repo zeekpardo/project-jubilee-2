@@ -33,11 +33,15 @@
 <Toaster position="top-center" />
 <AuthProvider {api} {authClient} authConstants={AUTH_CONSTANTS}>
 	<div class="flex min-h-[100dvh] flex-col">
-		<header class="flex min-w-0 items-center justify-between gap-2 p-3 sm:gap-5 sm:p-4">
+		<header
+			class="bg-background/85 sticky top-0 z-30 flex h-16 min-w-0 items-center justify-between gap-2 border-b px-3 backdrop-blur sm:gap-5 sm:px-4"
+		>
 			<a
 				href={resolve('/')}
-				class="mr-auto min-w-0 truncate text-xl font-bold text-orange-500 sm:text-2xl">Svelte</a
+				class="text-foreground mr-auto min-w-0 truncate text-lg font-bold tracking-tight sm:text-xl"
 			>
+				{data.initialData?.activeOrganization?.name ?? 'Admin'}
+			</a>
 			<ThemeSelector class="hidden sm:block" />
 			<ModeToggle />
 			{#if AUTH_CONSTANTS.organizations}
@@ -45,7 +49,7 @@
 			{/if}
 			<UserButton initialData={data.initialData} />
 		</header>
-		<main>
+		<main class="flex flex-1 flex-col">
 			{@render children()}
 		</main>
 	</div>

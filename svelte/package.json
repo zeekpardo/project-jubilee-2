@@ -8,7 +8,7 @@
 		"dev": "concurrently --kill-others --prefix-colors blue,yellow --names 'vite,convex' 'pnpm dev:frontend' 'pnpm dev:backend'",
 		"build": "vite build",
 		"preview": "vite preview",
-		"postinstall": "svelte-kit sync && paraglide-js compile --project ./project.inlang --outdir ./src/lib/i18n/paraglide",
+		"postinstall": "svelte-kit sync && paraglide-js compile --project ./project.inlang --outdir ./src/lib/i18n/paraglide --strategy cookie preferredLanguage baseLocale --output-structure locale-modules",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"format": "prettier --write .",

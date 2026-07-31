@@ -55,17 +55,6 @@ const config: VitestConfig = {
 		fs: {
 			// Allow serving files from one level up from the project root (includes node_modules)
 			allow: ['..']
-		},
-		watch: {
-			// Paraglide's output is generated, and watching it is actively harmful:
-			// it rewrites every message module on each compile, so one compile
-			// became hundreds of page reloads. Watching only part of it is worse
-			// still — the plugin's writes to the barrel files feed its own
-			// recompile and the dev server never finishes starting.
-			//
-			// Consequence: a NEW message key needs a dev-server restart to appear.
-			// `pnpm dev` recompiles on boot, so restarting is the whole fix.
-			ignored: ['**/src/lib/i18n/paraglide/**']
 		}
 	},
 	test: {

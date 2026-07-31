@@ -126,6 +126,7 @@ export async function createContactModel(
 		authUserId: input.authUserId,
 		source: input.source,
 		transparency: input.transparency,
-		preferredContact: input.preferredContact
+		preferredContact: input.preferredContact,
+		customFields: {}
 	});
 }

@@ -4,6 +4,11 @@ import { v } from 'convex/values';
 // Convex has no unique constraints. Every "unique" noted below is enforced in
 // the mutation layer via an index lookup before insert.
 
+// Values for campaign-defined custom fields, keyed by field definition key.
+// Mirrors the reference app's JSONB `attributes`; the field types it supports
+// are text/longtext/number/money/date/select/boolean.
+const attributeValue = v.union(v.string(), v.number(), v.boolean(), v.null());
+
 const campaigns = defineTable({
 	orgId: v.string(),
 	name: v.string(),
@@ -35,7 +40,9 @@ const campaigns = defineTable({
 	goalVerb: v.string(),
 	goalTrigger: v.union(v.literal('manual'), v.literal('stage'), v.literal('task')),
 
-	isPublished: v.boolean()
+	isPublished: v.boolean(),
+	// Custom field values, keyed by customFieldDefinitions.key.
+	attributes: v.record(v.string(), attributeValue)
 })
 	// unique(orgId, slug)
 	.index('by_orgId_and_slug', ['orgId', 'slug'])
@@ -114,11 +121,6 @@ const taskTemplates = defineTable({
 	// unique(campaignId, version)
 	.index('by_campaignId_and_version', ['campaignId', 'version'])
 	.index('by_campaignId_and_isActive', ['campaignId', 'isActive']);
-
-// Values for campaign-defined custom fields, keyed by field definition key.
-// Mirrors the reference app's JSONB `attributes`; the field types it supports
-// are text/longtext/number/money/date/select/boolean.
-const attributeValue = v.union(v.string(), v.number(), v.boolean(), v.null());
 
 // The sponsored case record. Called "projects" generically; a campaign renames
 // it for display via objectLabel (Jubilee: "Family").
@@ -268,6 +270,8 @@ const contacts = defineTable({
 	// Which path created this row: sponsor | project_member | subscriber |
 	// manual | import.
 	source: v.optional(v.string()),
+	// Custom field values, keyed by customFieldDefinitions.key.
+	customFields: v.record(v.string(), attributeValue),
 	// Donor-only preferences, carried over from the retired sponsors table.
 	transparency: v.optional(v.union(v.literal('summary'), v.literal('full'))),
 	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone'))),
@@ -322,6 +326,60 @@ const projectMembers = defineTable({
 	.index('by_projectId', ['projectId'])
 	.index('by_contactId', ['contactId']);
 
+// Custom fields engine. One pair of tables powers custom fields for every
+// entity and both scopes. A record's applicable fields are all org-scope fields
+// for its entity, plus its campaign's own — see resolveFieldDefinitions in
+// lib/domain/field-definitions.ts. Values live in the record's own bag keyed by
+// `key`: contacts.customFields, projects.attributes, campaigns.attributes.
+const fieldEntity = v.union(v.literal('contact'), v.literal('project'), v.literal('campaign'));
+const fieldScope = v.union(v.literal('org'), v.literal('campaign'));
+
+const customFieldCategories = defineTable({
+	orgId: v.string(),
+	entity: fieldEntity,
+	scope: fieldScope,
+	// Absent for org-scope categories; the owning campaign for campaign-scope.
+	campaignId: v.optional(v.id('campaigns')),
+	name: v.string(),
+	order: v.number()
+})
+	.index('by_orgId_and_entity', ['orgId', 'entity'])
+	.index('by_campaignId', ['campaignId']);
+
+const customFieldDefinitions = defineTable({
+	orgId: v.string(),
+	entity: fieldEntity,
+	scope: fieldScope,
+	campaignId: v.optional(v.id('campaigns')),
+	// Cleared, not cascaded, when a category is deleted: the field survives
+	// as uncategorized.
+	categoryId: v.optional(v.id('customFieldCategories')),
+	key: v.string(),
+	label: v.string(),
+	type: v.union(
+		v.literal('text'),
+		v.literal('longtext'),
+		v.literal('number'),
+		v.literal('money'),
+		v.literal('date'),
+		v.literal('select'),
+		v.literal('boolean')
+	),
+	// Choice list for type 'select'.
+	options: v.optional(v.array(v.string())),
+	order: v.number(),
+	isRequired: v.boolean(),
+	// Gates exposure through the public wall. Defaults to false everywhere:
+	// a field is private until someone deliberately publishes it.
+	isPublic: v.boolean()
+})
+	// unique(orgId, entity, key) at org scope;
+	// unique(orgId, entity, campaignId, key) at campaign scope
+	.index('by_orgId_and_entity', ['orgId', 'entity'])
+	.index('by_orgId_and_entity_and_key', ['orgId', 'entity', 'key'])
+	.index('by_campaignId_and_entity_and_key', ['campaignId', 'entity', 'key'])
+	.index('by_categoryId', ['categoryId']);
+
 export default defineSchema({
 	campaigns,
 	orgSettings,
@@ -336,5 +394,7 @@ export default defineSchema({
 	contacts,
 	households,
 	householdMembers,
-	projectMembers
+	projectMembers,
+	customFieldCategories,
+	customFieldDefinitions
 });

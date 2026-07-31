@@ -78,7 +78,8 @@ export async function createCampaignModel(
 		goalLabel: input.goalLabel,
 		goalVerb: input.goalVerb,
 		goalTrigger: input.goalTrigger ?? 'manual',
-		isPublished: input.isPublished ?? false
+		isPublished: input.isPublished ?? false,
+		attributes: {}
 	});
 
 	for (const stage of DEFAULT_PIPELINE_STAGES) {

@@ -213,12 +213,15 @@ const transactions = defineTable({
 	method: v.optional(v.string()),
 	reference: v.optional(v.string()),
 	receiptUrl: v.optional(v.string()),
-	// Donor attribution lands in Tier 2 with `contacts`; deliberately absent.
+	// Donor attribution (donations). Cleared, not cascaded, if the contact is
+	// deleted — the money still moved.
+	contactId: v.optional(v.id('contacts')),
 	note: v.optional(v.string())
 })
 	.index('by_orgId', ['orgId'])
 	.index('by_orgId_and_type', ['orgId', 'type'])
-	.index('by_orgId_and_occurredOn', ['orgId', 'occurredOn']);
+	.index('by_orgId_and_occurredOn', ['orgId', 'occurredOn'])
+	.index('by_contactId', ['contactId']);
 
 // Attributes part of a transaction to a campaign, and optionally to one
 // project. A project-less allocation is a campaign-level/overhead cost.
@@ -242,6 +245,83 @@ const allocations = defineTable({
 	.index('by_campaignId', ['campaignId'])
 	.index('by_orgId', ['orgId']);
 
+// The unified person record: donors, project members, staff. Replaces the
+// reference app's separate `sponsors` table.
+const contacts = defineTable({
+	orgId: v.string(),
+	name: v.string(),
+	email: v.optional(v.string()),
+	// Lowercased `email`, kept alongside it so dedup can be a plain index
+	// lookup. Postgres did this with a lower(email) expression index.
+	emailLower: v.optional(v.string()),
+	phone: v.optional(v.string()),
+	organization: v.optional(v.string()),
+	addressLine1: v.optional(v.string()),
+	addressLine2: v.optional(v.string()),
+	city: v.optional(v.string()),
+	state: v.optional(v.string()),
+	postalCode: v.optional(v.string()),
+	country: v.optional(v.string()),
+	notes: v.optional(v.string()),
+	// Better Auth user id, set only for contacts who can sign in to the portal.
+	authUserId: v.optional(v.string()),
+	// Which path created this row: sponsor | project_member | subscriber |
+	// manual | import.
+	source: v.optional(v.string()),
+	// Donor-only preferences, carried over from the retired sponsors table.
+	transparency: v.optional(v.union(v.literal('summary'), v.literal('full'))),
+	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone'))),
+	invitedAt: v.optional(v.number())
+})
+	// unique(orgId, emailLower) when email present; unique(orgId, authUserId)
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_emailLower', ['orgId', 'emailLower'])
+	.index('by_orgId_and_authUserId', ['orgId', 'authUserId']);
+
+// A person-grouping entity in its own right, distinct from `projects` (which
+// carry a budget and a pipeline). Many-to-many with contacts.
+const households = defineTable({
+	orgId: v.string(),
+	name: v.string(),
+	avatarUrl: v.optional(v.string()),
+	// Cleared, not cascaded, if that contact is deleted: the household survives
+	// because other members may remain.
+	primaryContactId: v.optional(v.id('contacts'))
+}).index('by_orgId', ['orgId']);
+
+const householdMembers = defineTable({
+	orgId: v.string(),
+	householdId: v.id('households'),
+	contactId: v.id('contacts'),
+	role: v.union(
+		v.literal('parent_guardian'),
+		v.literal('adult'),
+		v.literal('other_adult'),
+		v.literal('child')
+	),
+	pending: v.boolean()
+})
+	// unique(householdId, contactId)
+	.index('by_householdId_and_contactId', ['householdId', 'contactId'])
+	.index('by_householdId', ['householdId'])
+	.index('by_contactId', ['contactId']);
+
+// Project <-> contact. A contact's identity is campaign-agnostic, so anything
+// project-specific (age at intake, relationship) lives on the link, not the
+// person.
+const projectMembers = defineTable({
+	orgId: v.string(),
+	projectId: v.id('projects'),
+	contactId: v.id('contacts'),
+	// 'subject' (the project is about this person) | 'member' | 'head'.
+	role: v.union(v.literal('subject'), v.literal('member'), v.literal('head')),
+	attributes: v.record(v.string(), attributeValue)
+})
+	// unique(projectId, contactId)
+	.index('by_projectId_and_contactId', ['projectId', 'contactId'])
+	.index('by_projectId', ['projectId'])
+	.index('by_contactId', ['contactId']);
+
 export default defineSchema({
 	campaigns,
 	orgSettings,
@@ -252,5 +332,9 @@ export default defineSchema({
 	budgets,
 	documents,
 	transactions,
-	allocations
+	allocations,
+	contacts,
+	households,
+	householdMembers,
+	projectMembers
 });

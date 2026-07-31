@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as allocations_mutations from "../allocations/mutations.js";
+import type * as allocations_queries from "../allocations/queries.js";
 import type * as auth from "../auth.js";
 import type * as budgets_mutations from "../budgets/mutations.js";
 import type * as budgets_queries from "../budgets/queries.js";
@@ -16,6 +18,8 @@ import type * as campaigns_queries from "../campaigns/queries.js";
 import type * as costTemplates_mutations from "../costTemplates/mutations.js";
 import type * as costTemplates_queries from "../costTemplates/queries.js";
 import type * as deviceAuthorization from "../deviceAuthorization.js";
+import type * as documents_mutations from "../documents/mutations.js";
+import type * as documents_queries from "../documents/queries.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
@@ -23,9 +27,11 @@ import type * as model_auth from "../model/auth.js";
 import type * as model_budgets from "../model/budgets.js";
 import type * as model_campaigns from "../model/campaigns.js";
 import type * as model_cascade from "../model/cascade.js";
+import type * as model_documents from "../model/documents.js";
 import type * as model_emails_templates_baseEmail from "../model/emails/templates/baseEmail.js";
 import type * as model_emails_templates_emailTemplates from "../model/emails/templates/emailTemplates.js";
 import type * as model_emails_validateEmail from "../model/emails/validateEmail.js";
+import type * as model_money from "../model/money.js";
 import type * as model_organizations_index from "../model/organizations/index.js";
 import type * as model_projects from "../model/projects.js";
 import type * as orgSettings_mutations from "../orgSettings/mutations.js";
@@ -42,6 +48,8 @@ import type * as seed from "../seed.js";
 import type * as storage from "../storage.js";
 import type * as taskTemplates_mutations from "../taskTemplates/mutations.js";
 import type * as taskTemplates_queries from "../taskTemplates/queries.js";
+import type * as transactions_mutations from "../transactions/mutations.js";
+import type * as transactions_queries from "../transactions/queries.js";
 import type * as url from "../url.js";
 import type * as users_actions from "../users/actions.js";
 import type * as users_mutations from "../users/mutations.js";
@@ -54,6 +62,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "allocations/mutations": typeof allocations_mutations;
+  "allocations/queries": typeof allocations_queries;
   auth: typeof auth;
   "budgets/mutations": typeof budgets_mutations;
   "budgets/queries": typeof budgets_queries;
@@ -62,6 +72,8 @@ declare const fullApi: ApiFromModules<{
   "costTemplates/mutations": typeof costTemplates_mutations;
   "costTemplates/queries": typeof costTemplates_queries;
   deviceAuthorization: typeof deviceAuthorization;
+  "documents/mutations": typeof documents_mutations;
+  "documents/queries": typeof documents_queries;
   email: typeof email;
   http: typeof http;
   migrations: typeof migrations;
@@ -69,9 +81,11 @@ declare const fullApi: ApiFromModules<{
   "model/budgets": typeof model_budgets;
   "model/campaigns": typeof model_campaigns;
   "model/cascade": typeof model_cascade;
+  "model/documents": typeof model_documents;
   "model/emails/templates/baseEmail": typeof model_emails_templates_baseEmail;
   "model/emails/templates/emailTemplates": typeof model_emails_templates_emailTemplates;
   "model/emails/validateEmail": typeof model_emails_validateEmail;
+  "model/money": typeof model_money;
   "model/organizations/index": typeof model_organizations_index;
   "model/projects": typeof model_projects;
   "orgSettings/mutations": typeof orgSettings_mutations;
@@ -88,6 +102,8 @@ declare const fullApi: ApiFromModules<{
   storage: typeof storage;
   "taskTemplates/mutations": typeof taskTemplates_mutations;
   "taskTemplates/queries": typeof taskTemplates_queries;
+  "transactions/mutations": typeof transactions_mutations;
+  "transactions/queries": typeof transactions_queries;
   url: typeof url;
   "users/actions": typeof users_actions;
   "users/mutations": typeof users_mutations;

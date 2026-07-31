@@ -6,7 +6,8 @@ import { normalizeEmail } from '../model/contacts';
 
 function matchesSearch(contact: Doc<'contacts'>, needle: string): boolean {
 	return (
-		contact.name.toLowerCase().includes(needle) ||
+		contact.firstName.toLowerCase().includes(needle) ||
+		(contact.lastName?.toLowerCase().includes(needle) ?? false) ||
 		(contact.emailLower ?? '').includes(needle) ||
 		(contact.organization ?? '').toLowerCase().includes(needle)
 	);

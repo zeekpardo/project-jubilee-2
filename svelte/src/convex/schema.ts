@@ -257,8 +257,12 @@ const allocations = defineTable({
 // reference app's separate `sponsors` table.
 const contacts = defineTable({
 	orgId: v.string(),
-	name: v.string(),
+	firstName: v.string(),
+	// Optional: mononyms and organization contacts have no surname.
+	lastName: v.optional(v.string()),
 	// Admin-entered public first name, same reasoning as projects.publicName.
+	// Deliberately separate from firstName so publishing a person's name stays
+	// an explicit opt-in rather than a side effect of data entry.
 	publicFirstName: v.optional(v.string()),
 	email: v.optional(v.string()),
 	// Lowercased `email`, kept alongside it so dedup can be a plain index

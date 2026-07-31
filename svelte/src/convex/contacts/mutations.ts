@@ -14,7 +14,8 @@ import {
 } from '../model/contacts';
 
 const contactFields = {
-	name: v.string(),
+	firstName: v.string(),
+	lastName: v.optional(v.string()),
 	email: v.optional(v.string()),
 	phone: v.optional(v.string()),
 	organization: v.optional(v.string()),
@@ -44,7 +45,8 @@ export const updateContact = mutation({
 	args: {
 		contactId: v.id('contacts'),
 		...contactFields,
-		name: v.optional(v.string())
+		// every field is optional on update
+		firstName: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);

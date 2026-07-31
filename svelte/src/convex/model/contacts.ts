@@ -12,7 +12,8 @@ export const preferredContactValidator = v.union(
 
 export type CreateContactInput = {
 	orgId: string;
-	name: string;
+	firstName: string;
+	lastName?: string;
 	email?: string;
 	phone?: string;
 	organization?: string;
@@ -111,7 +112,8 @@ export async function createContactModel(
 
 	return await ctx.db.insert('contacts', {
 		orgId: input.orgId,
-		name: input.name,
+		firstName: input.firstName,
+		lastName: input.lastName,
 		email,
 		emailLower,
 		phone: input.phone,

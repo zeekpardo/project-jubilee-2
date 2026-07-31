@@ -19,11 +19,21 @@ const ACTIVE_CAMPAIGN_KEY = Symbol('activeCampaign');
  * campaign-scoped, and a team leader may only ever see the campaigns they are
  * assigned to, so the list here is already filtered by the server.
  */
-export function createActiveCampaign(getCampaigns: () => CampaignSummary[], initialId?: string) {
-	let selectedId = $state<string | null>(initialId ?? null);
+export function createActiveCampaign(
+	getCampaigns: () => CampaignSummary[],
+	getServerId: () => string | null
+) {
+	// Null until the user picks one in this session; the server's choice is
+	// re-read on every navigation so a changed cookie or lost access wins.
+	let picked = $state<string | null>(null);
 
 	const campaigns = $derived(getCampaigns());
-	const current = $derived(campaigns.find((c) => c._id === selectedId) ?? campaigns[0] ?? null);
+	const current = $derived(
+		campaigns.find((c) => c._id === picked) ??
+			campaigns.find((c) => c._id === getServerId()) ??
+			campaigns[0] ??
+			null
+	);
 
 	return {
 		get campaigns() {
@@ -43,7 +53,7 @@ export function createActiveCampaign(getCampaigns: () => CampaignSummary[], init
 			return current?.objectLabelPlural ?? 'Projects';
 		},
 		select(id: string) {
-			selectedId = id;
+			picked = id;
 			if (browser) {
 				// Persisted so the server can render the right campaign on the next
 				// navigation without a flash of the wrong one.

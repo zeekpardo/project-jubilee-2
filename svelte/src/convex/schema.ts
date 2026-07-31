@@ -138,12 +138,10 @@ const projects = defineTable({
 	// A pipelineStages.key, not an enum — stages are admin-managed data.
 	stage: v.string(),
 	story: v.optional(v.string()),
+	// Everything descriptive lives here rather than in fixed columns: what a
+	// campaign needs to record differs per campaign, and a field marked not
+	// public is withheld by the privacy wall automatically.
 	attributes: v.record(v.string(), attributeValue),
-	note: v.optional(v.string()),
-	managedMissionsLink: v.optional(v.string()),
-	whatsappPhone: v.optional(v.string()),
-	// INTERNAL ONLY (factory/site reference) — must never reach public queries.
-	siteRef: v.optional(v.string()),
 	photoUrl: v.optional(v.string()),
 	// An uploaded photo, as an alternative to a pasted photoUrl.
 	photoStorageId: v.optional(v.id('_storage')),
@@ -255,30 +253,105 @@ const allocations = defineTable({
 	.index('by_campaignId', ['campaignId'])
 	.index('by_orgId', ['orgId']);
 
+// Where a piece of contact information reaches someone. Mirrors Planning
+// Center's location on its Email/PhoneNumber/Address vertices.
+const contactLocation = v.union(v.literal('home'), v.literal('work'), v.literal('other'));
+
 // The unified person record: donors, project members, staff. Replaces the
-// reference app's separate `sponsors` table.
+// reference app's separate `sponsors` table. The scalar fields track Planning
+// Center's Person attributes so an import can land without a translation
+// layer; repeatable contact info lives in the child tables below.
 const contacts = defineTable({
 	orgId: v.string(),
+
+	// --- Names -------------------------------------------------------------
+	// firstName is the PREFERRED first name, matching Planning Center: the name
+	// this person actually goes by. `givenName` holds the formal one when it
+	// differs, so neither has to be reconstructed from the other.
 	firstName: v.string(),
 	// Optional: mononyms and organization contacts have no surname.
 	lastName: v.optional(v.string()),
+	givenName: v.optional(v.string()),
+	middleName: v.optional(v.string()),
+	// Administrative only — used for searching and confirming the right
+	// profile, never for display.
+	nickname: v.optional(v.string()),
+	namePrefix: v.optional(v.string()),
+	nameSuffix: v.optional(v.string()),
 	// Admin-entered public first name, same reasoning as projects.publicName.
 	// Deliberately separate from firstName so publishing a person's name stays
 	// an explicit opt-in rather than a side effect of data entry.
 	publicFirstName: v.optional(v.string()),
+
+	// --- Primary contact info ----------------------------------------------
+	// These are a PROJECTION of the isPrimary row in contactEmails /
+	// contactPhones / contactAddresses, maintained by the model layer. They
+	// exist because dedup, portal login, and every list view need one address
+	// without a second query. Never patch them directly — go through the
+	// child-table helpers so the projection cannot drift.
 	email: v.optional(v.string()),
 	// Lowercased `email`, kept alongside it so dedup can be a plain index
 	// lookup. Postgres did this with a lower(email) expression index.
 	emailLower: v.optional(v.string()),
 	phone: v.optional(v.string()),
-	organization: v.optional(v.string()),
 	addressLine1: v.optional(v.string()),
 	addressLine2: v.optional(v.string()),
 	city: v.optional(v.string()),
 	state: v.optional(v.string()),
 	postalCode: v.optional(v.string()),
 	country: v.optional(v.string()),
+
+	organization: v.optional(v.string()),
 	notes: v.optional(v.string()),
+
+	// --- Demographics ------------------------------------------------------
+	// ISO YYYY-MM-DD, like every other date in this schema. Planning Center's
+	// convention of a 1885 birth year meaning "year unknown" is a display
+	// concern, not a storage one — it round-trips unchanged.
+	birthdate: v.optional(v.string()),
+	// Only meaningful alongside a married or widowed maritalStatus.
+	anniversary: v.optional(v.string()),
+	// Free text, not a union: this is self-described and orgs extend the list.
+	gender: v.optional(v.string()),
+	// Whether this person is a minor. Distinct from an age derived from
+	// birthdate, which is often absent.
+	child: v.optional(v.boolean()),
+	// Planning Center's numeric grade scale: 12..1, 0 = Kindergarten,
+	// -1 = Pre-K, -2/-3/-4 = Preschool 3s/2s/1s. Shifts by one when an org
+	// enables Transitional Kindergarten, so the label is a localization
+	// concern and only the number is stored.
+	grade: v.optional(v.number()),
+	graduationYear: v.optional(v.number()),
+	schoolName: v.optional(v.string()),
+	schoolType: v.optional(v.string()),
+	// Sensitive: allergies, conditions, medications. Must never reach a public
+	// query, the same way projects.siteRef must not.
+	medicalNotes: v.optional(v.string()),
+
+	// --- Membership and status ---------------------------------------------
+	// Free text with org-defined values — Planning Center treats these as
+	// case-sensitive custom lists, not enums.
+	maritalStatus: v.optional(v.string()),
+	membership: v.optional(v.string()),
+	status: v.optional(v.union(v.literal('active'), v.literal('inactive'))),
+	// Moved, New Church, Deceased, or org-defined. Only set when inactive.
+	inactiveReason: v.optional(v.string()),
+	inactivatedOn: v.optional(v.string()),
+	// Campus name rather than an id: this app has no campus table, and the
+	// importer matches on the name anyway.
+	campus: v.optional(v.string()),
+	avatarUrl: v.optional(v.string()),
+	// Check-in barcodes. An array because Planning Center accumulates them —
+	// an import adds one, it never overwrites the existing set.
+	barcodes: v.optional(v.array(v.string())),
+	// The id this person carries in the system they were imported from. Lets a
+	// re-import match on identity instead of guessing from names.
+	remoteId: v.optional(v.string()),
+	// Denormalized from contactBackgroundChecks: true when any check is
+	// cleared and unexpired. Mirrors Planning Center's Person attribute so a
+	// roster filter does not have to fan out over the child table.
+	passedBackgroundCheck: v.optional(v.boolean()),
+
 	// Better Auth user id, set only for contacts who can sign in to the portal.
 	authUserId: v.optional(v.string()),
 	// Which path created this row: sponsor | project_member | subscriber |
@@ -291,10 +364,80 @@ const contacts = defineTable({
 	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone'))),
 	invitedAt: v.optional(v.number())
 })
-	// unique(orgId, emailLower) when email present; unique(orgId, authUserId)
+	// unique(orgId, emailLower) when email present; unique(orgId, authUserId);
+	// unique(orgId, remoteId) when remoteId present
 	.index('by_orgId', ['orgId'])
 	.index('by_orgId_and_emailLower', ['orgId', 'emailLower'])
-	.index('by_orgId_and_authUserId', ['orgId', 'authUserId']);
+	.index('by_orgId_and_authUserId', ['orgId', 'authUserId'])
+	.index('by_orgId_and_remoteId', ['orgId', 'remoteId'])
+	.index('by_orgId_and_status', ['orgId', 'status']);
+
+// Every address a contact has, including the primary one. Exactly one row per
+// contact carries isPrimary, and the model layer projects it onto
+// contacts.email/emailLower. Kept separate from the projection so a person can
+// hold a work and a home address without either being lost.
+const contactEmails = defineTable({
+	orgId: v.string(),
+	contactId: v.id('contacts'),
+	address: v.string(),
+	// Same pairing rule as contacts.emailLower: written only alongside
+	// `address`, so the dedup key can never drift from the display value.
+	addressLower: v.string(),
+	location: contactLocation,
+	isPrimary: v.boolean(),
+	// Bounced or unsubscribed — excluded from sends, kept for the record.
+	blocked: v.optional(v.boolean())
+})
+	// unique(contactId, addressLower); exactly one isPrimary per contact
+	.index('by_contactId', ['contactId'])
+	.index('by_contactId_and_addressLower', ['contactId', 'addressLower'])
+	.index('by_orgId_and_addressLower', ['orgId', 'addressLower']);
+
+const contactPhones = defineTable({
+	orgId: v.string(),
+	contactId: v.id('contacts'),
+	number: v.string(),
+	// 'mobile' is its own location rather than a flag on 'home': it is what
+	// decides whether a number can be texted.
+	location: v.union(contactLocation, v.literal('mobile')),
+	isPrimary: v.boolean(),
+	carrier: v.optional(v.string())
+})
+	// exactly one isPrimary per contact
+	.index('by_contactId', ['contactId'])
+	.index('by_orgId', ['orgId']);
+
+const contactAddresses = defineTable({
+	orgId: v.string(),
+	contactId: v.id('contacts'),
+	line1: v.optional(v.string()),
+	line2: v.optional(v.string()),
+	city: v.optional(v.string()),
+	// Abbreviation or full name, stored as entered.
+	state: v.optional(v.string()),
+	postalCode: v.optional(v.string()),
+	// Two-letter ISO code.
+	countryCode: v.optional(v.string()),
+	location: contactLocation,
+	isPrimary: v.boolean()
+})
+	// exactly one isPrimary per contact
+	.index('by_contactId', ['contactId'])
+	.index('by_orgId', ['orgId']);
+
+// Volunteer screening history. A child table because checks accumulate: a
+// renewal is a new row, and the expired one stays as the record of when
+// clearance lapsed.
+const contactBackgroundChecks = defineTable({
+	orgId: v.string(),
+	contactId: v.id('contacts'),
+	cleared: v.boolean(),
+	completedOn: v.optional(v.string()),
+	expiresOn: v.optional(v.string()),
+	note: v.optional(v.string())
+})
+	.index('by_contactId', ['contactId'])
+	.index('by_orgId', ['orgId']);
 
 // A person-grouping entity in its own right, distinct from `projects` (which
 // carry a budget and a pipeline). Many-to-many with contacts.
@@ -331,8 +474,9 @@ const projectMembers = defineTable({
 	orgId: v.string(),
 	projectId: v.id('projects'),
 	contactId: v.id('contacts'),
-	// 'subject' (the project is about this person) | 'member' | 'head'.
-	role: v.union(v.literal('subject'), v.literal('member'), v.literal('head')),
+	// team_lead | leader | attendee | member | volunteer. Text rather than a
+	// union so a campaign can use a word that fits its own work.
+	role: v.string(),
 	attributes: v.record(v.string(), attributeValue)
 })
 	// unique(projectId, contactId)
@@ -437,6 +581,10 @@ export default defineSchema({
 	transactions,
 	allocations,
 	contacts,
+	contactEmails,
+	contactPhones,
+	contactAddresses,
+	contactBackgroundChecks,
 	households,
 	householdMembers,
 	projectMembers,

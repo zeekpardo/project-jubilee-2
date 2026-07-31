@@ -8,6 +8,9 @@ function matchesSearch(contact: Doc<'contacts'>, needle: string): boolean {
 	return (
 		contact.firstName.toLowerCase().includes(needle) ||
 		(contact.lastName?.toLowerCase().includes(needle) ?? false) ||
+		(contact.nickname?.toLowerCase().includes(needle) ?? false) ||
+		(contact.givenName?.toLowerCase().includes(needle) ?? false) ||
+		(contact.middleName?.toLowerCase().includes(needle) ?? false) ||
 		(contact.emailLower ?? '').includes(needle) ||
 		(contact.organization ?? '').toLowerCase().includes(needle)
 	);

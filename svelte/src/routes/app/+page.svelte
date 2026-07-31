@@ -92,12 +92,16 @@
 			description={access.isTeamLeader ? m.access_noCampaignsBody() : undefined}
 		/>
 	{:else}
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+		<!-- Tiles pick up a faint primary wash via `*:data-[slot=card]` rather than a
+		     class on each card, so the gradient stays in one place. -->
+		<div
+			class="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-2 gap-3 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs md:gap-4 lg:grid-cols-4"
+		>
 			{#each tiles as tile (tile.key)}
-				<Card.Root>
+				<Card.Root class="@container/card">
 					<Card.Header>
 						<Card.Description>{tile.label}</Card.Description>
-						<Card.Title class="text-3xl tabular-nums">
+						<Card.Title class="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
 							{#if tile.value === null}
 								<span class="text-muted-foreground" aria-hidden="true">—</span>
 							{:else}

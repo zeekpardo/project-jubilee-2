@@ -94,6 +94,38 @@ export async function deleteContactCascade(
 		await ctx.db.delete('householdMembers', link._id);
 	}
 
+	const emails = await ctx.db
+		.query('contactEmails')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const email of emails) {
+		await ctx.db.delete('contactEmails', email._id);
+	}
+
+	const phones = await ctx.db
+		.query('contactPhones')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const phone of phones) {
+		await ctx.db.delete('contactPhones', phone._id);
+	}
+
+	const addresses = await ctx.db
+		.query('contactAddresses')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const address of addresses) {
+		await ctx.db.delete('contactAddresses', address._id);
+	}
+
+	const backgroundChecks = await ctx.db
+		.query('contactBackgroundChecks')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const check of backgroundChecks) {
+		await ctx.db.delete('contactBackgroundChecks', check._id);
+	}
+
 	const projectLinks = await ctx.db
 		.query('projectMembers')
 		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))

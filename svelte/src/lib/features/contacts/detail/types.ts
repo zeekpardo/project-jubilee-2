@@ -12,3 +12,9 @@ export type ContactCampaigns = FunctionReturnType<
 export type ContactProjects = FunctionReturnType<
 	typeof api.projectMembers.queries.listProjectsForContact
 >;
+
+export type ContactInfo = FunctionReturnType<typeof api.contacts.detail.listContactInfo>;
+export type ContactEmailRow = ContactInfo['emails'][number];
+export type ContactPhoneRow = ContactInfo['phones'][number];
+export type ContactAddressRow = ContactInfo['addresses'][number];
+export type ContactBackgroundCheckRow = ContactInfo['backgroundChecks'][number];

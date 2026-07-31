@@ -39,6 +39,49 @@ export const listHouseholdsForContact = query({
 });
 
 /**
+ * The child rows behind a contact's projected fields, plus background checks
+ * and anything else that only lives on the child tables. Background checks
+ * and medical notes are sensitive, so this follows the same org-scoped,
+ * deny-by-default access check as the rest of this file rather than trusting
+ * the caller's contactId.
+ */
+export const listContactInfo = query({
+	args: { contactId: v.id('contacts') },
+	handler: async (ctx, args) => {
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'contacts:read')) {
+			return { emails: [], phones: [], addresses: [], backgroundChecks: [] };
+		}
+
+		const [emails, phones, addresses, backgroundChecks] = await Promise.all([
+			ctx.db
+				.query('contactEmails')
+				.withIndex('by_contactId', (q) => q.eq('contactId', args.contactId))
+				.collect(),
+			ctx.db
+				.query('contactPhones')
+				.withIndex('by_contactId', (q) => q.eq('contactId', args.contactId))
+				.collect(),
+			ctx.db
+				.query('contactAddresses')
+				.withIndex('by_contactId', (q) => q.eq('contactId', args.contactId))
+				.collect(),
+			ctx.db
+				.query('contactBackgroundChecks')
+				.withIndex('by_contactId', (q) => q.eq('contactId', args.contactId))
+				.collect()
+		]);
+
+		return {
+			emails: emails.filter((row) => row.orgId === access.orgId),
+			phones: phones.filter((row) => row.orgId === access.orgId),
+			addresses: addresses.filter((row) => row.orgId === access.orgId),
+			backgroundChecks: backgroundChecks.filter((row) => row.orgId === access.orgId)
+		};
+	}
+});
+
+/**
  * Donations attributed to this contact, with the projects each one was
  * allocated to, plus the lifetime total. Transfers and expenditures are
  * excluded: a donor gives, they do not spend.

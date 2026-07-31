@@ -9,6 +9,12 @@
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import * as m from '$lib/i18n/messages';
 
+	import { gradeLabel } from '../contact-info-labels';
+	import ContactEmailsCard from './ContactEmailsCard.svelte';
+	import ContactPhonesCard from './ContactPhonesCard.svelte';
+	import ContactAddressesCard from './ContactAddressesCard.svelte';
+	import ContactBackgroundChecksCard from './ContactBackgroundChecksCard.svelte';
+
 	import type { Id } from '$convex/_generated/dataModel';
 	import type { ContactDetail } from './types';
 
@@ -23,7 +29,25 @@
 	const contact = $derived(contactResponse.data ?? null);
 	const loading = $derived(contactResponse.isLoading);
 
+	const infoResponse = useQuery(api.contacts.detail.listContactInfo, () =>
+		auth.isAuthenticated ? { contactId } : 'skip'
+	);
+	const emails = $derived(infoResponse.data?.emails ?? []);
+	const phones = $derived(infoResponse.data?.phones ?? []);
+	const addresses = $derived(infoResponse.data?.addresses ?? []);
+	const backgroundChecks = $derived(infoResponse.data?.backgroundChecks ?? []);
+
 	const EM_DASH = '—';
+
+	type Row = { key: string; label: string; value: string };
+
+	/** Skips a field entirely rather than showing it with a dash — these cards
+	 * only exist to surface data that was actually entered. */
+	function presentRows(entries: [string, string, string | undefined][]): Row[] {
+		return entries
+			.filter(([, , value]) => (value ?? '').trim() !== '')
+			.map(([key, label, value]) => ({ key, label, value: value ?? '' }));
+	}
 
 	function preferredContactLabel(value: string | undefined): string {
 		if (value === 'email') return m.contactDetail_preferred_email();
@@ -96,7 +120,101 @@
 	);
 
 	const address = $derived(contact ? addressLines(contact) : []);
+
+	const nameRows = $derived(
+		contact
+			? presentRows([
+					['givenName', m.contactDetail_givenName(), contact.givenName],
+					['middleName', m.contactDetail_middleName(), contact.middleName],
+					['nickname', m.contactDetail_nickname(), contact.nickname],
+					['namePrefix', m.contactDetail_namePrefix(), contact.namePrefix],
+					['nameSuffix', m.contactDetail_nameSuffix(), contact.nameSuffix],
+					['publicFirstName', m.contactDetail_publicFirstName(), contact.publicFirstName]
+				])
+			: []
+	);
+
+	const demographicsRows = $derived(
+		contact
+			? presentRows([
+					['birthdate', m.contactDetail_birthdate(), contact.birthdate],
+					['anniversary', m.contactDetail_anniversary(), contact.anniversary],
+					['gender', m.contactDetail_gender(), contact.gender],
+					['child', m.contactDetail_child(), contact.child ? m.contactDetail_yes() : undefined],
+					[
+						'grade',
+						m.contactDetail_grade(),
+						contact.grade === undefined ? undefined : gradeLabel(contact.grade)
+					],
+					[
+						'graduationYear',
+						m.contactDetail_graduationYear(),
+						contact.graduationYear === undefined ? undefined : String(contact.graduationYear)
+					],
+					['schoolName', m.contactDetail_schoolName(), contact.schoolName],
+					['schoolType', m.contactDetail_schoolType(), contact.schoolType],
+					['medicalNotes', m.contactDetail_medicalNotes(), contact.medicalNotes]
+				])
+			: []
+	);
+
+	const membershipRows = $derived(
+		contact
+			? presentRows([
+					['maritalStatus', m.contactDetail_maritalStatus(), contact.maritalStatus],
+					['membership', m.contactDetail_membership(), contact.membership],
+					[
+						'status',
+						m.field_status(),
+						contact.status === 'active'
+							? m.contactDetail_status_active()
+							: contact.status === 'inactive'
+								? m.contactDetail_status_inactive()
+								: undefined
+					],
+					['inactiveReason', m.contactDetail_inactiveReason(), contact.inactiveReason],
+					['inactivatedOn', m.contactDetail_inactivatedOn(), contact.inactivatedOn],
+					['campus', m.contactDetail_campus(), contact.campus]
+				])
+			: []
+	);
+
+	const otherRows = $derived(
+		contact
+			? presentRows([
+					[
+						'barcodes',
+						m.contactDetail_barcodes(),
+						contact.barcodes && contact.barcodes.length > 0
+							? contact.barcodes.join(', ')
+							: undefined
+					],
+					['remoteId', m.contactDetail_remoteId(), contact.remoteId],
+					['avatarUrl', m.contactDetail_avatarUrl(), contact.avatarUrl]
+				])
+			: []
+	);
 </script>
+
+{#snippet rowsCard(title: string, cardRows: Row[])}
+	{#if cardRows.length > 0}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>{title}</Card.Title>
+			</Card.Header>
+			<Card.Content>
+				<dl class="flex flex-col gap-3">
+					{#each cardRows as row (row.key)}
+						<div class="grid gap-1 sm:grid-cols-3 sm:gap-4">
+							<dt class="text-muted-foreground text-sm">{row.label}</dt>
+							<dd class="text-sm break-words sm:col-span-2">{row.value}</dd>
+						</div>
+					{/each}
+				</dl>
+			</Card.Content>
+		</Card.Root>
+	{/if}
+{/snippet}
 
 {#if loading}
 	<div class="flex flex-col gap-3 pt-2">
@@ -175,5 +293,15 @@
 				</Card.Content>
 			</Card.Root>
 		{/if}
+
+		{@render rowsCard(m.contactDetail_section_name(), nameRows)}
+		{@render rowsCard(m.contactDetail_section_demographics(), demographicsRows)}
+		{@render rowsCard(m.contactDetail_section_membership(), membershipRows)}
+		{@render rowsCard(m.contactDetail_section_other(), otherRows)}
+
+		<ContactEmailsCard {contactId} {emails} />
+		<ContactPhonesCard {contactId} {phones} />
+		<ContactAddressesCard {contactId} {addresses} />
+		<ContactBackgroundChecksCard {contactId} checks={backgroundChecks} />
 	</div>
 {/if}

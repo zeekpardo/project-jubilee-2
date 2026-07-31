@@ -65,7 +65,7 @@ export const authComponent = createClient<DataModel, typeof authSchema>(componen
 export const { onCreate, onUpdate, onDelete } = authComponent.triggersApi();
 
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
-  const betterAuthFallbackUrl = getBetterAuthFallbackUrl();
+	const betterAuthFallbackUrl = getBetterAuthFallbackUrl();
 	const deviceVerificationUri = betterAuthFallbackUrl
 		? new URL('/device', betterAuthFallbackUrl).toString()
 		: undefined;
@@ -340,7 +340,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
 				? [
 						deviceAuthorization({
 							expiresIn: '7d', // Device code expiration time
-              verificationUri: deviceVerificationUri
+							verificationUri: deviceVerificationUri
 						})
 					]
 				: [])

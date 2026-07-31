@@ -9,18 +9,24 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as campaigns_mutations from "../campaigns/mutations.js";
+import type * as campaigns_queries from "../campaigns/queries.js";
 import type * as deviceAuthorization from "../deviceAuthorization.js";
 import type * as email from "../email.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
+import type * as model_campaigns from "../model/campaigns.js";
 import type * as model_emails_templates_baseEmail from "../model/emails/templates/baseEmail.js";
 import type * as model_emails_templates_emailTemplates from "../model/emails/templates/emailTemplates.js";
 import type * as model_emails_validateEmail from "../model/emails/validateEmail.js";
 import type * as model_organizations_index from "../model/organizations/index.js";
+import type * as orgSettings_mutations from "../orgSettings/mutations.js";
+import type * as orgSettings_queries from "../orgSettings/queries.js";
 import type * as organizations_invitations_queries from "../organizations/invitations/queries.js";
 import type * as organizations_members_mutations from "../organizations/members/mutations.js";
 import type * as organizations_mutations from "../organizations/mutations.js";
 import type * as organizations_queries from "../organizations/queries.js";
+import type * as seed from "../seed.js";
 import type * as storage from "../storage.js";
 import type * as url from "../url.js";
 import type * as users_actions from "../users/actions.js";
@@ -35,18 +41,24 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  "campaigns/mutations": typeof campaigns_mutations;
+  "campaigns/queries": typeof campaigns_queries;
   deviceAuthorization: typeof deviceAuthorization;
   email: typeof email;
   http: typeof http;
   migrations: typeof migrations;
+  "model/campaigns": typeof model_campaigns;
   "model/emails/templates/baseEmail": typeof model_emails_templates_baseEmail;
   "model/emails/templates/emailTemplates": typeof model_emails_templates_emailTemplates;
   "model/emails/validateEmail": typeof model_emails_validateEmail;
   "model/organizations/index": typeof model_organizations_index;
+  "orgSettings/mutations": typeof orgSettings_mutations;
+  "orgSettings/queries": typeof orgSettings_queries;
   "organizations/invitations/queries": typeof organizations_invitations_queries;
   "organizations/members/mutations": typeof organizations_members_mutations;
   "organizations/mutations": typeof organizations_mutations;
   "organizations/queries": typeof organizations_queries;
+  seed: typeof seed;
   storage: typeof storage;
   url: typeof url;
   "users/actions": typeof users_actions;

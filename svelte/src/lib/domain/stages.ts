@@ -56,7 +56,11 @@ const byOrder = (a: PipelineStage, b: PipelineStage) => a.order - b.order;
 
 /** Funnel stages (non-terminal), in order. */
 export function funnelStages(stages: PipelineStage[]): PipelineStage[] {
-	return stages.filter((s) => s.kind === 'funnel').toSorted(byOrder);
+	// [...].sort() rather than .toSorted() — same semantics (new array, stable
+	// sort, no mutation), but toSorted is ES2023 and the Convex tsc program
+	// (src/convex/tsconfig.json) pins lib to ES2021.
+	// (.filter already returns a fresh array, so .sort does not mutate `stages`.)
+	return stages.filter((s) => s.kind === 'funnel').sort(byOrder);
 }
 
 /** Keys of the terminal off-ramp stages (cancelled / freed-by-other, etc.). */

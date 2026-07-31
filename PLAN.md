@@ -219,10 +219,34 @@ one place it is not.
   into currency. No arithmetic on money in a template.
 - **States.** Loading is a Skeleton, empty is an EmptyState. Never a bare blank.
 
-## 10. Open items
+## 10. Navigation
 
-- Settings screens exist for pipeline stages and the versioned templates;
-  the custom-fields admin is the last one.
+Admin is a MODE, not a section, entered from the campaign switcher — which
+pins an "Admin" entry above the campaign list. Choosing it swaps the whole
+left nav to the org-wide pages under `/app/admin/*`; choosing a campaign
+returns to that campaign's workspace. The mode lives in the URL so a link
+lands where it says.
+
+- Campaign menu: dashboard, projects, money, settings (per-campaign config)
+- Admin menu: campaigns, members, contacts, households, organization
+
+Contacts and households sit on the admin side because they are org-level
+records; settings stays campaign-side because stages and templates are
+per-campaign.
+
+## 11. Open items
+
+- `updateDocument` is unwired on purpose: swapping a document's `storageId`
+  has blob-deletion semantics that deserve a designed flow rather than a
+  guessed one. Documents are add-and-delete today.
+- The donor portal invite path (`linkAuthUser`, `unlinkAuthUser`,
+  `markInvited`) is unwired because the portal itself is out of scope so far.
+- No automated tests cover the Convex wrappers. The domain math is unit
+  tested and all arithmetic routes through it, but the org scoping, the
+  over-allocation guard, the exclude-self rule on allocation edit and the
+  cascades are verified by deploy and by reading. For code that moves money
+  for a charity, `convex-test` coverage of those paths is the most valuable
+  thing to add next.
 - The donor portal (own donations, campaigns joined, giving) is deliberately
   out of scope so far, and is UI-only when it comes — the donations API
   integration is later still.

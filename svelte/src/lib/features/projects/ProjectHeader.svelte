@@ -1,15 +1,23 @@
 <script lang="ts">
 	import { createListCollection } from '@ark-ui/svelte/select';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { SwitchCheckedChangeDetails } from '$lib/primitives/ui/switch';
 	import { toast } from 'svelte-sonner';
 	import { useConvexClient } from '@mmailaender/convex-svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	import { Badge } from '$lib/primitives/ui/badge';
+	import { Button } from '$lib/primitives/ui/button';
 	import { Switch } from '$lib/primitives/ui/switch';
 	import * as Select from '$lib/primitives/ui/select';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import { Can } from '$lib/access';
+	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
 	import type { Doc } from '$convex/_generated/dataModel';
 	import type { PipelineStage } from '$lib/domain/stages';
 	import * as m from '$lib/i18n/messages';
+	import EditProjectDialog from './EditProjectDialog.svelte';
 	import StageBadge from './StageBadge.svelte';
 
 	let {
@@ -26,6 +34,9 @@
 
 	const { api } = getAuthContext();
 	const client = useConvexClient();
+
+	let editOpen = $state(false);
+	let deleteOpen = $state(false);
 
 	const stageCollection = $derived(
 		createListCollection({
@@ -69,6 +80,12 @@
 		} catch (error: unknown) {
 			fail(error);
 		}
+	}
+
+	async function deleteProject(): Promise<void> {
+		await client.mutation(api.projects.mutations.deleteProject, { projectId: project._id });
+		toast.success(m.projects_deleted());
+		await goto(resolve('/app/projects'));
 	}
 </script>
 
@@ -118,6 +135,24 @@
 			>
 				{goalLabel}
 			</Switch>
+
+			<Can do="projects:write" campaignId={project.campaignId}>
+				<div class="flex items-center gap-2">
+					<Button variant="outline" size="sm" onclick={() => (editOpen = true)}>
+						<PencilIcon class="size-4" aria-hidden="true" />
+						{m.projects_edit()}
+					</Button>
+					<Button
+						variant="ghost"
+						size="icon"
+						aria-label={m.projects_delete()}
+						title={m.projects_delete()}
+						onclick={() => (deleteOpen = true)}
+					>
+						<Trash2Icon class="size-4" aria-hidden="true" />
+					</Button>
+				</div>
+			</Can>
 		</div>
 	{:else}
 		<div class="flex flex-wrap items-center gap-2">
@@ -130,3 +165,12 @@
 		</div>
 	{/if}
 </div>
+
+<EditProjectDialog bind:open={editOpen} {project} />
+
+<ConfirmDialog
+	bind:open={deleteOpen}
+	title={m.projects_delete()}
+	body={m.projects_deleteBody()}
+	onConfirm={deleteProject}
+/>

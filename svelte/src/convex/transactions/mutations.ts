@@ -1,6 +1,7 @@
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
-import type { Doc } from '../_generated/dataModel';
+import type { MutationCtx } from '../_generated/server';
+import type { Doc, Id } from '../_generated/dataModel';
 import { requireOrgId } from '../model/auth';
 import {
 	allocationsForTransaction,
@@ -12,6 +13,18 @@ import {
 
 type TransactionPatch = Partial<Omit<Doc<'transactions'>, '_id' | '_creationTime' | 'orgId'>>;
 
+async function requireContact(
+	ctx: MutationCtx,
+	orgId: string,
+	contactId: Id<'contacts'>
+): Promise<Doc<'contacts'>> {
+	const contact = await ctx.db.get('contacts', contactId);
+	if (!contact || contact.orgId !== orgId) {
+		throw new ConvexError('Contact not found');
+	}
+	return contact;
+}
+
 export const createTransaction = mutation({
 	args: {
 		type: transactionTypeValidator,
@@ -20,11 +33,15 @@ export const createTransaction = mutation({
 		method: v.optional(v.string()),
 		reference: v.optional(v.string()),
 		receiptUrl: v.optional(v.string()),
+		contactId: v.optional(v.id('contacts')),
 		note: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
 		assertNonNegativeCents('amountCents', args.amountCents);
+		if (args.contactId !== undefined) {
+			await requireContact(ctx, orgId, args.contactId);
+		}
 
 		return await ctx.db.insert('transactions', { ...args, orgId });
 	}
@@ -39,11 +56,17 @@ export const updateTransaction = mutation({
 		method: v.optional(v.string()),
 		reference: v.optional(v.string()),
 		receiptUrl: v.optional(v.string()),
+		contactId: v.optional(v.id('contacts')),
+		clearContact: v.optional(v.boolean()),
 		note: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
 		const transaction = await requireTransaction(ctx, orgId, args.transactionId);
+
+		if (args.clearContact === true && args.contactId !== undefined) {
+			throw new ConvexError('Pass either contactId or clearContact, not both');
+		}
 
 		// Each field is copied only when supplied: patching an absent optional
 		// with undefined would delete the stored value.
@@ -67,6 +90,15 @@ export const updateTransaction = mutation({
 		}
 		if (args.receiptUrl !== undefined) {
 			patch.receiptUrl = args.receiptUrl;
+		}
+		if (args.contactId !== undefined) {
+			await requireContact(ctx, orgId, args.contactId);
+			patch.contactId = args.contactId;
+		}
+		// The one field an absent value cannot express: clearing is opt-in via
+		// clearContact, and patching contactId to undefined deletes it.
+		if (args.clearContact === true) {
+			patch.contactId = undefined;
 		}
 		if (args.note !== undefined) {
 			patch.note = args.note;

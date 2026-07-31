@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	// Primitives
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Select from '$lib/primitives/ui/select';
@@ -65,14 +67,18 @@
 
 	$effect(() => {
 		if (!open) return;
-		const source = transaction;
-		amount = source ? centsToDollarInput(source.amountCents) : '';
-		occurredOn = source?.occurredOn ?? '';
-		method = source?.method ?? '';
-		reference = source?.reference ?? '';
-		note = source?.note ?? '';
-		donorId = source?.contactId ?? NO_DONOR;
-		failure = null;
+		// Opening seeds the form; a later refresh of the ledger query must not
+		// wipe what the user is halfway through typing.
+		untrack(() => {
+			const source = transaction;
+			amount = source ? centsToDollarInput(source.amountCents) : '';
+			occurredOn = source?.occurredOn ?? '';
+			method = source?.method ?? '';
+			reference = source?.reference ?? '';
+			note = source?.note ?? '';
+			donorId = source?.contactId ?? NO_DONOR;
+			failure = null;
+		});
 	});
 
 	const amountCents = $derived(dollarsToCents(amount));

@@ -9,7 +9,9 @@
 	import * as Tabs from '$lib/primitives/ui/tabs';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import ProjectBudget from '$lib/features/projects/ProjectBudget.svelte';
+	import ProjectDocuments from '$lib/features/projects/ProjectDocuments.svelte';
 	import ProjectHeader from '$lib/features/projects/ProjectHeader.svelte';
+	import ProjectMembers from '$lib/features/projects/ProjectMembers.svelte';
 	import ProjectOverview from '$lib/features/projects/ProjectOverview.svelte';
 	import ProjectProgress from '$lib/features/projects/ProjectProgress.svelte';
 	import { toStages } from '$lib/features/projects/stages';
@@ -72,15 +74,25 @@
 			<Tabs.Root value="overview" class="gap-6">
 				<Tabs.List>
 					<Tabs.Trigger value="overview">{m.nav_section_overview()}</Tabs.Trigger>
+					<Tabs.Trigger value="people">{m.projects_members()}</Tabs.Trigger>
 					<Tabs.Trigger value="budget">{m.nav_budget()}</Tabs.Trigger>
+					<Tabs.Trigger value="documents">{m.projects_documents()}</Tabs.Trigger>
 				</Tabs.List>
 
 				<Tabs.Content value="overview">
-					<ProjectOverview {project} {campaignId} />
+					<ProjectOverview {project} />
+				</Tabs.Content>
+
+				<Tabs.Content value="people">
+					<ProjectMembers {project} />
 				</Tabs.Content>
 
 				<Tabs.Content value="budget">
-					<ProjectBudget budget={money.budget} isLoading={money.isLoading} />
+					<ProjectBudget {project} budget={money.budget} isLoading={money.isLoading} />
+				</Tabs.Content>
+
+				<Tabs.Content value="documents">
+					<ProjectDocuments {project} {stages} />
 				</Tabs.Content>
 			</Tabs.Root>
 		</div>

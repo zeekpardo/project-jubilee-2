@@ -1,40 +1,40 @@
 <script lang="ts">
-	import { useQuery } from '@mmailaender/convex-svelte';
-	import { getAuthContext } from '$lib/auth/context.svelte';
 	import * as Card from '$lib/primitives/ui/card';
 	import { Badge } from '$lib/primitives/ui/badge';
-	import { EmptyState } from '$lib/primitives/ui/empty-state';
-	import { Skeleton } from '$lib/primitives/ui/skeleton';
-	import { attributeValue, formatFieldValue } from '$lib/domain/field-definitions';
-	import type { Doc, Id } from '$convex/_generated/dataModel';
+	import LockIcon from '@lucide/svelte/icons/lock';
+	import type { Doc } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
-	import { formatCents } from './format';
+	import ProjectFields from './ProjectFields.svelte';
 
-	let { project, campaignId }: { project: Doc<'projects'>; campaignId: Id<'campaigns'> } = $props();
+	let { project }: { project: Doc<'projects'> } = $props();
 
-	const { api } = getAuthContext();
-
-	const fieldsResponse = useQuery(api.customFields.queries.resolveFields, () => ({
-		entity: 'project' as const,
-		campaignId
-	}));
-
-	const fields = $derived(fieldsResponse.data ?? []);
-
-	const values = $derived(
-		fields.map((def) => {
-			const raw = attributeValue(project.attributes, def);
-			return {
-				key: def.key,
-				label: def.label,
-				type: def.type,
-				display: def.type === 'money' && typeof raw === 'number' ? formatCents(raw) : null,
-				fallback: formatFieldValue(def, raw)
-			};
-		})
+	const details = $derived(
+		[
+			{ key: 'publicName', label: m.projects_publicName(), value: project.publicName, href: null },
+			{
+				key: 'whatsappPhone',
+				label: m.projects_whatsappPhone(),
+				value: project.whatsappPhone,
+				href: null
+			},
+			{
+				key: 'videoUrl',
+				label: m.projects_videoUrl(),
+				value: project.videoUrl,
+				href: project.videoUrl
+			},
+			{
+				key: 'managedMissionsLink',
+				label: m.projects_managedMissionsLink(),
+				value: project.managedMissionsLink,
+				href: project.managedMissionsLink
+			}
+		].filter((detail) => Boolean(detail.value))
 	);
 </script>
 
+<!-- The only links here are admin-entered external URLs, not app routes. -->
+<!-- eslint-disable svelte/no-navigation-without-resolve -->
 <div class="flex flex-col gap-6">
 	<Card.Root>
 		<Card.Header>
@@ -49,39 +49,58 @@
 		</Card.Content>
 	</Card.Root>
 
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>{m.nav_customFields()}</Card.Title>
-		</Card.Header>
-		<Card.Content>
-			{#if fieldsResponse.isLoading}
-				<div class="flex flex-col gap-3">
-					<Skeleton class="h-6 w-full" />
-					<Skeleton class="h-6 w-full" />
-				</div>
-			{:else if values.length === 0}
-				<EmptyState variant="plain" size="sm" title={m.state_empty()} />
-			{:else}
-				<dl class="grid gap-4 sm:grid-cols-2">
-					{#each values as field (field.key)}
-						<div class="flex flex-col gap-1">
-							<dt class="text-muted-foreground flex items-center gap-2 text-xs">
-								{field.label}
-								<Badge variant="outline" class="font-mono">{field.type}</Badge>
-							</dt>
-							<dd class="text-sm">
-								{#if field.display}
-									<span class="tabular-nums">{field.display}</span>
-								{:else if field.fallback}
-									{field.fallback}
-								{:else}
-									<span class="text-muted-foreground" aria-hidden="true">—</span>
-								{/if}
-							</dd>
-						</div>
-					{/each}
-				</dl>
-			{/if}
-		</Card.Content>
-	</Card.Root>
+	{#if details.length > 0 || project.note || project.siteRef}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>{m.projects_editDetails()}</Card.Title>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-4">
+				{#if details.length > 0}
+					<dl class="grid gap-4 sm:grid-cols-2">
+						{#each details as detail (detail.key)}
+							<div class="flex flex-col gap-1">
+								<dt class="text-muted-foreground text-xs">{detail.label}</dt>
+								<dd class="text-sm break-words">
+									{#if detail.href}
+										<a
+											class="text-primary hover:underline"
+											href={detail.href}
+											target="_blank"
+											rel="noopener noreferrer"
+										>
+											{detail.value}
+										</a>
+									{:else}
+										{detail.value}
+									{/if}
+								</dd>
+							</div>
+						{/each}
+					</dl>
+				{/if}
+
+				{#if project.note}
+					<div class="flex flex-col gap-1">
+						<span class="text-muted-foreground text-xs">{m.field_notes()}</span>
+						<p class="text-sm leading-relaxed whitespace-pre-line">{project.note}</p>
+					</div>
+				{/if}
+
+				{#if project.siteRef}
+					<div class="flex flex-col gap-1">
+						<span class="text-muted-foreground flex items-center gap-2 text-xs">
+							{m.projects_siteRef()}
+							<Badge variant="warning" class="gap-1">
+								<LockIcon class="size-3" aria-hidden="true" />
+								{m.projects_internalOnly()}
+							</Badge>
+						</span>
+						<p class="font-mono text-sm">{project.siteRef}</p>
+					</div>
+				{/if}
+			</Card.Content>
+		</Card.Root>
+	{/if}
+
+	<ProjectFields {project} />
 </div>

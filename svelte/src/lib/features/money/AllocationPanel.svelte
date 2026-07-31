@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+
 	// Primitives
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Select from '$lib/primitives/ui/select';
@@ -87,7 +89,9 @@
 
 	$effect(() => {
 		if (!open) return;
-		resetForm();
+		// Opening resets the form; a later refresh of the campaign list must not
+		// wipe what the user is halfway through typing.
+		untrack(resetForm);
 	});
 
 	const editing = $derived(allocations.find((row) => row._id === editingId) ?? null);
@@ -254,7 +258,7 @@
 				<Skeleton class="h-10 w-full" />
 			</div>
 		{:else if allocations.length === 0}
-			<EmptyState class="w-full" title={m.state_empty()} description={m.money_allocateTo()} />
+			<EmptyState class="w-full" title={m.state_empty()} />
 		{:else}
 			<Table.Root>
 				<Table.Header>
@@ -336,6 +340,10 @@
 
 		{#if formOpen}
 			<form onsubmit={handleSubmit} class="flex w-full flex-col gap-4 border-t pt-4">
+				<p class="text-sm font-medium">
+					{editing !== null ? m.action_edit() : m.money_allocateTo()}
+				</p>
+
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div class="flex flex-col gap-1.5">
 						<Label>{m.money_allocationCampaign()}</Label>

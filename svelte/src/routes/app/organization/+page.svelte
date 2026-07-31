@@ -2,8 +2,7 @@
 	import { useQuery } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
-	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 
 	import PageContainer from '$lib/shell/PageContainer.svelte';
 	import { getAccessContext } from '$lib/access';
@@ -33,11 +32,7 @@
 	);
 	const settings = $derived(settingsResponse?.data);
 
-	function openProfileDialog() {
-		const url = new URL(page.url);
-		url.searchParams.set('dialog', DIALOG_KEY);
-		void goto(url, { replaceState: false, noScroll: true });
-	}
+	const editHref = $derived(resolve(`/app/organization?dialog=${DIALOG_KEY}`));
 </script>
 
 <PageContainer title={m.org_title()} description={m.org_subtitle()} access={allowed}>
@@ -45,7 +40,7 @@
 		<Card.Header>
 			<Card.Title>{m.settings_general()}</Card.Title>
 			<Card.Action>
-				<Button variant="outline" onclick={openProfileDialog}>{m.action_edit()}</Button>
+				<Button variant="outline" href={editHref} data-sveltekit-noscroll>{m.action_edit()}</Button>
 			</Card.Action>
 		</Card.Header>
 		<Card.Content>

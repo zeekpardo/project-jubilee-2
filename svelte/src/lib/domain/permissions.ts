@@ -125,7 +125,22 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 	member: 'No admin access.'
 };
 
-/** Roles a given role may hand out. Nobody may create an owner but an owner. */
+/**
+ * Roles a given role may hand out. Nobody may create an owner but an owner.
+ *
+ * Where this is enforced, precisely:
+ *  - The UI builds its role picker from this list alone, so it cannot offer
+ *    more.
+ *  - `access/mutations.ts setMemberRole` re-checks it before authorising.
+ *  - Better Auth independently refuses to let a non-owner set or modify the
+ *    owner role, so owner escalation is blocked at the write itself.
+ *
+ * The gap: the role write goes to Better Auth, whose `admin` holds
+ * `member:update`, so an admin calling that endpoint directly could still make
+ * a peer an admin — lateral, never upward. Closing it needs Better Auth to
+ * expose the acting member's role to `beforeUpdateMemberRole`, which today it
+ * does not.
+ */
 export function assignableRoles(role: Role | null): Role[] {
 	if (role === 'owner') return ['owner', 'admin', 'team_leader', 'member'];
 	if (role === 'admin') return ['team_leader', 'member'];

@@ -76,6 +76,17 @@
 		}
 	}
 
+	async function changeRole(householdMemberId: Id<'householdMembers'>, role: string) {
+		try {
+			await client.mutation(api.households.mutations.updateHouseholdMember, {
+				householdMemberId,
+				role: role as HouseholdRole
+			});
+		} catch (error) {
+			toast.error(error instanceof ConvexError ? String(error.data) : m.state_saveFailed());
+		}
+	}
+
 	async function removeMember(householdMemberId: Id<'householdMembers'>) {
 		try {
 			await client.mutation(api.households.mutations.removeHouseholdMember, { householdMemberId });
@@ -109,8 +120,24 @@
 								<Table.Cell class="font-medium">
 									{member.contact ? contactDisplayName(member.contact) : '—'}
 								</Table.Cell>
-								<Table.Cell class="text-muted-foreground">
-									{householdRoleLabel(member.role)}
+								<Table.Cell>
+									<Select.Root
+										collection={roleCollection}
+										value={[member.role]}
+										onValueChange={(d: { value: string[] }) => {
+											const next = d.value[0];
+											if (next && next !== member.role) changeRole(member._id, next);
+										}}
+									>
+										<Select.Trigger size="sm" class="w-44" />
+										<Select.Content>
+											{#each roleCollection.items as option (option.value)}
+												<Select.Item item={option}>
+													<Select.ItemText>{option.label}</Select.ItemText>
+												</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
 								</Table.Cell>
 								<Table.Cell class="text-right">
 									<Button size="sm" variant="ghost" onclick={() => removeMember(member._id)}>

@@ -2,6 +2,11 @@
 	// Svelte
 	import { toast } from 'svelte-sonner';
 
+	// Primitives
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
+
 	// API
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	const { authClient } = getAuthContext();
@@ -73,21 +78,16 @@
 
 <form onsubmit={handleSubmit} autocomplete="off" class="flex flex-col gap-4">
 	<div class="flex flex-col gap-2">
-		<label class="label" for="email">Email</label>
-		<input
-			type="email"
-			value={email}
-			disabled
-			class="input preset-filled-surface-200 cursor-not-allowed opacity-60"
-		/>
+		<Label for="email">Email</Label>
+		<Input id="email" type="email" value={email} disabled />
 	</div>
 
-	<div class="flex flex-col">
-		<label class="label" for="name">Full Name</label>
-		<input
+	<div class="flex flex-col gap-2">
+		<Label for="name">Full Name</Label>
+		<Input
+			id="name"
 			type="text"
 			bind:value={name}
-			class="input preset-filled-surface-200"
 			placeholder="Enter your full name"
 			autocomplete="name"
 			required
@@ -95,20 +95,11 @@
 		/>
 	</div>
 
-	<button type="submit" class="btn preset-filled w-full" disabled={submitting || !name.trim()}>
-		{#if submitting}
-			<div class="flex items-center gap-2">
-				<div
-					class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-				></div>
-				Sending...
-			</div>
-		{:else}
-			Send Magic Link
-		{/if}
-	</button>
+	<Button type="submit" class="w-full" disabled={submitting || !name.trim()} loading={submitting}>
+		{submitting ? 'Sending...' : 'Send Magic Link'}
+	</Button>
 
-	<button type="button" class="btn" onclick={onBack} disabled={submitting}>
+	<Button type="button" variant="ghost" onclick={onBack} disabled={submitting}>
 		Use a different email
-	</button>
+	</Button>
 </form>

@@ -2,6 +2,11 @@
 	// Svelte
 	import { toast } from 'svelte-sonner';
 
+	// Primitives
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
+
 	// API
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	const { authClient } = getAuthContext();
@@ -97,23 +102,18 @@
 <form onsubmit={handleSubmit} autocomplete="off" class="flex flex-col gap-8">
 	<!-- Inputs -->
 	<div class="flex flex-col gap-5">
-		<div class="flex flex-col">
-			<label class="label" for="email">Email</label>
-			<input
-				type="email"
-				value={email}
-				disabled
-				class="input preset-filled-surface-200 cursor-not-allowed opacity-60"
-			/>
+		<div class="flex flex-col gap-2">
+			<Label for="email">Email</Label>
+			<Input id="email" type="email" value={email} disabled />
 		</div>
 
 		{#if mode === 'register'}
-			<div class="flex flex-col">
-				<label class="label" for="name">Full Name</label>
-				<input
+			<div class="flex flex-col gap-2">
+				<Label for="name">Full Name</Label>
+				<Input
+					id="name"
 					type="text"
 					bind:value={name}
-					class="input preset-filled-surface-200"
 					placeholder="Enter your full name"
 					autocomplete="name"
 					required
@@ -122,16 +122,16 @@
 			</div>
 		{/if}
 
-		<div class="flex flex-col">
-			<label class="label" for="otp">Verification Code</label>
-			<input
+		<div class="flex flex-col gap-2">
+			<Label for="otp">Verification Code</Label>
+			<Input
+				id="otp"
 				type="text"
 				bind:value={otp}
-				class="input preset-filled-surface-200"
 				placeholder="Enter verification code"
 				pattern="[0-9]*"
 				inputmode="numeric"
-				maxlength="6"
+				maxlength={6}
 				autocomplete="one-time-code"
 				required
 				disabled={submitting}
@@ -141,25 +141,21 @@
 
 	<!-- Actions -->
 	<div class="flex flex-col gap-2">
-		<button
+		<Button
 			type="submit"
-			class="btn preset-filled w-full"
+			class="w-full"
 			disabled={submitting || !otp.trim() || (mode === 'register' && !name.trim())}
+			loading={submitting}
 		>
 			{#if submitting}
-				<div class="flex items-center gap-2">
-					<div
-						class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-					></div>
-					{mode === 'register' ? 'Creating account...' : 'Verifying...'}
-				</div>
+				{mode === 'register' ? 'Creating account...' : 'Verifying...'}
 			{:else}
 				{mode === 'register' ? 'Create Account' : 'Verify Code'}
 			{/if}
-		</button>
+		</Button>
 
-		<button type="button" class="btn" onclick={onBack} disabled={submitting}>
+		<Button type="button" variant="ghost" onclick={onBack} disabled={submitting}>
 			Use a different email
-		</button>
+		</Button>
 	</div>
 </form>

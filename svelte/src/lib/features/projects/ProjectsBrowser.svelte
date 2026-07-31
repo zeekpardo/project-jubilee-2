@@ -71,62 +71,70 @@
 </script>
 
 <div class="flex flex-col gap-4">
-	<div class="flex flex-wrap items-center gap-3">
-		<div class="relative min-w-48 flex-1">
-			<SearchIcon
-				class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-				aria-hidden="true"
-			/>
-			<Input
-				bind:value={search}
-				class="pl-9"
-				type="search"
-				placeholder={m.list_search()}
-				aria-label={m.list_search()}
-			/>
+	<div
+		role="toolbar"
+		aria-orientation="horizontal"
+		class="flex w-full items-start justify-between gap-2 p-1"
+	>
+		<div class="flex flex-1 flex-wrap items-center gap-2">
+			<div class="relative">
+				<SearchIcon
+					class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+					aria-hidden="true"
+				/>
+				<Input
+					bind:value={search}
+					class="h-8 w-40 pl-9 lg:w-56"
+					type="search"
+					placeholder={m.list_search()}
+					aria-label={m.list_search()}
+				/>
+			</div>
+
+			<Select.Root
+				collection={stageCollection}
+				value={[stageFilter]}
+				onValueChange={(details: { value: string[] }): void => {
+					stageFilter = details.value[0] ?? ALL_STAGES;
+				}}
+			>
+				<Select.Label class="sr-only">{m.projects_stage()}</Select.Label>
+				<Select.Trigger size="sm" class="w-44" placeholder={m.projects_allStages()} />
+				<Select.Content>
+					{#each stageCollection.items as option (option.value)}
+						<Select.Item item={option}>
+							<Select.ItemText>{option.label}</Select.ItemText>
+						</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 		</div>
 
-		<Select.Root
-			collection={stageCollection}
-			value={[stageFilter]}
-			onValueChange={(details: { value: string[] }): void => {
-				stageFilter = details.value[0] ?? ALL_STAGES;
-			}}
-		>
-			<Select.Label class="sr-only">{m.projects_stage()}</Select.Label>
-			<Select.Trigger class="w-44" placeholder={m.projects_allStages()} />
-			<Select.Content>
-				{#each stageCollection.items as option (option.value)}
-					<Select.Item item={option}>
-						<Select.ItemText>{option.label}</Select.ItemText>
-					</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-
-		<div class="flex items-center gap-1 rounded-md border p-1">
-			<Button
-				size="sm"
-				variant={view === 'table' ? 'secondary' : 'ghost'}
-				href={resolve('/app/projects?view=table')}
-				aria-current={view === 'table' ? 'page' : undefined}
-				data-sveltekit-replacestate
-				data-sveltekit-noscroll
-			>
-				<TableIcon aria-hidden="true" />
-				{m.projects_viewTable()}
-			</Button>
-			<Button
-				size="sm"
-				variant={view === 'gallery' ? 'secondary' : 'ghost'}
-				href={resolve('/app/projects?view=gallery')}
-				aria-current={view === 'gallery' ? 'page' : undefined}
-				data-sveltekit-replacestate
-				data-sveltekit-noscroll
-			>
-				<LayoutGridIcon aria-hidden="true" />
-				{m.projects_viewGallery()}
-			</Button>
+		<div class="flex items-center gap-2">
+			<div class="flex items-center gap-1 rounded-md border p-1">
+				<Button
+					size="sm"
+					variant={view === 'table' ? 'secondary' : 'ghost'}
+					href={resolve('/app/projects?view=table')}
+					aria-current={view === 'table' ? 'page' : undefined}
+					data-sveltekit-replacestate
+					data-sveltekit-noscroll
+				>
+					<TableIcon aria-hidden="true" />
+					{m.projects_viewTable()}
+				</Button>
+				<Button
+					size="sm"
+					variant={view === 'gallery' ? 'secondary' : 'ghost'}
+					href={resolve('/app/projects?view=gallery')}
+					aria-current={view === 'gallery' ? 'page' : undefined}
+					data-sveltekit-replacestate
+					data-sveltekit-noscroll
+				>
+					<LayoutGridIcon aria-hidden="true" />
+					{m.projects_viewGallery()}
+				</Button>
+			</div>
 		</div>
 	</div>
 
@@ -148,23 +156,25 @@
 			{/each}
 		</div>
 	{:else}
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head>{m.projects_number()}</Table.Head>
-					<Table.Head>{m.field_name()}</Table.Head>
-					<Table.Head>{m.projects_stage()}</Table.Head>
-					<Table.Head class="text-right">{m.projects_target()}</Table.Head>
-					<Table.Head class="text-right">{m.projects_raised()}</Table.Head>
-					<Table.Head>{m.projects_progress()}</Table.Head>
-					<Table.Head>{m.projects_published()}</Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#each filtered as project (project._id)}
-					<ProjectRow {project} {stages} />
-				{/each}
-			</Table.Body>
-		</Table.Root>
+		<div class="overflow-hidden rounded-lg border">
+			<Table.Root>
+				<Table.Header class="bg-muted">
+					<Table.Row>
+						<Table.Head>{m.projects_number()}</Table.Head>
+						<Table.Head>{m.field_name()}</Table.Head>
+						<Table.Head>{m.projects_stage()}</Table.Head>
+						<Table.Head class="text-right">{m.projects_target()}</Table.Head>
+						<Table.Head class="text-right">{m.projects_raised()}</Table.Head>
+						<Table.Head>{m.projects_progress()}</Table.Head>
+						<Table.Head>{m.projects_published()}</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each filtered as project (project._id)}
+						<ProjectRow {project} {stages} />
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
 	{/if}
 </div>

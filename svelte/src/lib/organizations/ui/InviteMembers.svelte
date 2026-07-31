@@ -5,6 +5,9 @@
 	import { toast } from 'svelte-sonner';
 	import * as Select from '$lib/primitives/ui/select';
 	import { createListCollection } from '@ark-ui/svelte/select';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Textarea } from '$lib/primitives/ui/textarea';
+	import { Label } from '$lib/primitives/ui/label';
 
 	// API
 	import { useQuery } from '@mmailaender/convex-svelte';
@@ -136,48 +139,44 @@
 
 <form onsubmit={handleInvite} class="flex flex-col gap-4">
 	<div class="flex flex-col gap-4">
-		<div class="flex flex-col">
-			<label>
-				<span class="label">Role</span>
-				<Select.Root {collection} bind:value={selectedRole}>
-					<Select.Trigger class="w-full" placeholder="Select a role" />
-					<Select.Content>
-						{#each collection.items as item (item.value)}
-							<Select.Item {item}>
-								<Select.ItemText>{item.label}</Select.ItemText>
-								<Select.ItemIndicator>✓</Select.ItemIndicator>
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</label>
+		<div class="flex flex-col gap-2">
+			<Label>Role</Label>
+			<Select.Root {collection} bind:value={selectedRole}>
+				<Select.Trigger class="w-full" placeholder="Select a role" />
+				<Select.Content>
+					{#each collection.items as item (item.value)}
+						<Select.Item {item}>
+							<Select.ItemText>{item.label}</Select.ItemText>
+							<Select.ItemIndicator>✓</Select.ItemIndicator>
+						</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
 		</div>
 		<div class="flex flex-col gap-2">
-			<label>
-				<span class="label">Email(s)</span>
-				<textarea
-					bind:value={emailInput}
-					placeholder="example@email.com, example2@email.com"
-					class="textarea min-h-24 grow"
-					required
-				></textarea>
-			</label>
-			<p class="text-surface-600-400 px-1 text-xs">
+			<Label>Email(s)</Label>
+			<Textarea
+				bind:value={emailInput}
+				placeholder="example@email.com, example2@email.com"
+				class="min-h-24 grow"
+				required
+			/>
+			<p class="text-muted-foreground px-1 text-xs">
 				You can invite multiple people by separating email addresses with commas, semicolons, or
 				spaces.
 			</p>
 		</div>
 		<div class="flex justify-end gap-2 pt-6 md:flex-row">
-			<button
+			<Button
 				type="submit"
-				class="btn preset-filled-primary-500"
+				loading={isProcessing}
 				disabled={isProcessing || !authConstants.sendEmails}
 			>
 				{isProcessing ? 'Sending...' : 'Send Invitations'}
-			</button>
+			</Button>
 		</div>
 		{#if !authConstants.sendEmails}
-			<div class="text-error-600-400 px-1 text-xs">
+			<div class="text-destructive px-1 text-xs">
 				Sending Emails is not enabled. Please enable to send invitations.
 			</div>
 		{/if}

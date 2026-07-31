@@ -3,6 +3,8 @@
 	import * as Popover from '$lib/primitives/ui/popover';
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Avatar from '$lib/primitives/ui/avatar';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Skeleton } from '$lib/primitives/ui/skeleton';
 	// Icons
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	// Components
@@ -98,13 +100,13 @@
 	>
 		<Popover.Trigger>
 			<Avatar.Root
-				class="ring-surface-100-900 size-9 ring-0 duration-200 ease-out hover:ring-4"
+				class="ring-accent size-9 ring-0 duration-200 ease-out hover:ring-4"
 				onStatusChange={(details) => (avatarStatus = details.status)}
 			>
 				<Avatar.Image src={activeUser?.image} alt={activeUser?.name} />
 				<Avatar.Fallback>
 					{#if avatarStatus === 'loading'}
-						<div class="placeholder-circle size-10 animate-pulse"></div>
+						<Skeleton class="size-10 rounded-full" />
 					{:else}
 						<Avatar.Marble name={activeUser?.name} />
 					{/if}
@@ -114,7 +116,7 @@
 		<Popover.Content>
 			<div class="flex flex-col gap-1 p-0">
 				<button
-					class="bg-surface-50-950 hover:bg-surface-100-900 rounded-container flex flex-row items-center gap-4 p-3 pr-6 duration-200 ease-in-out"
+					class="bg-card hover:bg-muted flex flex-row items-center gap-4 rounded-xl p-3 pr-6 duration-200 ease-in-out"
 					onclick={openProfileModal}
 				>
 					<Avatar.Root class="size-12">
@@ -133,17 +135,15 @@
 				</button>
 				<SignOutButton
 					onSuccess={() => (userPopoverOpen = false)}
-					class="btn preset-faded-surface-50-950 hover:bg-surface-200-800 h-10 justify-between gap-1 text-sm"
+					class="hover:bg-muted h-10 justify-between gap-1 text-sm"
 				/>
 			</div>
 		</Popover.Content>
 	</Popover.Root>
 {:else if auth.isLoading || auth.isAuthenticated}
-	<div class="placeholder-circle size-10 animate-pulse"></div>
+	<Skeleton class="size-10 rounded-full" />
 {:else}
-	<button class="btn preset-filled-primary-500" onclick={() => (signInDialogOpen = true)}>
-		Sign in
-	</button>
+	<Button onclick={() => (signInDialogOpen = true)}>Sign in</Button>
 {/if}
 <!-- SignIn Dialog - Outside of auth wrappers to prevent disappearing during registration -->
 <Dialog.Root
@@ -156,7 +156,7 @@
 	}}
 >
 	<Dialog.Content
-		class="sm:rounded-container h-full max-h-[100dvh] w-full rounded-none sm:h-auto sm:max-h-[90vh] sm:w-4xl sm:max-w-md"
+		class="h-full max-h-[100dvh] w-full rounded-none sm:h-auto sm:max-h-[90vh] sm:w-4xl sm:max-w-md sm:rounded-xl"
 	>
 		{#key signInKey}
 			<SignIn onSignIn={() => (signInDialogOpen = false)} class="p-2 sm:p-8" />

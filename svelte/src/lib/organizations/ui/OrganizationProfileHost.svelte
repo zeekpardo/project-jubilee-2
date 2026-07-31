@@ -140,7 +140,7 @@
 		}}
 	>
 		<Dialog.Content
-			class={`md:rounded-container top-0 left-0 h-full max-h-[100dvh] w-full max-w-full translate-x-0 translate-y-0 rounded-none p-0 md:top-1/2 md:left-1/2 md:h-[70vh] md:w-2xl md:-translate-x-1/2 md:-translate-y-1/2 lg:w-4xl ${orgProfile.suppressTransition ? 'animate-none transition-none duration-0 data-[state=closed]:duration-0 data-[state=open]:duration-0' : ''}`}
+			class={`top-0 left-0 h-full max-h-[100dvh] w-full max-w-full translate-x-0 translate-y-0 rounded-none p-0 md:top-1/2 md:left-1/2 md:h-[70vh] md:w-2xl md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-xl lg:w-4xl ${orgProfile.suppressTransition ? 'animate-none transition-none duration-0 data-[state=closed]:duration-0 data-[state=open]:duration-0' : ''}`}
 		>
 			<div
 				class="h-full w-full overflow-auto overscroll-contain"

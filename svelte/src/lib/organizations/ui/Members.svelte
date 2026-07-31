@@ -4,6 +4,11 @@
 	import * as Drawer from '$lib/primitives/ui/drawer';
 	import * as Avatar from '$lib/primitives/ui/avatar';
 	import * as Select from '$lib/primitives/ui/select';
+	import * as Table from '$lib/primitives/ui/table';
+	import { Badge } from '$lib/primitives/ui/badge';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
 	import { Portal } from '@ark-ui/svelte/portal';
 	import { createListCollection } from '@ark-ui/svelte/select';
 	import { toast } from 'svelte-sonner';
@@ -188,11 +193,11 @@
 		<div class="flex flex-shrink-0 items-center gap-3 py-4">
 			<div class="relative flex-1">
 				<div class="pointer-events-none absolute inset-y-0 flex items-center">
-					<SearchIcon class="text-surface-400-600 size-4" />
+					<SearchIcon class="text-muted-foreground size-4" />
 				</div>
-				<input
+				<Input
 					type="text"
-					class="input w-hug w-full !border-0 border-transparent pl-6 text-sm"
+					class="!border-0 border-transparent pl-6 text-sm"
 					placeholder="Search members..."
 					bind:value={searchQuery}
 				/>
@@ -204,8 +209,8 @@
 			<div class="flex max-h-[calc(100vh-12rem)] flex-col gap-2 overflow-y-auto pb-24">
 				{#each filteredMembers as member (member.id)}
 					<div
-						class={`border-surface-200-800 rounded-container flex items-center justify-between border-b pr-6 pb-4 ${
-							canEditMember(member) ? 'hover:bg-surface-100-900 cursor-pointer' : ''
+						class={`border-border flex items-center justify-between rounded-xl border-b pr-6 pb-4 ${
+							canEditMember(member) ? 'hover:bg-muted cursor-pointer' : ''
 						}`}
 						onclick={() => handleMemberCardClick(member)}
 						role="button"
@@ -217,35 +222,23 @@
 						}}
 					>
 						<div class="flex items-center space-x-3">
-							<div class="avatar">
-								<div class="size-10">
-									<Avatar.Root class="size-10">
-										<Avatar.Image src={member.user.image} alt={member.user.name} />
-										<Avatar.Fallback>
-											<Avatar.Marble name={member.user.name} />
-										</Avatar.Fallback>
-									</Avatar.Root>
-								</div>
-							</div>
+							<Avatar.Root class="size-10">
+								<Avatar.Image src={member.user.image} alt={member.user.name} />
+								<Avatar.Fallback>
+									<Avatar.Marble name={member.user.name} />
+								</Avatar.Fallback>
+							</Avatar.Root>
 							<div class="flex flex-col">
 								<div class="flex items-center space-x-2">
 									<span class="font-medium">{member.user.name}</span>
 									{#if member.role === 'owner'}
-										<span
-											class="badge preset-filled-primary-50-950 border-primary-200-800 h-6 border px-2"
-										>
-											Owner
-										</span>
+										<Badge variant="default">Owner</Badge>
 									{/if}
 									{#if member.role === 'admin'}
-										<span
-											class="badge preset-filled-warning-50-950 border-warning-200-800 h-6 border px-2"
-										>
-											Admin
-										</span>
+										<Badge variant="outline">Admin</Badge>
 									{/if}
 								</div>
-								<span class="text-surface-700-300 text-sm">{member.user.email}</span>
+								<span class="text-muted-foreground text-sm">{member.user.email}</span>
 							</div>
 						</div>
 						{#if canEditMember(member)}
@@ -263,112 +256,96 @@
 				<div
 					class=" max-h-[calc(90vh-12rem)] overflow-hidden overflow-y-auto pb-12 sm:max-h-[calc(80vh-12rem)] md:max-h-[calc(70vh-12rem)]"
 				>
-					<table class="table w-full !table-fixed">
-						<thead class="sticky top-0 z-20">
-							<tr>
-								<th class="text-surface-600-400 !w-48 p-2 !pl-3 text-left text-xs font-semibold"
-									>Name</th
-								>
-								<th class="text-surface-600-400 hidden p-2 text-left text-xs sm:flex">Email</th>
-								<th class="text-surface-600-400 !w-32 p-2 text-left text-xs">Role</th>
+					<Table.Root class="table-fixed">
+						<Table.Header class="sticky top-0 z-20">
+							<Table.Row>
+								<Table.Head class="w-48 font-semibold">Name</Table.Head>
+								<Table.Head class="hidden sm:table-cell">Email</Table.Head>
+								<Table.Head class="w-32">Role</Table.Head>
 								{#if isOwnerOrAdmin}
-									<th class="!w-16 p-2 text-right"></th>
+									<Table.Head class="w-16 text-right"></Table.Head>
 								{/if}
-							</tr>
-						</thead>
-						<tbody>
+							</Table.Row>
+						</Table.Header>
+						<Table.Body>
 							{#each filteredMembers as member (member.id)}
-								<tr class="!border-surface-300-700 !border-t">
+								<Table.Row>
 									<!-- Member Name -->
-									<td class="!w-48 !max-w-48 !truncate !py-3 !pl-3">
+									<Table.Cell class="w-48 max-w-48 truncate">
 										<div class="flex items-center space-x-2">
-											<div class="avatar">
-												<div class="size-8 sm:size-5">
-													<Avatar.Root class="size-8 sm:size-5">
-														<Avatar.Image src={member.user.image} alt={member.user.name} />
-														<Avatar.Fallback>
-															<Avatar.Marble name={member.user.name} />
-														</Avatar.Fallback>
-													</Avatar.Root>
-												</div>
-											</div>
+											<Avatar.Root class="size-8 sm:size-5">
+												<Avatar.Image src={member.user.image} alt={member.user.name} />
+												<Avatar.Fallback>
+													<Avatar.Marble name={member.user.name} />
+												</Avatar.Fallback>
+											</Avatar.Root>
 
 											<div class="flex flex-col truncate">
 												<span class="truncate text-sm">{member.user.name}</span>
 												<!-- Email visible only on mobile (hidden on sm and above) -->
-												<span class="text-surface-700-300 truncate text-xs sm:hidden">
+												<span class="text-muted-foreground truncate text-xs sm:hidden">
 													{member.user.email}
 												</span>
 											</div>
 										</div>
-									</td>
+									</Table.Cell>
 									<!-- Member Email -->
-									<td class="!text-surface-600-400 hidden !h-fit !w-full !truncate sm:table-cell">
+									<Table.Cell
+										class="text-muted-foreground hidden h-fit w-full truncate sm:table-cell"
+									>
 										{member.user.email}
-									</td>
+									</Table.Cell>
 									<!-- Member Role -->
-									<td class="!w-32">
-										<div class="flex items-center">
-											{#if isOwnerOrAdmin && member.id !== activeUser?._id && member.role !== 'owner'}
-												<Select.Root
-													collection={rolesCollection}
-													value={[member.role]}
-													onSelect={(e) => handleUpdateRole(member.id, e.value as Role)}
-												>
-													<Select.Trigger class="w-full text-sm" />
-													<Portal>
-														<Select.Content>
-															{#each rolesCollection.items as item (item.value)}
-																<Select.Item {item}>
-																	<Select.ItemText>{item.label}</Select.ItemText>
-																	<Select.ItemIndicator>✓</Select.ItemIndicator>
-																</Select.Item>
-															{/each}
-														</Select.Content>
-													</Portal>
-												</Select.Root>
-											{:else if member.role === 'owner'}
-												<span
-													class="badge preset-filled-primary-50-950 border-primary-200-800 h-7 border px-2"
-												>
-													Owner
-												</span>
-											{:else if member.role === 'admin'}
-												<span
-													class="badge preset-filled-warning-50-950 border-warning-200-800 h-7 border px-2"
-												>
-													Admin
-												</span>
-											{:else}
-												<span
-													class="badge preset-filled-surface-300-700 border-surface-400-600 h-7 border px-2"
-												>
-													Member
-												</span>
-											{/if}
-										</div>
-									</td>
+									<Table.Cell class="w-32">
+										{#if isOwnerOrAdmin && member.id !== activeUser?._id && member.role !== 'owner'}
+											<Select.Root
+												collection={rolesCollection}
+												value={[member.role]}
+												onSelect={(e) => handleUpdateRole(member.id, e.value as Role)}
+											>
+												<Select.Trigger class="w-full text-sm" />
+												<Portal>
+													<Select.Content>
+														{#each rolesCollection.items as item (item.value)}
+															<Select.Item {item}>
+																<Select.ItemText>{item.label}</Select.ItemText>
+																<Select.ItemIndicator>✓</Select.ItemIndicator>
+															</Select.Item>
+														{/each}
+													</Select.Content>
+												</Portal>
+											</Select.Root>
+										{:else if member.role === 'owner'}
+											<Badge variant="default">Owner</Badge>
+										{:else if member.role === 'admin'}
+											<Badge variant="outline">Admin</Badge>
+										{:else}
+											<Badge variant="secondary">Member</Badge>
+										{/if}
+									</Table.Cell>
 									<!-- Member Actions -->
-									<td class="!w-16">
+									<Table.Cell class="w-16">
 										<div class="flex justify-end space-x-2">
 											{#if isOwnerOrAdmin && member.id !== activeUser?._id && member.role !== 'owner'}
-												<button
+												<Button
 													type="button"
-													class="btn-icon preset-filled-surface-200-800 hover:preset-filled-error-300-700"
+													variant="ghost"
+													size="icon"
+													class="hover:text-destructive"
 													onclick={() => {
 														selectedUserId = member.id;
 														isDialogOpen = true;
 													}}
 												>
 													<TrashIcon class="size-4 opacity-70" />
-												</button>
+												</Button>
 											{/if}
 										</div>
-									</td>
-								</tr>
+									</Table.Cell>
+								</Table.Row>
 							{/each}
-						</tbody>
-					</table>
+						</Table.Body>
+					</Table.Root>
 				</div>
 			</div>
 		</div>
@@ -386,12 +363,8 @@
 				</Dialog.Description>
 
 				<Dialog.Footer class="flex-shrink-0">
-					<button type="button" class="btn preset-tonal" onclick={() => (isDialogOpen = false)}>
-						Cancel
-					</button>
-					<button type="button" class="btn preset-filled-error-500" onclick={handleRemoveMember}>
-						Confirm
-					</button>
+					<Dialog.Close class={buttonVariants({ variant: 'outline' })}>Cancel</Dialog.Close>
+					<Button variant="destructive" onclick={handleRemoveMember}>Confirm</Button>
 				</Dialog.Footer>
 			</Dialog.Content>
 		</Dialog.Root>
@@ -406,27 +379,23 @@
 					{#if selectedMember}
 						<!-- Member Info -->
 						<div class="flex items-center gap-3 pt-1 pb-8">
-							<div class="avatar">
-								<div class="size-12">
-									<Avatar.Root class="size-12">
-										<Avatar.Image src={selectedMember.user.image} alt={selectedMember.user.name} />
-										<Avatar.Fallback>
-											<Avatar.Marble name={selectedMember.user.name} />
-										</Avatar.Fallback>
-									</Avatar.Root>
-								</div>
-							</div>
+							<Avatar.Root class="size-12">
+								<Avatar.Image src={selectedMember.user.image} alt={selectedMember.user.name} />
+								<Avatar.Fallback>
+									<Avatar.Marble name={selectedMember.user.name} />
+								</Avatar.Fallback>
+							</Avatar.Root>
 							<div class="flex flex-col">
 								<span>{selectedMember.user.name}</span>
-								<p class="text-surface-700-300 text-sm">{selectedMember.user.email}</p>
+								<p class="text-muted-foreground text-sm">{selectedMember.user.email}</p>
 							</div>
 						</div>
 
 						<!-- Actions -->
 						<div class="flex flex-col gap-3">
 							<!-- Role Select -->
-							<label class="flex-1">
-								<span class="label">Role</span>
+							<div class="flex flex-1 flex-col gap-2">
+								<Label>Role</Label>
 								<Select.Root
 									collection={rolesCollection}
 									value={[selectedMember.role]}
@@ -444,13 +413,13 @@
 										</Select.Content>
 									</Portal>
 								</Select.Root>
-							</label>
+							</div>
 
 							<!-- Remove Button -->
 							<div class="flex flex-col justify-end">
-								<button
+								<Button
 									type="button"
-									class="btn preset-filled-surface-300-700"
+									variant="secondary"
 									onclick={() => {
 										selectedUserId = selectedMember!.id;
 										isDrawerOpen = false;
@@ -458,11 +427,11 @@
 									}}
 								>
 									<TrashIcon class="size-4" /> Remove
-								</button>
+								</Button>
 							</div>
 						</div>
 					{:else}
-						<div class="text-surface-500 p-4 text-center">No member selected</div>
+						<div class="text-muted-foreground p-4 text-center">No member selected</div>
 					{/if}
 				</div></Drawer.Content
 			>

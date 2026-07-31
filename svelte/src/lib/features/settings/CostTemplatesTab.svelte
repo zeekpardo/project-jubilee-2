@@ -91,7 +91,7 @@
 					</Card.Header>
 					<Card.Content>
 						<Table.Root>
-							<Table.Header>
+							<Table.Header class="bg-muted">
 								<Table.Row>
 									<Table.Head>{m.settings_lineItemKey()}</Table.Head>
 									<Table.Head class="text-right">{m.settings_lineItemAmount()}</Table.Head>

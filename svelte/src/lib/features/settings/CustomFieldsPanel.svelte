@@ -198,7 +198,7 @@
 							<EmptyState size="sm" variant="plain" title={m.settings_fieldsEmpty()} />
 						{:else}
 							<Table.Root>
-								<Table.Header>
+								<Table.Header class="bg-muted">
 									<Table.Row>
 										<Table.Head>{m.settings_fieldKey()}</Table.Head>
 										<Table.Head>{m.field_name()}</Table.Head>

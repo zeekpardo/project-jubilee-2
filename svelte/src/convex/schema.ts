@@ -347,9 +347,13 @@ const contacts = defineTable({
 	// The id this person carries in the system they were imported from. Lets a
 	// re-import match on identity instead of guessing from names.
 	remoteId: v.optional(v.string()),
-	// Denormalized from contactBackgroundChecks: true when any check is
-	// cleared and unexpired. Mirrors Planning Center's Person attribute so a
-	// roster filter does not have to fan out over the child table.
+	// Denormalized from contactBackgroundChecks: true when, AS OF THE LAST
+	// WRITE, some check was cleared and unexpired. Mirrors Planning Center's
+	// Person attribute so a roster filter need not fan out over the child
+	// table. Recomputed only when a check row changes, so a clearance that
+	// lapses with no other edit leaves this reading true — anything that
+	// gates access on screening must re-derive from contactBackgroundChecks
+	// rather than trust this flag.
 	passedBackgroundCheck: v.optional(v.boolean()),
 
 	// Better Auth user id, set only for contacts who can sign in to the portal.

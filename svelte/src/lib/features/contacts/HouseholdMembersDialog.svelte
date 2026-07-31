@@ -106,48 +106,50 @@
 			{#if (household?.members ?? []).length === 0}
 				<EmptyState variant="plain" size="sm" title={m.households_noMembers()} />
 			{:else}
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>{m.field_name()}</Table.Head>
-							<Table.Head>{m.households_role()}</Table.Head>
-							<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each household?.members ?? [] as member (member._id)}
+				<div class="overflow-hidden rounded-lg border">
+					<Table.Root>
+						<Table.Header class="bg-muted">
 							<Table.Row>
-								<Table.Cell class="font-medium">
-									{member.contact ? contactDisplayName(member.contact) : '—'}
-								</Table.Cell>
-								<Table.Cell>
-									<Select.Root
-										collection={roleCollection}
-										value={[member.role]}
-										onValueChange={(d: { value: string[] }) => {
-											const next = d.value[0];
-											if (next && next !== member.role) changeRole(member._id, next);
-										}}
-									>
-										<Select.Trigger size="sm" class="w-44" />
-										<Select.Content>
-											{#each roleCollection.items as option (option.value)}
-												<Select.Item item={option}>
-													<Select.ItemText>{option.label}</Select.ItemText>
-												</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</Table.Cell>
-								<Table.Cell class="text-right">
-									<Button size="sm" variant="ghost" onclick={() => removeMember(member._id)}>
-										{m.action_remove()}
-									</Button>
-								</Table.Cell>
+								<Table.Head>{m.field_name()}</Table.Head>
+								<Table.Head>{m.households_role()}</Table.Head>
+								<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
 							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
+						</Table.Header>
+						<Table.Body>
+							{#each household?.members ?? [] as member (member._id)}
+								<Table.Row>
+									<Table.Cell class="font-medium">
+										{member.contact ? contactDisplayName(member.contact) : '—'}
+									</Table.Cell>
+									<Table.Cell>
+										<Select.Root
+											collection={roleCollection}
+											value={[member.role]}
+											onValueChange={(d: { value: string[] }) => {
+												const next = d.value[0];
+												if (next && next !== member.role) changeRole(member._id, next);
+											}}
+										>
+											<Select.Trigger size="sm" class="w-44" />
+											<Select.Content>
+												{#each roleCollection.items as option (option.value)}
+													<Select.Item item={option}>
+														<Select.ItemText>{option.label}</Select.ItemText>
+													</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</Table.Cell>
+									<Table.Cell class="text-right">
+										<Button size="sm" variant="ghost" onclick={() => removeMember(member._id)}>
+											{m.action_remove()}
+										</Button>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
 			{/if}
 
 			<div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-end">

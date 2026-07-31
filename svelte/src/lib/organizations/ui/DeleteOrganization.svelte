@@ -15,8 +15,8 @@
 	// Primitives
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/primitives/ui/dialog';
-	// Icons
-	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import * as Card from '$lib/primitives/ui/card';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
 
 	// Types
 	import type { Pathname } from '$app/types';
@@ -113,46 +113,48 @@
 </script>
 
 {#if isOwner && activeOrganization}
-	<Dialog.Root bind:open={dialogOpen}>
-		<Dialog.Trigger
-			class="btn btn-sm preset-faded-surface-50-950 text-surface-600-400 hover:bg-error-300-700 hover:text-error-950-50 w-fit justify-between gap-1 text-sm"
-			>Delete organization</Dialog.Trigger
-		>
+	<Card.Root class="border-destructive/50 w-full">
+		<Card.Header>
+			<Card.Title>Delete organization</Card.Title>
+			<Card.Description>
+				Permanently delete this organization and all of its data. This action cannot be undone.
+			</Card.Description>
+		</Card.Header>
+		<Card.Footer>
+			<Dialog.Root bind:open={dialogOpen}>
+				<Dialog.Trigger class={buttonVariants({ variant: 'destructive' })}>
+					Delete organization
+				</Dialog.Trigger>
 
-		<Dialog.Content class="w-[90%] max-w-md">
-			<Dialog.Header>
-				<Dialog.Title>Delete organization</Dialog.Title>
-			</Dialog.Header>
+				<Dialog.Content class="w-[90%] max-w-md">
+					<Dialog.Header>
+						<Dialog.Title>Delete organization</Dialog.Title>
+					</Dialog.Header>
 
-			<article>
-				<div class="text-surface-700-300 space-y-3 text-sm">
-					<p>Are you sure you want to delete this organization?</p>
-					<div
-						class="bg-surface-200-800 border-surface-200-800 rounded-container border p-3 text-center"
-					>
-						<span class="text-surface-800-200 font-semibold">{activeOrganization.name}</span>
-					</div>
-					<p>All organization data will be permanently deleted and cannot be recovered.</p>
-				</div>
-			</article>
+					<article>
+						<div class="text-muted-foreground space-y-3 text-sm">
+							<p>Are you sure you want to delete this organization?</p>
+							<div class="bg-muted border-border rounded-md border p-3 text-center">
+								<span class="text-foreground font-semibold">{activeOrganization.name}</span>
+							</div>
+							<p>All organization data will be permanently deleted and cannot be recovered.</p>
+						</div>
+					</article>
 
-			<Dialog.Footer class="w-full">
-				<Dialog.Close class="btn preset-tonal" disabled={isDeleting}>Cancel</Dialog.Close>
-				<button
-					type="button"
-					class="btn preset-filled-error-500"
-					onclick={handleConfirm}
-					disabled={isDeleting}
-					aria-busy={isDeleting}
-				>
-					{#if isDeleting}
-						<Loader2Icon class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-						Deleting...
-					{:else}
-						Delete
-					{/if}
-				</button>
-			</Dialog.Footer>
-		</Dialog.Content>
-	</Dialog.Root>
+					<Dialog.Footer class="w-full">
+						<Dialog.Close class={buttonVariants({ variant: 'outline' })} disabled={isDeleting}>
+							Cancel
+						</Dialog.Close>
+						<Button variant="destructive" onclick={handleConfirm} loading={isDeleting}>
+							{#if isDeleting}
+								Deleting...
+							{:else}
+								Delete
+							{/if}
+						</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+		</Card.Footer>
+	</Card.Root>
 {/if}

@@ -31,6 +31,7 @@
 		{disabled}
 		inputmode="decimal"
 		autocomplete="off"
+		class="tabular-nums"
 		aria-invalid={error !== null ? 'true' : undefined}
 	/>
 	{#if error !== null}

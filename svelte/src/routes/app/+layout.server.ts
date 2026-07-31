@@ -3,6 +3,7 @@ import type { LayoutServerLoad } from './$types';
 import { api } from '$convex/_generated/api';
 import { building } from '$app/environment';
 import { ACTIVE_CAMPAIGN_COOKIE } from '$lib/campaigns/active.svelte';
+import { SIDEBAR_COOKIE, resolveSidebarOpen } from '$lib/shell/sidebar.svelte';
 
 const empty = {
 	access: { role: null, assignedCampaignIds: [], userId: null },
@@ -11,7 +12,11 @@ const empty = {
 };
 
 export const load = (async ({ locals, cookies }) => {
-	if (building || !locals.token) return empty;
+	// Read before the auth bail-out: the shell renders either way, and the width
+	// has to be right in the very first byte of HTML.
+	const sidebarOpen = resolveSidebarOpen(building ? undefined : cookies.get(SIDEBAR_COOKIE));
+
+	if (building || !locals.token) return { ...empty, sidebarOpen };
 
 	const client = createConvexHttpClient({ token: locals.token });
 
@@ -26,5 +31,5 @@ export const load = (async ({ locals, cookies }) => {
 	const activeCampaignId =
 		cookieId && campaigns.some((c) => c._id === cookieId) ? cookieId : (campaigns[0]?._id ?? null);
 
-	return { access, campaigns, activeCampaignId };
+	return { access, campaigns, activeCampaignId, sidebarOpen };
 }) satisfies LayoutServerLoad;

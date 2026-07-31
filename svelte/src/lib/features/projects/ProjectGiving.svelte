@@ -55,7 +55,7 @@
 			<EmptyState variant="plain" size="sm" title={m.projectDetail_noDonations()} />
 		{:else}
 			<Table.Root>
-				<Table.Header>
+				<Table.Header class="bg-muted">
 					<Table.Row>
 						<Table.Head>{m.field_date()}</Table.Head>
 						<Table.Head>{m.projectDetail_donor()}</Table.Head>

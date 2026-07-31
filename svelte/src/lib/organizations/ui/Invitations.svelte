@@ -1,10 +1,13 @@
 <script lang="ts">
 	// Primitives
 	import * as Dialog from '$lib/primitives/ui/dialog';
+	import * as Table from '$lib/primitives/ui/table';
+	import { Badge } from '$lib/primitives/ui/badge';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
 	import { toast } from 'svelte-sonner';
 	// Icons
 	import SearchIcon from '@lucide/svelte/icons/search';
-	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
 	// API
 	import { useQuery } from '@mmailaender/convex-svelte';
@@ -123,7 +126,7 @@
 {#if !invitationList}
 	<div>Loading invitations...</div>
 {:else if filteredInvitations.length === 0 && !searchQuery}
-	<div class="text-surface-600-400 p-8 text-center">
+	<div class="text-muted-foreground p-8 text-center">
 		<p>No pending invitations.</p>
 	</div>
 {:else}
@@ -132,11 +135,11 @@
 		<div class="flex flex-shrink-0 items-center gap-3 py-4">
 			<div class="relative flex-1">
 				<div class="pointer-events-none absolute inset-y-0 flex items-center">
-					<SearchIcon class="text-surface-400-600 size-4" />
+					<SearchIcon class="text-muted-foreground size-4" />
 				</div>
-				<input
+				<Input
 					type="text"
-					class="input w-hug w-full !border-0 !border-transparent pl-6 text-sm"
+					class="!border-0 !border-transparent pl-6 text-sm"
 					placeholder="Search invitations..."
 					value={searchQuery}
 					onchange={handleSearchChange}
@@ -147,7 +150,7 @@
 		<!-- Table Section - Scrollable area -->
 		<div class="min-h-0 flex-1">
 			{#if filteredInvitations.length === 0 && searchQuery}
-				<div class="text-surface-600-400 p-8 text-center">
+				<div class="text-muted-foreground p-8 text-center">
 					<p>No invitations match your search.</p>
 				</div>
 			{:else}
@@ -156,79 +159,62 @@
 					<div
 						class="max-h-[calc(90vh-12rem)] overflow-y-auto pb-12 sm:max-h-[calc(80vh-12rem)] md:max-h-[calc(70vh-12rem)]"
 					>
-						<table class="table w-full !table-fixed">
-							<thead class="border-surface-300-700 sticky top-0 z-20 border-b">
-								<tr>
-									<th class="text-surface-700-300 w-64 truncate p-2 !pl-0 text-left text-xs">
-										User
-									</th>
-									<th class="text-surface-700-300 w-32 p-2 !pl-0 text-left text-xs"> Expires </th>
-									<th class="text-surface-700-300 hidden w-32 p-2 text-left text-xs sm:table-cell">
-										Role
-									</th>
+						<Table.Root class="table-fixed">
+							<Table.Header class="sticky top-0 z-20">
+								<Table.Row>
+									<Table.Head class="w-64 truncate">User</Table.Head>
+									<Table.Head class="w-32">Expires</Table.Head>
+									<Table.Head class="hidden w-32 sm:table-cell">Role</Table.Head>
 									{#if isOwnerOrAdmin}
-										<th class="w-20 p-2 text-right"></th>
+										<Table.Head class="w-20 text-right"></Table.Head>
 									{/if}
-								</tr>
-							</thead>
-							<tbody>
+								</Table.Row>
+							</Table.Header>
+							<Table.Body>
 								{#each filteredInvitations as invitation (invitation.id)}
-									<tr class="!border-surface-300-700 !border-t">
+									<Table.Row>
 										<!-- User -->
-										<td class="!w-64 !max-w-64 !truncate !py-3 !pl-0">
+										<Table.Cell class="w-64 max-w-64 truncate">
 											<span class="truncate font-medium">{invitation.email}</span>
-										</td>
+										</Table.Cell>
 										<!-- Expires -->
-										<td class="!w-64 !max-w-64 !truncate !py-3 !pl-0">
+										<Table.Cell class="w-64 max-w-64 truncate">
 											<span class="truncate font-medium">
 												{new Date(invitation.expiresAt).toLocaleDateString()}
 											</span>
-										</td>
+										</Table.Cell>
 										<!-- Role -->
-										<td class="!text-surface-700-300 hidden !w-32 sm:table-cell">
-											<div class="flex items-center">
-												{#if invitation.role === 'owner'}
-													<span
-														class="badge preset-filled-primary-50-950 border-primary-200-800 h-6 border px-2"
-													>
-														Owner
-													</span>
-												{:else if invitation.role === 'admin'}
-													<span
-														class="badge preset-filled-warning-50-950 border-warning-200-800 h-6 border px-2"
-													>
-														Admin
-													</span>
-												{:else}
-													<span
-														class="badge preset-filled-surface-300-700 border-surface-400-600 h-6 border px-2"
-													>
-														Member
-													</span>
-												{/if}
-											</div>
-										</td>
+										<Table.Cell class="hidden w-32 sm:table-cell">
+											{#if invitation.role === 'owner'}
+												<Badge variant="default">Owner</Badge>
+											{:else if invitation.role === 'admin'}
+												<Badge variant="outline">Admin</Badge>
+											{:else}
+												<Badge variant="secondary">Member</Badge>
+											{/if}
+										</Table.Cell>
 										<!-- Actions -->
-										<td class="!w-20">
+										<Table.Cell class="w-20">
 											<div class="flex justify-end">
 												{#if isOwnerOrAdmin}
-													<button
+													<Button
 														type="button"
-														class="btn btn-sm preset-filled-surface-300-700"
+														variant="secondary"
+														size="sm"
 														onclick={() => {
 															selectedInvitationId = invitation.id;
 															isRevokeDialogOpen = true;
 														}}
 													>
 														Revoke
-													</button>
+													</Button>
 												{/if}
 											</div>
-										</td>
-									</tr>
+										</Table.Cell>
+									</Table.Row>
 								{/each}
-							</tbody>
-						</table>
+							</Table.Body>
+						</Table.Root>
 					</div>
 				</div>
 			{/if}
@@ -253,29 +239,17 @@
 			</article>
 
 			<Dialog.Footer class="w-full flex-shrink-0 p-6">
-				<button
-					type="button"
-					class="btn preset-tonal"
-					disabled={isRevoking}
-					onclick={() => (isRevokeDialogOpen = false)}
-				>
+				<Dialog.Close class={buttonVariants({ variant: 'outline' })} disabled={isRevoking}>
 					Cancel
-				</button>
+				</Dialog.Close>
 
-				<button
-					type="button"
-					class="btn preset-filled-error-500"
-					onclick={handleRevokeInvitation}
-					disabled={isRevoking}
-					aria-busy={isRevoking}
-				>
+				<Button variant="destructive" onclick={handleRevokeInvitation} loading={isRevoking}>
 					{#if isRevoking}
-						<Loader2Icon class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 						Revoking...
 					{:else}
 						Confirm
 					{/if}
-				</button>
+				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>

@@ -102,86 +102,92 @@
 	{:else if members.length === 0}
 		<EmptyState title={m.campaignContacts_empty()} description={m.campaignContacts_emptyBody()} />
 	{:else}
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head>{m.field_name()}</Table.Head>
-					<Table.Head>{m.field_email()}</Table.Head>
-					<Table.Head>{m.field_role()}</Table.Head>
-					<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#each members as member (member.contactId)}
+		<div class="overflow-hidden rounded-lg border">
+			<Table.Root>
+				<Table.Header class="bg-muted">
 					<Table.Row>
-						<Table.Cell class="font-medium">
-							{#if member.contact}
-								<a
-									href={resolve('/app/admin/contacts/[id]', { id: member.contact._id })}
-									class="hover:underline"
-								>
-									{contactDisplayName(member.contact)}
-								</a>
-							{:else}
-								—
-							{/if}
-							{#if member.viaProjects.length > 0}
-								<span class="text-muted-foreground block text-xs">
-									{m.campaignContacts_via()}
-									{member.viaProjects.map((p) => `${p.number} ${p.name}`).join(', ')}
-								</span>
-							{/if}
-						</Table.Cell>
-						<Table.Cell class="text-muted-foreground">{member.contact?.email ?? '—'}</Table.Cell>
-						<Table.Cell>
-							{#if member.membershipId === null}
-								<span class="text-muted-foreground text-sm">{m.campaignContacts_viaOnly()}</span>
-							{:else if canWrite}
-								<Select.Root
-									collection={roleCollection}
-									value={[member.role ?? 'attendee']}
-									onValueChange={(d: { value: string[] }) => {
-										const next = d.value[0];
-										if (next && next !== member.role && member.membershipId) {
-											changeRole(member.membershipId, next);
-										}
-									}}
-								>
-									<Select.Trigger size="sm" class="w-40" />
-									<Select.Content>
-										{#each roleCollection.items as option (option.value)}
-											<Select.Item item={option}>
-												<Select.ItemText>{option.label}</Select.ItemText>
-											</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							{:else}
-								<span class="text-muted-foreground">{campaignRoleLabel(member.role ?? '')}</span>
-							{/if}
-						</Table.Cell>
-						<Table.Cell class="text-right whitespace-nowrap">
-							{#if canWrite && member.membershipId === null}
-								<Button size="sm" variant="outline" onclick={() => addToCampaign(member.contactId)}>
-									{m.campaignContacts_addToCampaign()}
-								</Button>
-							{:else if canWrite && member.membershipId}
-								<Button
-									size="sm"
-									variant="ghost"
-									onclick={() => {
-										removing = member.membershipId;
-										confirmOpen = true;
-									}}
-								>
-									{m.action_remove()}
-								</Button>
-							{/if}
-						</Table.Cell>
+						<Table.Head>{m.field_name()}</Table.Head>
+						<Table.Head>{m.field_email()}</Table.Head>
+						<Table.Head>{m.field_role()}</Table.Head>
+						<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
 					</Table.Row>
-				{/each}
-			</Table.Body>
-		</Table.Root>
+				</Table.Header>
+				<Table.Body>
+					{#each members as member (member.contactId)}
+						<Table.Row>
+							<Table.Cell class="font-medium">
+								{#if member.contact}
+									<a
+										href={resolve('/app/admin/contacts/[id]', { id: member.contact._id })}
+										class="hover:underline"
+									>
+										{contactDisplayName(member.contact)}
+									</a>
+								{:else}
+									—
+								{/if}
+								{#if member.viaProjects.length > 0}
+									<span class="text-muted-foreground block text-xs">
+										{m.campaignContacts_via()}
+										{member.viaProjects.map((p) => `${p.number} ${p.name}`).join(', ')}
+									</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{member.contact?.email ?? '—'}</Table.Cell>
+							<Table.Cell>
+								{#if member.membershipId === null}
+									<span class="text-muted-foreground text-sm">{m.campaignContacts_viaOnly()}</span>
+								{:else if canWrite}
+									<Select.Root
+										collection={roleCollection}
+										value={[member.role ?? 'attendee']}
+										onValueChange={(d: { value: string[] }) => {
+											const next = d.value[0];
+											if (next && next !== member.role && member.membershipId) {
+												changeRole(member.membershipId, next);
+											}
+										}}
+									>
+										<Select.Trigger size="sm" class="w-40" />
+										<Select.Content>
+											{#each roleCollection.items as option (option.value)}
+												<Select.Item item={option}>
+													<Select.ItemText>{option.label}</Select.ItemText>
+												</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+								{:else}
+									<span class="text-muted-foreground">{campaignRoleLabel(member.role ?? '')}</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-right whitespace-nowrap">
+								{#if canWrite && member.membershipId === null}
+									<Button
+										size="sm"
+										variant="outline"
+										onclick={() => addToCampaign(member.contactId)}
+									>
+										{m.campaignContacts_addToCampaign()}
+									</Button>
+								{:else if canWrite && member.membershipId}
+									<Button
+										size="sm"
+										variant="ghost"
+										onclick={() => {
+											removing = member.membershipId;
+											confirmOpen = true;
+										}}
+									>
+										{m.action_remove()}
+									</Button>
+								{/if}
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
 	{/if}
 </PageContainer>
 

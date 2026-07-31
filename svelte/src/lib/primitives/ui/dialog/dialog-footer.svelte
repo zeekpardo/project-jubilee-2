@@ -14,7 +14,7 @@
 	bind:this={ref}
 	data-scope="dialog"
 	data-part="footer"
-	class={cn('flex justify-end gap-2 pt-6 md:flex-row', className)}
+	class={cn('flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className)}
 	{...restProps}
 >
 	{@render children?.()}

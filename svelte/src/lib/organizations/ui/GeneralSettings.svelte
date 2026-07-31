@@ -15,6 +15,8 @@
 	import * as Avatar from '$lib/primitives/ui/avatar';
 	import * as ImageCropper from '$lib/primitives/ui/image-cropper';
 	import { getFileFromUrl } from '$lib/primitives/ui/image-cropper';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
 
 	// Utils
 	import { optimizeImage } from '$lib/primitives/utils/optimizeImage';
@@ -263,10 +265,10 @@
 	<div class="flex w-full flex-col items-start gap-6">
 		<ImageCropper.Root bind:src={cropSrc} accept="image/*" onCropped={handleCropped}>
 			<ImageCropper.UploadTrigger>
-				<div class="rounded-container relative cursor-pointer transition-all duration-200">
+				<div class="relative cursor-pointer rounded-xl transition-all duration-200">
 					{#key logoKey}
 						<Avatar.Root
-							class="rounded-container size-20"
+							class="size-20 rounded-xl"
 							onStatusChange={(e) => (imageLoadingStatus = e.status)}
 						>
 							<Avatar.Image
@@ -274,16 +276,16 @@
 								alt={activeOrganization.name || 'Organization'}
 							/>
 							<Avatar.Fallback
-								class="bg-surface-300-700 hover:bg-surface-400-600/80 rounded-container duration-150 ease-in-out"
+								class="bg-muted hover:bg-muted/80 rounded-xl duration-150 ease-in-out"
 							>
-								<Building2Icon class="text-surface-700-300 size-10" />
+								<Building2Icon class="text-muted-foreground size-10" />
 							</Avatar.Fallback>
 						</Avatar.Root>
 					{/key}
 
 					{#if showLogoOverlay}
 						<div
-							class="bg-surface-50-950 rounded-container pointer-events-none absolute inset-0 flex items-center justify-center"
+							class="bg-background/80 pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl"
 						>
 							<div
 								class="h-6 w-6 animate-spin rounded-full border-2 border-white border-b-transparent"
@@ -292,7 +294,7 @@
 					{/if}
 
 					<div
-						class="badge-icon preset-filled-surface-300-700 ring-surface-50-950 dark:ring-surface-100-900 absolute -right-1.5 -bottom-1.5 size-3 rounded-full ring-4"
+						class="bg-muted ring-background absolute -right-1.5 -bottom-1.5 flex size-6 items-center justify-center rounded-full ring-4"
 					>
 						<PencilIcon class="size-4" />
 					</div>
@@ -311,11 +313,10 @@
 		<div class="flex w-full flex-col gap-3">
 			<div
 				class={[
-					'border-surface-300-700 rounded-container relative w-full border px-3.5 py-2 transition-all duration-200 ease-in-out',
+					'border-border relative w-full rounded-xl border px-3.5 py-2 transition-all duration-200 ease-in-out',
 					{
 						'cursor-pointer': isOwnerOrAdmin && !isEditingName,
-						'hover:bg-surface-200-800': isOwnerOrAdmin && !isEditingName,
-						'hover:border-surface-200-800': isOwnerOrAdmin && !isEditingName
+						'hover:bg-muted': isOwnerOrAdmin && !isEditingName
 					}
 				]}
 			>
@@ -323,7 +324,7 @@
 					class="flex items-center justify-between gap-3 transition-all duration-200 ease-in-out"
 				>
 					<div class="flex w-full flex-col gap-0">
-						<span class="text-surface-600-400 text-xs">Organization name</span>
+						<span class="text-muted-foreground text-xs">Organization name</span>
 						<!-- View mode (collapses when editing) -->
 						<div
 							class={[
@@ -351,32 +352,30 @@
 						>
 							<div class="overflow-hidden">
 								<form onsubmit={handleNameSubmit} class="flex w-full flex-col gap-3">
-									<input
-										bind:this={nameInputEl}
-										type="text"
-										class="input w-full"
-										bind:value={name}
-									/>
+									<Input bind:ref={nameInputEl} type="text" bind:value={name} />
 									<div class="mb-1 flex gap-1.5">
-										<button
+										<Button
 											type="button"
-											class="btn btn-sm preset-tonal w-full"
+											variant="secondary"
+											size="sm"
+											class="w-full"
 											onclick={() => {
 												name = activeOrganization.name;
 												isEditingName = false;
 											}}
 										>
 											Cancel
-										</button>
-										<button
+										</Button>
+										<Button
 											type="submit"
-											class="btn btn-sm preset-filled-primary-500 w-full"
+											size="sm"
+											class="w-full"
 											disabled={!name ||
 												name.trim() === '' ||
 												name.trim() === activeOrganization.name.trim()}
 										>
 											Save
-										</button>
+										</Button>
 									</div>
 								</form>
 							</div>
@@ -385,7 +384,9 @@
 					<!-- Edit affordance and full-area overlay button in view mode -->
 					{#if isOwnerOrAdmin && !isEditingName}
 						<div class="shrink-0">
-							<span class="btn-icon preset-filled-surface-50-950 pointer-events-none p-2">
+							<span
+								class="bg-muted pointer-events-none flex size-8 items-center justify-center rounded-md"
+							>
 								<PencilIcon class="size-4" />
 							</span>
 						</div>
@@ -408,11 +409,10 @@
 			<!-- Inline editable organization slug -->
 			<div
 				class={[
-					'border-surface-300-700 rounded-container relative w-full border px-3.5 py-2 transition-all duration-200 ease-in-out',
+					'border-border relative w-full rounded-xl border px-3.5 py-2 transition-all duration-200 ease-in-out',
 					{
 						'cursor-pointer': isOwnerOrAdmin && !isEditingSlug,
-						'hover:bg-surface-200-800': isOwnerOrAdmin && !isEditingSlug,
-						'hover:border-surface-200-800': isOwnerOrAdmin && !isEditingSlug
+						'hover:bg-muted': isOwnerOrAdmin && !isEditingSlug
 					}
 				]}
 			>
@@ -420,7 +420,7 @@
 					class="flex items-center justify-between gap-3 transition-all duration-200 ease-in-out"
 				>
 					<div class="flex w-full flex-col gap-0">
-						<span class="text-surface-600-400 text-xs">Slug</span>
+						<span class="text-muted-foreground text-xs">Slug</span>
 						<!-- View mode (collapses when editing) -->
 						<div
 							class={[
@@ -448,17 +448,18 @@
 						>
 							<div class="overflow-hidden">
 								<form onsubmit={handleSlugSubmit} class="flex w-full flex-col gap-3">
-									<input
-										bind:this={slugInputEl}
+									<Input
+										bind:ref={slugInputEl}
 										type="text"
-										class="input w-full"
 										bind:value={slug}
 										disabled={isSavingSlug}
 									/>
 									<div class="mb-1 flex gap-1.5">
-										<button
+										<Button
 											type="button"
-											class="btn btn-sm preset-tonal w-full"
+											variant="secondary"
+											size="sm"
+											class="w-full"
 											disabled={isSavingSlug}
 											onclick={() => {
 												slug = activeOrganization.slug || '';
@@ -466,17 +467,19 @@
 											}}
 										>
 											Cancel
-										</button>
-										<button
+										</Button>
+										<Button
 											type="submit"
-											class="btn btn-sm preset-filled-primary-500 w-full"
+											size="sm"
+											class="w-full"
+											loading={isSavingSlug}
 											disabled={isSavingSlug ||
 												!slug ||
 												slug.trim() === '' ||
 												slug.trim() === (activeOrganization.slug || '').trim()}
 										>
 											{isSavingSlug ? 'Saving...' : 'Save'}
-										</button>
+										</Button>
 									</div>
 								</form>
 							</div>
@@ -484,7 +487,9 @@
 					</div>
 					{#if isOwnerOrAdmin && !isEditingSlug}
 						<div class="shrink-0">
-							<span class="btn-icon preset-filled-surface-50-950 pointer-events-none p-2">
+							<span
+								class="bg-muted pointer-events-none flex size-8 items-center justify-center rounded-md"
+							>
 								<PencilIcon class="size-4" />
 							</span>
 						</div>

@@ -4,6 +4,9 @@
 
 	// Primitives
 	import * as Password from '$lib/primitives/ui/password';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
 
 	// API
 	import { getAuthContext } from '$lib/auth/context.svelte';
@@ -159,27 +162,20 @@
 <form onsubmit={handleSubmit} novalidate autocomplete="off" class="flex flex-col gap-8">
 	<!-- Inputs -->
 	<div class="flex flex-col gap-5">
-		<div class="flex flex-col">
-			<label class="label" for="email">Email</label>
-			<input
-				id="email"
-				type="email"
-				value={email}
-				disabled
-				class="input preset-filled-surface-200 cursor-not-allowed opacity-60"
-			/>
+		<div class="flex flex-col gap-2">
+			<Label for="email">Email</Label>
+			<Input id="email" type="email" value={email} disabled />
 		</div>
 
 		{#if mode === 'register'}
-			<div class="flex flex-col">
-				<label class="label" for="name">Full Name</label>
-				<input
+			<div class="flex flex-col gap-2">
+				<Label for="name">Full Name</Label>
+				<Input
 					id="name"
-					bind:this={nameInputRef}
+					bind:ref={nameInputRef}
 					bind:value={fullName}
 					name="name"
 					type="text"
-					class="input preset-filled-surface-200"
 					placeholder="Enter your full name"
 					autocomplete="name"
 					required
@@ -190,7 +186,7 @@
 				{#if nameErrorMessage}
 					<span
 						id="name-error"
-						class="text-error-600-400 pt-1 pb-1 text-xs"
+						class="text-destructive pt-1 pb-1 text-xs"
 						aria-live="polite"
 						role="status"
 					>
@@ -200,8 +196,8 @@
 			</div>
 		{/if}
 
-		<div class="flex flex-col">
-			<label class="label" for="password">Password</label>
+		<div class="flex flex-col gap-2">
+			<Label for="password">Password</Label>
 			<Password.Root minScore={mode === 'register' ? 3 : 0}>
 				<Password.Input
 					id="password"
@@ -220,14 +216,16 @@
 			</Password.Root>
 			{#if mode === 'login' && authConstants.sendEmails}
 				<div class="flex flex-row items-center justify-end pt-1">
-					<button
+					<Button
 						type="button"
-						class="anchor mb-1 shrink-0 text-xs"
+						variant="link"
+						size="sm"
+						class="h-auto p-0 text-xs"
 						onclick={handleForgotPassword}
 						disabled={submitting || isRequestingReset}
 					>
 						{isRequestingReset ? 'Sending...' : 'Forgot password?'}
-					</button>
+					</Button>
 				</div>
 			{/if}
 		</div>
@@ -235,21 +233,16 @@
 
 	<!-- Actions -->
 	<div class="flex flex-col gap-2">
-		<button type="submit" class="btn preset-filled w-full" disabled={submitting}>
+		<Button type="submit" class="w-full" disabled={submitting} loading={submitting}>
 			{#if submitting}
-				<div class="flex items-center gap-2">
-					<div
-						class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-					></div>
-					{mode === 'register' ? 'Creating account...' : 'Signing in...'}
-				</div>
+				{mode === 'register' ? 'Creating account...' : 'Signing in...'}
 			{:else}
 				{mode === 'register' ? 'Create Account' : 'Sign In'}
 			{/if}
-		</button>
+		</Button>
 
-		<button type="button" class="btn" onclick={onBack} disabled={submitting}>
+		<Button type="button" variant="ghost" onclick={onBack} disabled={submitting}>
 			Use a different email
-		</button>
+		</Button>
 	</div>
 </form>

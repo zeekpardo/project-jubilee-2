@@ -126,7 +126,7 @@
 			{/if}
 			<button
 				type="button"
-				class="text-muted-foreground hover:text-foreground p-1"
+				class="text-muted-foreground hover:text-foreground hover:bg-muted flex h-7 w-7 items-center justify-center rounded"
 				aria-label={m.action_save()}
 				onmousedown={(e) => e.preventDefault()}
 				onclick={commit}
@@ -135,7 +135,7 @@
 			</button>
 			<button
 				type="button"
-				class="text-muted-foreground hover:text-foreground p-1"
+				class="text-muted-foreground hover:text-foreground hover:bg-muted flex h-7 w-7 items-center justify-center rounded"
 				aria-label={m.action_cancel()}
 				onmousedown={(e) => e.preventDefault()}
 				onclick={cancel}
@@ -148,13 +148,19 @@
 			type="button"
 			{disabled}
 			class={cn(
-				'flex w-full items-start gap-1.5 text-left',
-				disabled ? 'cursor-default' : 'hover:text-foreground'
+				'hover:bg-muted/60 focus-visible:ring-ring/50 -mx-1 flex max-w-full flex-1 items-start gap-1.5 rounded px-1 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-default disabled:hover:bg-transparent',
+				multiline && 'w-full'
 			)}
 			aria-label={ariaLabel}
 			onclick={begin}
 		>
-			<span class={cn('min-w-0 flex-1', !display && 'text-muted-foreground italic')}>
+			<span
+				class={cn(
+					'min-w-0 flex-1',
+					multiline && 'whitespace-pre-line',
+					!display && 'text-muted-foreground italic'
+				)}
+			>
 				{display || placeholder}
 			</span>
 			{#if !disabled}

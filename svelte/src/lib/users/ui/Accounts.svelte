@@ -16,6 +16,8 @@
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Drawer from '$lib/primitives/ui/drawer';
 	import * as Password from '$lib/primitives/ui/password';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
 	import { toast } from 'svelte-sonner';
 
 	// Icons
@@ -409,13 +411,13 @@
 <div class="flex w-full flex-col gap-3 pb-6">
 	<!-- Current Accounts -->
 	<div>
-		<span class="text-surface-600-400 text-xs">Linked Accounts</span>
+		<span class="text-muted-foreground text-xs">Linked Accounts</span>
 		{#if accountList && accountList.length > 0}
 			<div class="flex flex-col gap-3 pt-3">
 				{#each accountList as account (account.id)}
 					{@const ProviderIcon = getProviderIcon(account.providerId)}
 
-					<div class="border-surface-300-700 rounded-container flex w-full flex-col border p-3">
+					<div class="border-border flex w-full flex-col rounded-xl border p-3">
 						<div class="flex w-full flex-row items-center justify-between">
 							<div class="flex items-center gap-3 pl-1">
 								<ProviderIcon size={16} />
@@ -423,10 +425,11 @@
 									{getProviderLabel(account.providerId)}
 								</div>
 							</div>
-							<div class="flex items-center">
+							<div class="flex items-center gap-2">
 								{#if account.providerId === 'credential'}
-									<button
-										class="btn btn-sm preset-tonal mr-2"
+									<Button
+										variant="secondary"
+										size="sm"
 										onclick={async () => {
 											isEditingPasswordInline = true;
 											currentPassword = '';
@@ -436,11 +439,13 @@
 										}}
 									>
 										Update
-									</button>
+									</Button>
 								{/if}
 								{#if accountList.length > 1}
-									<button
-										class="btn-icon preset-faded-surface-50-950 hover:bg-error-300-700 hover:text-error-950-50"
+									<Button
+										variant="ghost"
+										size={unlinkingAccountId === account.id ? 'sm' : 'icon'}
+										class="hover:text-destructive"
 										disabled={unlinkingAccountId === account.id}
 										onclick={() => unlinkAccount(account.accountId, account.providerId)}
 									>
@@ -449,7 +454,7 @@
 										{:else}
 											<Trash2Icon class="size-4" />
 										{/if}
-									</button>
+									</Button>
 								{/if}
 							</div>
 						</div>
@@ -469,10 +474,9 @@
 										onsubmit={handleChangePasswordSubmit}
 										class="flex w-full flex-col gap-3 pt-4"
 									>
-										<input
-											bind:this={currentPasswordInputEl}
+										<Input
+											bind:ref={currentPasswordInputEl}
 											type="password"
-											class="input w-full"
 											bind:value={currentPassword}
 											placeholder="Enter your current password"
 											autocomplete="current-password"
@@ -493,9 +497,11 @@
 											<Password.Strength />
 										</Password.Root>
 										<div class="flex gap-1.5">
-											<button
+											<Button
 												type="button"
-												class="btn btn-sm preset-tonal w-full"
+												variant="secondary"
+												size="sm"
+												class="w-full"
 												onclick={() => {
 													currentPassword = '';
 													newPassword = '';
@@ -504,14 +510,16 @@
 												disabled={isChangingPassword}
 											>
 												Cancel
-											</button>
-											<button
+											</Button>
+											<Button
 												type="submit"
-												class="btn btn-sm preset-filled-primary-500 w-full"
+												size="sm"
+												class="w-full"
+												loading={isChangingPassword}
 												disabled={isChangingPassword || !currentPassword || !newPassword}
 											>
 												{isChangingPassword ? 'Changing...' : 'Change Password'}
-											</button>
+											</Button>
 										</div>
 									</form>
 								</div>
@@ -521,7 +529,7 @@
 				{/each}
 			</div>
 		{:else}
-			<div class="text-surface-600-400 mt-2 text-sm">No accounts found</div>
+			<div class="text-muted-foreground mt-2 text-sm">No accounts found</div>
 		{/if}
 	</div>
 
@@ -541,7 +549,7 @@
 				</Select.Content>
 			</Select.Root>
 			{#if isLinking}
-				<p class="text-surface-600-400 mt-2 text-sm">Linking account...</p>
+				<p class="text-muted-foreground mt-2 text-sm">Linking account...</p>
 			{/if}
 		</div>
 	{/if}
@@ -575,10 +583,13 @@
 						</Password.Root>
 					</label>
 					<Dialog.Footer>
-						<Dialog.Close class="btn preset-tonal w-full md:w-fit">Cancel</Dialog.Close>
-						<button
+						<Dialog.Close class={buttonVariants({ variant: 'outline' }) + ' w-full md:w-fit'}
+							>Cancel</Dialog.Close
+						>
+						<Button
 							type="submit"
-							class="btn preset-filled-primary-500 w-full md:w-fit"
+							class="w-full md:w-fit"
+							loading={isSettingPassword}
 							disabled={isSettingPassword}
 						>
 							{#if isSettingPassword}
@@ -586,7 +597,7 @@
 							{:else}
 								Set Password
 							{/if}
-						</button>
+						</Button>
 					</Dialog.Footer>
 				</div>
 			</form>
@@ -623,10 +634,13 @@
 						</Password.Root>
 					</label>
 					<Drawer.Footer>
-						<Drawer.Close class="btn preset-tonal w-full md:w-fit">Cancel</Drawer.Close>
-						<button
+						<Drawer.Close class={buttonVariants({ variant: 'outline' }) + ' w-full md:w-fit'}
+							>Cancel</Drawer.Close
+						>
+						<Button
 							type="submit"
-							class="btn preset-filled-primary-500 w-full md:w-fit"
+							class="w-full md:w-fit"
+							loading={isSettingPassword}
 							disabled={isSettingPassword}
 						>
 							{#if isSettingPassword}
@@ -634,7 +648,7 @@
 							{:else}
 								Set Password
 							{/if}
-						</button>
+						</Button>
 					</Drawer.Footer>
 				</div>
 			</form>

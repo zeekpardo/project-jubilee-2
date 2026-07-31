@@ -13,4 +13,11 @@
 	}: ComboboxClearTriggerProps = $props();
 </script>
 
-<ComboboxPrimitive.ClearTrigger bind:ref class={cn('relative', className)} {...restProps} />
+<ComboboxPrimitive.ClearTrigger
+	bind:ref
+	class={cn(
+		'text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50',
+		className
+	)}
+	{...restProps}
+/>

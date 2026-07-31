@@ -12,6 +12,10 @@
 	// Primitives
 	import { toast } from 'svelte-sonner';
 	import { tick } from 'svelte';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Badge } from '$lib/primitives/ui/badge';
+	import { Skeleton } from '$lib/primitives/ui/skeleton';
 
 	// Types
 	import type { GetActiveUserType } from '$lib/auth/types';
@@ -86,22 +90,21 @@
 
 <div class="flex flex-col gap-6">
 	{#if !activeUser}
-		<div class="placeholder h-16 w-full animate-pulse"></div>
+		<Skeleton class="h-16 w-full" />
 	{:else}
 		<!-- Inline editable email (matches ProfileInfo.svelte UX) -->
 		<div
 			class={[
-				'border-surface-300-700 rounded-container relative w-full border px-3.5 py-2 transition-all duration-200 ease-in-out',
+				'border-border relative w-full rounded-xl border px-3.5 py-2 transition-all duration-200 ease-in-out',
 				{
 					'cursor-pointer': !isEditingEmail,
-					'hover:bg-surface-200-800': !isEditingEmail,
-					'hover:border-surface-200-800': !isEditingEmail
+					'hover:bg-muted': !isEditingEmail
 				}
 			]}
 		>
 			<div class="flex items-center justify-between gap-3 transition-all duration-200 ease-in-out">
 				<div class="flex w-full flex-col">
-					<span class="text-surface-600-400 text-xs">Email Address</span>
+					<span class="text-muted-foreground text-xs">Email Address</span>
 					<!-- View mode (collapses when editing) -->
 					<div
 						class={[
@@ -116,9 +119,9 @@
 							<div class="flex items-center gap-2">
 								<span class="truncate text-sm">{activeUser.email}</span>
 								{#if activeUser.emailVerified}
-									<span class="badge preset-filled-success-100-900 text-xs">Verified</span>
+									<Badge variant="secondary" class="text-xs">Verified</Badge>
 								{:else}
-									<span class="badge preset-filled-warning-100-900 text-xs">Not verified</span>
+									<Badge variant="outline" class="text-xs">Not verified</Badge>
 								{/if}
 							</div>
 						</div>
@@ -136,19 +139,20 @@
 					>
 						<div class="overflow-hidden">
 							<form onsubmit={handleSubmit} class="flex flex-col gap-3">
-								<input
-									bind:this={emailInputEl}
+								<Input
+									bind:ref={emailInputEl}
 									type="email"
-									class="input w-full"
 									bind:value={newEmail}
 									placeholder="Enter new email address"
 									required
 									disabled={isSubmitting}
 								/>
 								<div class="mb-1 flex gap-1.5">
-									<button
+									<Button
 										type="button"
-										class="btn btn-sm preset-tonal w-full"
+										variant="secondary"
+										size="sm"
+										class="w-full"
 										onclick={() => {
 											newEmail = activeUser.email;
 											isEditingEmail = false;
@@ -156,17 +160,19 @@
 										disabled={isSubmitting}
 									>
 										Cancel
-									</button>
-									<button
+									</Button>
+									<Button
 										type="submit"
-										class="btn btn-sm preset-filled-primary-500 w-full"
+										size="sm"
+										class="w-full"
+										loading={isSubmitting}
 										disabled={isSubmitting ||
 											!newEmail ||
 											newEmail.trim() === '' ||
 											newEmail === activeUser.email}
 									>
 										{isSubmitting ? 'Verifying...' : 'Verify Email'}
-									</button>
+									</Button>
 								</div>
 							</form>
 						</div>
@@ -175,7 +181,9 @@
 				<!-- Edit affordance and full-area overlay button in view mode -->
 				{#if !isEditingEmail}
 					<div class="shrink-0">
-						<span class=" btn-icon preset-filled-surface-50-950 pointer-events-none p-2">
+						<span
+							class="bg-muted pointer-events-none flex size-8 items-center justify-center rounded-md"
+						>
 							<PencilIcon class="size-4" />
 						</span>
 					</div>

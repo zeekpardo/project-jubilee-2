@@ -20,10 +20,7 @@
 <div
 	role="radiogroup"
 	aria-label={m.theme_modeLabel()}
-	class={cn(
-		'border-surface-300-700 rounded-container inline-flex items-center gap-0.5 border p-0.5',
-		className
-	)}
+	class={cn('bg-muted inline-flex items-center gap-0.5 rounded-lg p-[3px]', className)}
 >
 	{#each MODES as value (value)}
 		{@const Icon = icons[value]}
@@ -34,10 +31,10 @@
 			aria-label={labels[value]}
 			title={labels[value]}
 			class={cn(
-				'rounded-base flex size-7 items-center justify-center transition-colors duration-200',
+				'flex size-7 items-center justify-center rounded-md border border-transparent transition-[color,box-shadow,background-color] duration-200',
 				themeState.mode === value
-					? 'bg-surface-200-800 text-surface-950-50'
-					: 'text-surface-600-400 hover:text-surface-950-50'
+					? 'bg-background text-foreground dark:border-input dark:bg-input/30 shadow-sm'
+					: 'text-muted-foreground hover:text-foreground'
 			)}
 			onclick={() => themeState.setMode(value)}
 		>

@@ -14,7 +14,7 @@
 	bind:ref
 	bind:value
 	class={cn(
-		'flex',
+		'flex gap-2',
 		'data-[orientation=vertical]:w-full data-[orientation=vertical]:shrink-0 data-[orientation=vertical]:flex-row data-[orientation=vertical]:items-start',
 		'data-[orientation=horizontal]:flex-col',
 		className

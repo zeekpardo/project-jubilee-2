@@ -14,7 +14,7 @@
 	bind:this={ref}
 	data-slot="skeleton"
 	aria-hidden="true"
-	class={cn('bg-muted animate-pulse rounded-md', className)}
+	class={cn('bg-accent animate-pulse rounded-md', className)}
 	{...restProps}
 >
 	{@render children?.()}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { cn } from '$lib/primitives/utils';
+	import { Button } from '$lib/primitives/ui/button';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	const { authClient } = getAuthContext();
 	import { invalidateAll } from '$app/navigation';
@@ -24,12 +25,11 @@
 	}
 </script>
 
-<button
-	class={cn(
-		'btn preset-faded-surface-50-950 hover:bg-surface-200-800 h-10 justify-between gap-1 text-sm',
-		className
-	)}
+<Button
+	type="button"
+	variant="ghost"
+	class={cn('h-10 justify-between gap-1 text-sm', className)}
 	onclick={handleSignOut}
 >
 	Sign out
-</button>
+</Button>

@@ -260,82 +260,84 @@
 		{:else if allocations.length === 0}
 			<EmptyState class="w-full" title={m.state_empty()} />
 		{:else}
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head>{m.money_allocationCampaign()}</Table.Head>
-						<Table.Head>{m.money_allocationProject()}</Table.Head>
-						<Table.Head>{m.money_budgetItem()}</Table.Head>
-						<Table.Head>{m.money_allocationAmount()}</Table.Head>
-						{#if canWrite}
-							<Table.Head class="text-right">{m.field_actions()}</Table.Head>
-						{/if}
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each allocations as allocation (allocation._id)}
+			<div class="w-full overflow-hidden rounded-lg border">
+				<Table.Root>
+					<Table.Header class="bg-muted">
 						<Table.Row>
-							<Table.Cell class="text-muted-foreground">
-								{campaignName(allocation.campaignId)}
-							</Table.Cell>
-							<Table.Cell class="font-medium">{projectName(allocation.projectId)}</Table.Cell>
-							<Table.Cell class="text-muted-foreground">
-								{allocation.budgetItem || '—'}
-							</Table.Cell>
-							<Table.Cell class="font-medium tabular-nums">
-								{formatCents(allocation.amountCents)}
-							</Table.Cell>
+							<Table.Head>{m.money_allocationCampaign()}</Table.Head>
+							<Table.Head>{m.money_allocationProject()}</Table.Head>
+							<Table.Head>{m.money_budgetItem()}</Table.Head>
+							<Table.Head>{m.money_allocationAmount()}</Table.Head>
 							{#if canWrite}
-								<Table.Cell class="text-right">
-									{#if pendingRemoveId === allocation._id}
-										<div class="flex items-center justify-end gap-2">
-											<span class="text-muted-foreground text-xs">
-												{m.money_deleteAllocation()}
-											</span>
-											<Button
-												size="sm"
-												variant="destructive"
-												loading={isRemoving}
-												disabled={isRemoving}
-												onclick={() => removeAllocation(allocation._id)}
-											>
-												{m.action_confirm()}
-											</Button>
-											<Button
-												size="sm"
-												variant="outline"
-												disabled={isRemoving}
-												onclick={() => (pendingRemoveId = null)}
-											>
-												{m.action_cancel()}
-											</Button>
-										</div>
-									{:else}
-										<div class="flex items-center justify-end gap-1">
-											<Button
-												size="sm"
-												variant="ghost"
-												aria-label={m.action_edit()}
-												onclick={() => startEdit(allocation)}
-											>
-												<PencilIcon class="size-4" />
-											</Button>
-											<Button
-												size="sm"
-												variant="ghost"
-												aria-label={m.money_deleteAllocation()}
-												onclick={() => (pendingRemoveId = allocation._id)}
-											>
-												<Trash2Icon class="size-4" />
-											</Button>
-										</div>
-									{/if}
-								</Table.Cell>
+								<Table.Head class="text-right">{m.field_actions()}</Table.Head>
 							{/if}
 						</Table.Row>
-					{/each}
-				</Table.Body>
-			</Table.Root>
+					</Table.Header>
+					<Table.Body>
+						{#each allocations as allocation (allocation._id)}
+							<Table.Row>
+								<Table.Cell class="text-muted-foreground">
+									{campaignName(allocation.campaignId)}
+								</Table.Cell>
+								<Table.Cell class="font-medium">{projectName(allocation.projectId)}</Table.Cell>
+								<Table.Cell class="text-muted-foreground">
+									{allocation.budgetItem || '—'}
+								</Table.Cell>
+								<Table.Cell class="font-medium tabular-nums">
+									{formatCents(allocation.amountCents)}
+								</Table.Cell>
+								{#if canWrite}
+									<Table.Cell class="text-right">
+										{#if pendingRemoveId === allocation._id}
+											<div class="flex items-center justify-end gap-2">
+												<span class="text-muted-foreground text-xs">
+													{m.money_deleteAllocation()}
+												</span>
+												<Button
+													size="sm"
+													variant="destructive"
+													loading={isRemoving}
+													disabled={isRemoving}
+													onclick={() => removeAllocation(allocation._id)}
+												>
+													{m.action_confirm()}
+												</Button>
+												<Button
+													size="sm"
+													variant="outline"
+													disabled={isRemoving}
+													onclick={() => (pendingRemoveId = null)}
+												>
+													{m.action_cancel()}
+												</Button>
+											</div>
+										{:else}
+											<div class="flex items-center justify-end gap-1">
+												<Button
+													size="sm"
+													variant="ghost"
+													aria-label={m.action_edit()}
+													onclick={() => startEdit(allocation)}
+												>
+													<PencilIcon class="size-4" />
+												</Button>
+												<Button
+													size="sm"
+													variant="ghost"
+													aria-label={m.money_deleteAllocation()}
+													onclick={() => (pendingRemoveId = allocation._id)}
+												>
+													<Trash2Icon class="size-4" />
+												</Button>
+											</div>
+										{/if}
+									</Table.Cell>
+								{/if}
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
 		{/if}
 
 		{#if formOpen}

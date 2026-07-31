@@ -34,7 +34,12 @@
 	bind:this={ref}
 	{...rest}
 	{tabindex}
-	class={cn(children ? 'btn hover:preset-tonal' : 'btn-icon hover:preset-tonal', className)}
+	class={cn(
+		children
+			? 'btn hover:bg-accent hover:text-accent-foreground'
+			: 'btn-icon hover:bg-accent hover:text-accent-foreground',
+		className
+	)}
 	type="button"
 	name="copy"
 	onclick={async () => {

@@ -9,4 +9,11 @@
 	let { ref = $bindable(null), class: className, ...restProps }: ComboboxLabelProps = $props();
 </script>
 
-<ComboboxPrimitive.Label bind:ref class={cn('relative', className)} {...restProps} />
+<ComboboxPrimitive.Label
+	bind:ref
+	class={cn(
+		'text-foreground text-sm leading-none font-medium select-none data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+		className
+	)}
+	{...restProps}
+/>

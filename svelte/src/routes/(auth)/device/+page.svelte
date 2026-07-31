@@ -4,6 +4,11 @@
 	import { page } from '$app/state';
 	import { AUTH_CONSTANTS } from '$convex/auth.constants';
 
+	// Primitives
+	import * as Card from '$lib/primitives/ui/card';
+	import * as Alert from '$lib/primitives/ui/alert';
+	import { Button } from '$lib/primitives/ui/button';
+
 	let userCode: string = $state('');
 	let verifyLoading = $state(true);
 	let verifyError: string | null = $state(null);
@@ -66,58 +71,67 @@
 	}
 </script>
 
-<section class="mx-auto max-w-lg p-6">
-	<h1 class="mb-4 text-2xl font-semibold">Authorize Device</h1>
+<div class="flex min-h-svh w-full items-center justify-center p-4">
+	<Card.Root class="w-full max-w-lg">
+		<Card.Header>
+			<Card.Title class="text-lg">Authorize Device</Card.Title>
+		</Card.Header>
 
-	{#if AUTH_CONSTANTS.deviceAuthorization}
-		{#if verifyLoading}
-			<p class="opacity-80">Verifying your code…</p>
-		{:else if verifyError}
-			<div class="rounded-container bg-error-50-950 text-error-contrast-50-950 mb-4 p-3">
-				<p>{verifyError}</p>
-			</div>
-			<p class="text-sm opacity-80">
-				Check that you opened this page from the device and that the URL contains a valid code.
-			</p>
-		{:else if actionDone === 'approved'}
-			<div class="rounded-container text-success-contrast-50-950 bg-success-50-950 mb-4 p-3">
-				<p>Success! You approved the request.</p>
-			</div>
-			<p class="opacity-80">
-				You can return to the device now. The device should connect automatically.
-			</p>
-		{:else if actionDone === 'denied'}
-			<div class="rounded-container text-warning-contrast-50-950 bg-warning-50-950 mb-4 p-3">
-				<p>Request denied.</p>
-			</div>
-			<p class="opacity-80">You can close this window.</p>
-		{:else if verified}
-			<p class="mb-6 opacity-80">Do you want to sign in on your device?</p>
+		<Card.Content>
+			{#if AUTH_CONSTANTS.deviceAuthorization}
+				{#if verifyLoading}
+					<p class="text-muted-foreground">Verifying your code…</p>
+				{:else if verifyError}
+					<Alert.Root variant="destructive" class="mb-4">
+						<Alert.Description>{verifyError}</Alert.Description>
+					</Alert.Root>
+					<p class="text-muted-foreground text-sm">
+						Check that you opened this page from the device and that the URL contains a valid code.
+					</p>
+				{:else if actionDone === 'approved'}
+					<Alert.Root variant="success" class="mb-4">
+						<Alert.Description>Success! You approved the request.</Alert.Description>
+					</Alert.Root>
+					<p class="text-muted-foreground">
+						You can return to the device now. The device should connect automatically.
+					</p>
+				{:else if actionDone === 'denied'}
+					<Alert.Root variant="warning" class="mb-4">
+						<Alert.Description>Request denied.</Alert.Description>
+					</Alert.Root>
+					<p class="text-muted-foreground">You can close this window.</p>
+				{:else if verified}
+					<p class="text-muted-foreground mb-6">Do you want to sign in on your device?</p>
 
-			{#if actionError}
-				<div class="rounded-container bg-error-50-950 text-error-contrast-50-950 mb-4 p-3">
-					<p>{actionError}</p>
-				</div>
+					{#if actionError}
+						<Alert.Root variant="destructive" class="mb-4">
+							<Alert.Description>{actionError}</Alert.Description>
+						</Alert.Root>
+					{/if}
+
+					<div class="flex justify-end gap-3">
+						<Button
+							type="button"
+							variant="secondary"
+							onclick={handleDeny}
+							disabled={!!actionLoading}
+							loading={actionLoading === 'deny'}
+						>
+							{actionLoading === 'deny' ? 'Denying…' : 'Deny'}
+						</Button>
+						<Button
+							type="button"
+							onclick={handleApprove}
+							disabled={!!actionLoading}
+							loading={actionLoading === 'approve'}
+						>
+							{actionLoading === 'approve' ? 'Approving…' : 'Approve'}
+						</Button>
+					</div>
+				{/if}
+			{:else}
+				<p class="text-muted-foreground">Device authorization is not enabled.</p>
 			{/if}
-
-			<div class="flex justify-end gap-3">
-				<button
-					class="btn preset-filled-surface-500"
-					onclick={handleDeny}
-					disabled={!!actionLoading}
-				>
-					{actionLoading === 'deny' ? 'Denying…' : 'Deny'}
-				</button>
-				<button
-					class="btn preset-filled-primary-500"
-					onclick={handleApprove}
-					disabled={!!actionLoading}
-				>
-					{actionLoading === 'approve' ? 'Approving…' : 'Approve'}
-				</button>
-			</div>
-		{/if}
-	{:else}
-		<p class="opacity-80">Device authorization is not enabled.</p>
-	{/if}
-</section>
+		</Card.Content>
+	</Card.Root>
+</div>

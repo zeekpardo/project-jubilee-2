@@ -101,7 +101,7 @@
 				<Card.Root class="@container/card">
 					<Card.Header>
 						<Card.Description>{tile.label}</Card.Description>
-						<Card.Title class="@[250px]/card:text-3xl text-2xl font-semibold tabular-nums">
+						<Card.Title class="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
 							{#if tile.value === null}
 								<span class="text-muted-foreground" aria-hidden="true">—</span>
 							{:else}

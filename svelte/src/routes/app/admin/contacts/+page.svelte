@@ -69,8 +69,15 @@
 		{/if}
 	{/snippet}
 
-	<div class="max-w-sm">
-		<Input bind:value={search} placeholder={m.list_search()} type="search" />
+	<div class="flex w-full items-start justify-between gap-2 p-1">
+		<div class="flex flex-1 flex-wrap items-center gap-2">
+			<Input
+				bind:value={search}
+				placeholder={m.list_search()}
+				type="search"
+				class="h-8 w-40 lg:w-56"
+			/>
+		</div>
 	</div>
 
 	{#if loading}
@@ -82,44 +89,46 @@
 	{:else if contacts.length === 0}
 		<EmptyState title={m.contacts_empty()} />
 	{:else}
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head>{m.field_name()}</Table.Head>
-					<Table.Head>{m.field_email()}</Table.Head>
-					<Table.Head>{m.field_phone()}</Table.Head>
-					<Table.Head>{m.field_organization()}</Table.Head>
-					<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#each contacts as contact (contact._id)}
+		<div class="overflow-hidden rounded-lg border">
+			<Table.Root>
+				<Table.Header class="bg-muted">
 					<Table.Row>
-						<Table.Cell class="font-medium">
-							<a
-								href={resolve('/app/admin/contacts/[id]', { id: contact._id })}
-								class="hover:underline"
-							>
-								{contactDisplayName(contact)}
-							</a>
-						</Table.Cell>
-						<Table.Cell class="text-muted-foreground">{contact.email ?? '—'}</Table.Cell>
-						<Table.Cell class="text-muted-foreground">{contact.phone ?? '—'}</Table.Cell>
-						<Table.Cell class="text-muted-foreground">{contact.organization ?? '—'}</Table.Cell>
-						<Table.Cell class="text-right whitespace-nowrap">
-							{#if canWrite}
-								<Button size="sm" variant="ghost" onclick={() => openEdit(contact)}>
-									{m.action_edit()}
-								</Button>
-								<Button size="sm" variant="ghost" onclick={() => openDelete(contact)}>
-									{m.action_delete()}
-								</Button>
-							{/if}
-						</Table.Cell>
+						<Table.Head>{m.field_name()}</Table.Head>
+						<Table.Head>{m.field_email()}</Table.Head>
+						<Table.Head>{m.field_phone()}</Table.Head>
+						<Table.Head>{m.field_organization()}</Table.Head>
+						<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
 					</Table.Row>
-				{/each}
-			</Table.Body>
-		</Table.Root>
+				</Table.Header>
+				<Table.Body>
+					{#each contacts as contact (contact._id)}
+						<Table.Row>
+							<Table.Cell class="font-medium">
+								<a
+									href={resolve('/app/admin/contacts/[id]', { id: contact._id })}
+									class="hover:underline"
+								>
+									{contactDisplayName(contact)}
+								</a>
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{contact.email ?? '—'}</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{contact.phone ?? '—'}</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{contact.organization ?? '—'}</Table.Cell>
+							<Table.Cell class="text-right whitespace-nowrap">
+								{#if canWrite}
+									<Button size="sm" variant="ghost" onclick={() => openEdit(contact)}>
+										{m.action_edit()}
+									</Button>
+									<Button size="sm" variant="ghost" onclick={() => openDelete(contact)}>
+										{m.action_delete()}
+									</Button>
+								{/if}
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
 	{/if}
 </PageContainer>
 

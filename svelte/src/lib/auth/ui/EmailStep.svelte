@@ -7,6 +7,11 @@
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	const { api } = getAuthContext();
 
+	// Primitives
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
+
 	type AuthMethod = 'password' | 'emailOTP' | 'magicLink';
 
 	interface EmailStepProps {
@@ -75,16 +80,15 @@
 </script>
 
 <div class="flex flex-col gap-8">
-	<div class="flex flex-col">
-		<label class="label" for=" email">Email</label>
-		<input
+	<div class="flex flex-col gap-2">
+		<Label for="email">Email</Label>
+		<Input
 			id="email"
 			name="email"
 			type="email"
 			autocomplete="email"
 			value={email}
 			oninput={(e) => onEmailChange(e.currentTarget.value)}
-			class="input preset-filled-surface-200 text-sm"
 			placeholder="Enter your email"
 			required
 			disabled={submitting || validatingEmail}
@@ -93,84 +97,64 @@
 
 	{#if availableMethods.length === 1}
 		<!-- Single method available -->
-		<button
+		<Button
 			type="button"
 			onclick={() => handleMethodClick(availableMethods[0])}
-			class="btn preset-filled w-full"
+			class="w-full"
 			disabled={submitting || validatingEmail || !email}
+			loading={validatingEmail}
 		>
 			{#if validatingEmail}
-				<div class="flex items-center gap-2">
-					<div
-						class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-					></div>
-					{validatingEmailMethod === 'password' ? 'Verifying...' : 'Sending...'}
-				</div>
+				{validatingEmailMethod === 'password' ? 'Verifying...' : 'Sending...'}
 			{:else}
 				{getSingleMethodButtonText()}
 			{/if}
-		</button>
+		</Button>
 	{:else}
 		<!-- Multiple methods available -->
 		<div class="flex flex-col gap-2">
 			{#if availableMethods.includes('password')}
-				<button
+				<Button
 					type="button"
 					onclick={() => handleMethodClick('password')}
-					class="btn preset-filled w-full"
+					class="w-full"
 					disabled={submitting || validatingEmail || !email}
+					loading={validatingEmail && validatingEmailMethod === 'password'}
 				>
-					{#if validatingEmail && validatingEmailMethod === 'password'}
-						<div class="flex items-center gap-2">
-							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-							></div>
-							Verifying...
-						</div>
-					{:else}
-						Continue with Password
-					{/if}
-				</button>
+					{validatingEmail && validatingEmailMethod === 'password'
+						? 'Verifying...'
+						: 'Continue with Password'}
+				</Button>
 			{/if}
 
 			{#if availableMethods.includes('emailOTP')}
-				<button
+				<Button
 					type="button"
+					variant="secondary"
 					onclick={() => handleMethodClick('emailOTP')}
-					class="btn preset-tonal w-full"
+					class="w-full"
 					disabled={submitting || validatingEmail || !email}
+					loading={validatingEmail && validatingEmailMethod === 'emailOTP'}
 				>
-					{#if validatingEmail && validatingEmailMethod === 'emailOTP'}
-						<div class="flex items-center gap-2">
-							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-							></div>
-							Sending...
-						</div>
-					{:else}
-						Continue with Email OTP
-					{/if}
-				</button>
+					{validatingEmail && validatingEmailMethod === 'emailOTP'
+						? 'Sending...'
+						: 'Continue with Email OTP'}
+				</Button>
 			{/if}
 
 			{#if availableMethods.includes('magicLink')}
-				<button
+				<Button
 					type="button"
+					variant="secondary"
 					onclick={() => handleMethodClick('magicLink')}
-					class="btn preset-tonal w-full"
+					class="w-full"
 					disabled={submitting || validatingEmail || !email}
+					loading={validatingEmail && validatingEmailMethod === 'magicLink'}
 				>
-					{#if validatingEmail && validatingEmailMethod === 'magicLink'}
-						<div class="flex items-center gap-2">
-							<div
-								class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-							></div>
-							Sending...
-						</div>
-					{:else}
-						Continue with Magic Link
-					{/if}
-				</button>
+					{validatingEmail && validatingEmailMethod === 'magicLink'
+						? 'Sending...'
+						: 'Continue with Magic Link'}
+				</Button>
 			{/if}
 		</div>
 	{/if}

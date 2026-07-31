@@ -166,3 +166,67 @@ then screens one feature at a time in the same Tier order as the backend.
   functions call into them, never reimplement inline.
 - Every phase ends with a working `npx convex dev --once` deploy and passing
   domain-function tests before moving to the next phase.
+
+---
+
+# Part II — The admin frontend
+
+Built after the Tier 1/2 backend. Admin surfaces only; no public routes.
+The privacy wall exists in `convex/public/` but nothing renders it yet.
+
+## 8. Access model
+
+Four roles, in `src/lib/domain/permissions.ts` — pure and unit-tested, read
+by both the Convex functions and the UI so a hidden control and a refused
+mutation cannot disagree.
+
+| Role | Reach |
+|---|---|
+| `owner` | everything, including org identity and billing |
+| `admin` | everything except org identity and billing |
+| `team_leader` | only campaigns assigned in `campaignAssignments` |
+| `member` | no admin access; the future donor portal is its own surface |
+
+Two deliberate departures from LaunchClub, whose own code comments flag both
+as hazards:
+
+- Assignments carry `orgId` directly rather than being reached by traversal,
+  so a lookup cannot return one from another organization.
+- Roles are stored on the membership, not derived from whether assignment
+  rows exist, so a team leader with no campaigns is still a team leader.
+
+The four roles are also registered with Better Auth's organization plugin in
+`src/lib/domain/org-roles.ts`, and the same definitions are given to the
+client — otherwise its permission checks disagree with the server's. See the
+comment on `assignableRoles` for exactly where the rule is enforced and the
+one place it is not.
+
+## 9. Conventions
+
+- **Shell.** `src/lib/shell/` — sidebar filtered by capability, campaign
+  switcher, `PageContainer` (title, description, action, `access`). A section
+  with nothing permitted disappears rather than rendering an empty heading.
+- **Campaign vocabulary.** A campaign names its own records
+  (`objectLabel`/`objectLabelPlural`). Headings and nav take that from data,
+  never from the message catalogue.
+- **i18n.** Paraglide, compile-time and tree-shaken. `messages/en.json` is the
+  single catalogue; recompile after editing. Every user-facing string comes
+  from `m.*` except campaign-supplied vocabulary.
+- **Themes.** `data-theme` plus CSS custom properties, resolved from a cookie
+  during SSR so the first paint is correct. Light/dark is independent of
+  palette. Components only ever use tokens, never a literal colour.
+- **Money.** Integer cents in the data; one `formatCents` per feature turns it
+  into currency. No arithmetic on money in a template.
+- **States.** Loading is a Skeleton, empty is an EmptyState. Never a bare blank.
+
+## 10. Open items
+
+- Settings screens exist for pipeline stages and the versioned templates;
+  the custom-fields admin is the last one.
+- The donor portal (own donations, campaigns joined, giving) is deliberately
+  out of scope so far, and is UI-only when it comes — the donations API
+  integration is later still.
+- Two i18n hygiene passes are cheaper before a second locale exists than
+  after: sweep keys with no call site, and review duplicate English values
+  using the grammatical-agreement test (a string that agrees with a subject
+  must stay split even when English collapses it).

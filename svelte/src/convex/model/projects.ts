@@ -10,6 +10,7 @@ export type CreateProjectInput = {
 	orgId: string;
 	campaignId: Id<'campaigns'>;
 	name: string;
+	publicName?: string;
 	number?: string;
 	stage?: string;
 	story?: string;
@@ -107,6 +108,7 @@ export async function createProjectModel(
 		campaignId: input.campaignId,
 		number,
 		name: input.name,
+		publicName: input.publicName?.trim() || undefined,
 		stage,
 		story: input.story,
 		attributes: input.attributes ?? {},

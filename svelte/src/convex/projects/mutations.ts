@@ -28,6 +28,7 @@ export const createProject = mutation({
 	args: {
 		campaignId: v.id('campaigns'),
 		name: v.string(),
+		publicName: v.optional(v.string()),
 		number: v.optional(v.string()),
 		stage: v.optional(v.string()),
 		story: v.optional(v.string()),
@@ -52,6 +53,8 @@ export const updateProject = mutation({
 	args: {
 		projectId: v.id('projects'),
 		name: v.optional(v.string()),
+		// null (or a blank string) clears it — see the normalization below.
+		publicName: v.optional(v.union(v.string(), v.null())),
 		number: v.optional(v.string()),
 		story: v.optional(v.string()),
 		attributes: v.optional(attributesValidator),
@@ -66,7 +69,7 @@ export const updateProject = mutation({
 		const orgId = await requireOrgId(ctx);
 		const project = await requireProject(ctx, orgId, args.projectId);
 
-		const { projectId, ...updates } = args;
+		const { projectId, publicName, ...updates } = args;
 
 		if (updates.number !== undefined && updates.number !== project.number) {
 			const conflict = await ctx.db
@@ -83,6 +86,13 @@ export const updateProject = mutation({
 			if (value !== undefined) {
 				patch[key] = value;
 			}
+		}
+
+		// Omitted leaves publicName alone; null or blank unsets it. Blank counts as
+		// unset because model/public.ts already reads a blank public name as absent.
+		if (publicName !== undefined) {
+			const trimmed = publicName?.trim();
+			patch.publicName = trimmed ? trimmed : undefined;
 		}
 
 		await ctx.db.patch('projects', projectId, patch as Partial<Doc<'projects'>>);

@@ -78,10 +78,13 @@ UI needed to call a phase done).
    (needs turning off — see open decision in §6). Port `campaign-defaults.ts`.
 2. **Pipeline config** — `pipelineStages`, `costTemplates`, `taskTemplates`
    (versioned, campaign-scoped). Port `stages.ts`.
-3. **Projects (case records)** — `projects`, `projectMembers` (people linked
-   to a case). Custom `attributes` as a JSON field mirrors the old JSONB
-   approach. A campaign configures its own `objectLabel`/`objectPlural`
-   (e.g. "Family"/"Families") for display.
+3. **Projects (case records)** — `projects`. Custom `attributes` as a JSON
+   field mirrors the old JSONB approach. A campaign configures its own
+   `objectLabel`/`objectPlural` (e.g. "Family"/"Families") for display.
+   NOTE: `projectMembers` is deliberately NOT here — it links a project to a
+   `contact`, so it lands in Tier 2 immediately after `contacts` (phase 8a).
+   The old app had a standalone `people` table and later migrated it into
+   contacts; rebuilding `people` first would be throwaway work.
 4. **Budgets** — `budgets` (template snapshot + debt/extras → computed
    target). Port `budget.ts`.
 5. **Tasks** — `tasks` (manual + derived auto-alerts), `documents`, `updates`.
@@ -98,6 +101,9 @@ only, with reconciliation math verified.
 
 8. **Contacts** — `contacts`, `tags`/`contactTags`, `campaignMemberships`,
    `contactConsent`.
+8a. **`projectMembers`** — the project↔contact link (role: subject/member/head,
+    per-link `attributes` for age/relationship). Deferred here from phase 3
+    because it depends on `contacts`.
 9. **Households** — `households`, `householdMembers`.
 10. **Custom fields** — `customFieldCategories`, `customFieldDefinitions`,
     wired into `projects`/`contacts` attributes. Port `field-definitions.ts`.

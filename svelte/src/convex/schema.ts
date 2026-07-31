@@ -115,10 +115,68 @@ const taskTemplates = defineTable({
 	.index('by_campaignId_and_version', ['campaignId', 'version'])
 	.index('by_campaignId_and_isActive', ['campaignId', 'isActive']);
 
+// Values for campaign-defined custom fields, keyed by field definition key.
+// Mirrors the reference app's JSONB `attributes`; the field types it supports
+// are text/longtext/number/money/date/select/boolean.
+const attributeValue = v.union(v.string(), v.number(), v.boolean(), v.null());
+
+// The sponsored case record. Called "projects" generically; a campaign renames
+// it for display via objectLabel (Jubilee: "Family").
+const projects = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+	// Display id, prefixed per campaign (e.g. P-031). Unique within an org.
+	number: v.string(),
+	name: v.string(),
+	// A pipelineStages.key, not an enum — stages are admin-managed data.
+	stage: v.string(),
+	story: v.optional(v.string()),
+	attributes: v.record(v.string(), attributeValue),
+	note: v.optional(v.string()),
+	managedMissionsLink: v.optional(v.string()),
+	whatsappPhone: v.optional(v.string()),
+	// INTERNAL ONLY (factory/site reference) — must never reach public queries.
+	siteRef: v.optional(v.string()),
+	photoUrl: v.optional(v.string()),
+	// PUBLIC — the freedom video, intentionally exposed on the donor profile.
+	videoUrl: v.optional(v.string()),
+	// Public visibility, independent of pipeline stage.
+	isPublished: v.boolean(),
+	// Generalization of the reference app's is_freed: an independent admin flag,
+	// decoupled from stage, and the single source of truth for goal-met counts.
+	// The campaign supplies the wording via goalLabel/goalVerb.
+	isGoalMet: v.boolean(),
+	publishedAt: v.optional(v.number()),
+	goalMetAt: v.optional(v.number())
+})
+	// unique(orgId, number)
+	.index('by_orgId_and_number', ['orgId', 'number'])
+	.index('by_campaignId', ['campaignId'])
+	.index('by_campaignId_and_stage', ['campaignId', 'stage'])
+	.index('by_campaignId_and_isPublished', ['campaignId', 'isPublished']);
+
+// One per project. Snapshots a costTemplates version so later rate-card
+// changes never retroactively alter an existing budget.
+const budgets = defineTable({
+	orgId: v.string(),
+	projectId: v.id('projects'),
+	templateVersion: v.string(),
+	templateSnapshot: v.record(v.string(), v.number()),
+	debtCents: v.number(),
+	extras: v.array(v.object({ label: v.string(), amount_cents: v.number() })),
+	// Stored, but always computed via the budgetTarget domain fn — never in UI.
+	targetCents: v.number()
+})
+	// unique(projectId)
+	.index('by_projectId', ['projectId'])
+	.index('by_orgId', ['orgId']);
+
 export default defineSchema({
 	campaigns,
 	orgSettings,
 	pipelineStages,
 	costTemplates,
-	taskTemplates
+	taskTemplates,
+	projects,
+	budgets
 });

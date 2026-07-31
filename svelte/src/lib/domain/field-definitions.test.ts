@@ -158,3 +158,17 @@ describe('publicAttributes', () => {
 		expect(got).toEqual({});
 	});
 });
+
+describe('resolveFieldDefinitions malformed rows', () => {
+	it('skips an org-scope definition that carries a campaignId', () => {
+		const malformed = def({ id: 'bad', scope: 'org', campaignId: 'camp2', key: 'leaky' });
+		const got = resolveFieldDefinitions([malformed], 'project', 'camp1');
+		expect(got).toEqual([]);
+	});
+
+	it('skips a campaign-scope definition with no campaignId', () => {
+		const malformed = def({ id: 'bad2', scope: 'campaign', campaignId: null, key: 'leaky2' });
+		const got = resolveFieldDefinitions([malformed], 'project', 'camp1');
+		expect(got).toEqual([]);
+	});
+});

@@ -46,9 +46,7 @@ const campaigns = defineTable({
 })
 	// unique(orgId, slug)
 	.index('by_orgId_and_slug', ['orgId', 'slug'])
-	.index('by_orgId', ['orgId'])
-	// Public lookup: an anonymous visitor has no org to scope by.
-	.index('by_slug', ['slug']);
+	.index('by_orgId', ['orgId']);
 
 // Small singleton per org: cross-campaign config + public-site chrome.
 const orgSettings = defineTable({
@@ -132,6 +130,11 @@ const projects = defineTable({
 	// Display id, prefixed per campaign (e.g. P-031). Unique within an org.
 	number: v.string(),
 	name: v.string(),
+	// What the public site may call this project. Admin-entered, never derived:
+	// no rule can tell a given name from a surname across cultures, and this
+	// app's users are endangered by their surname being published. Unset means
+	// the public view shows no name at all.
+	publicName: v.optional(v.string()),
 	// A pipelineStages.key, not an enum — stages are admin-managed data.
 	stage: v.string(),
 	story: v.optional(v.string()),
@@ -255,6 +258,8 @@ const allocations = defineTable({
 const contacts = defineTable({
 	orgId: v.string(),
 	name: v.string(),
+	// Admin-entered public first name, same reasoning as projects.publicName.
+	publicFirstName: v.optional(v.string()),
 	email: v.optional(v.string()),
 	// Lowercased `email`, kept alongside it so dedup can be a plain index
 	// lookup. Postgres did this with a lower(email) expression index.

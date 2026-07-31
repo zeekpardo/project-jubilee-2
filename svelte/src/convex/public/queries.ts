@@ -4,41 +4,73 @@
 
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
-import { toPublicCampaign, toPublicProject, type PublicProject } from '../model/public';
+import type { QueryCtx } from '../_generated/server';
+import type { Doc } from '../_generated/dataModel';
+import {
+	publicFieldDefs,
+	toPublicCampaign,
+	toPublicProject,
+	type PublicProject
+} from '../model/public';
+
+/**
+ * Campaign slugs are unique per ORG, not globally, so the public surface must
+ * name the org too. orgSettings.slug is the globally unique handle. Resolving
+ * a campaign by slug alone would let one org shadow or suppress another's
+ * public site.
+ */
+async function resolvePublishedCampaign(
+	ctx: QueryCtx,
+	orgSlug: string,
+	campaignSlug: string
+): Promise<Doc<'campaigns'> | null> {
+	const settings = await ctx.db
+		.query('orgSettings')
+		.withIndex('by_slug', (q) => q.eq('slug', orgSlug))
+		.first();
+	if (!settings) return null;
+
+	const campaign = await ctx.db
+		.query('campaigns')
+		.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', settings.orgId).eq('slug', campaignSlug))
+		.first();
+	if (!campaign || !campaign.isPublished) return null;
+	return campaign;
+}
+
+const MAX_LIMIT = 100;
+const clampLimit = (limit: number | undefined) =>
+	Math.max(1, Math.min(Math.floor(limit ?? 50), MAX_LIMIT));
 
 /** A published campaign, addressed by slug. Null when unpublished. */
 export const getCampaign = query({
-	args: { slug: v.string() },
+	args: { orgSlug: v.string(), slug: v.string() },
 	handler: async (ctx, args) => {
-		const campaign = await ctx.db
-			.query('campaigns')
-			.withIndex('by_slug', (q) => q.eq('slug', args.slug))
-			.first();
-		if (!campaign || !campaign.isPublished) return null;
-		return toPublicCampaign(campaign);
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.slug);
+		return campaign ? toPublicCampaign(campaign) : null;
 	}
 });
 
 /** Published projects in a published campaign. */
 export const listProjects = query({
-	args: { campaignSlug: v.string(), limit: v.optional(v.number()) },
+	args: { orgSlug: v.string(), campaignSlug: v.string(), limit: v.optional(v.number()) },
 	handler: async (ctx, args): Promise<PublicProject[]> => {
-		const campaign = await ctx.db
-			.query('campaigns')
-			.withIndex('by_slug', (q) => q.eq('slug', args.campaignSlug))
-			.first();
-		if (!campaign || !campaign.isPublished) return [];
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return [];
 
 		const projects = await ctx.db
 			.query('projects')
 			.withIndex('by_campaignId_and_isPublished', (q) =>
 				q.eq('campaignId', campaign._id).eq('isPublished', true)
 			)
-			.take(args.limit ?? 100);
+			.take(clampLimit(args.limit));
+
+		// Resolved once for the whole page rather than per project.
+		const defs = await publicFieldDefs(ctx, campaign.orgId, campaign._id);
 
 		const out: PublicProject[] = [];
 		for (const project of projects) {
-			out.push(await toPublicProject(ctx, project, campaign));
+			out.push(await toPublicProject(ctx, project, campaign, defs));
 		}
 		return out;
 	}
@@ -46,13 +78,10 @@ export const listProjects = query({
 
 /** One published project, addressed by its public number. */
 export const getProject = query({
-	args: { campaignSlug: v.string(), number: v.string() },
+	args: { orgSlug: v.string(), campaignSlug: v.string(), number: v.string() },
 	handler: async (ctx, args): Promise<PublicProject | null> => {
-		const campaign = await ctx.db
-			.query('campaigns')
-			.withIndex('by_slug', (q) => q.eq('slug', args.campaignSlug))
-			.first();
-		if (!campaign || !campaign.isPublished) return null;
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return null;
 
 		const project = await ctx.db
 			.query('projects')
@@ -73,19 +102,20 @@ export const getProject = query({
  * nearest $1,000 so an individual gift can never be inferred from a change.
  */
 export const getCampaignStats = query({
-	args: { campaignSlug: v.string() },
+	args: { orgSlug: v.string(), campaignSlug: v.string() },
 	handler: async (ctx, args) => {
-		const campaign = await ctx.db
-			.query('campaigns')
-			.withIndex('by_slug', (q) => q.eq('slug', args.campaignSlug))
-			.first();
-		if (!campaign || !campaign.isPublished) return null;
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return null;
 
-		// Counts span every project in the campaign, published or not: an
-		// aggregate carries no identifying detail.
+		// PUBLISHED projects only. Counting hidden ones would publish the
+		// existence, size and outcome of an unpublished case — and because these
+		// queries are live subscriptions, it would push a timestamped signal the
+		// moment a family is enrolled or freed.
 		const projects = await ctx.db
 			.query('projects')
-			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
+			.withIndex('by_campaignId_and_isPublished', (q) =>
+				q.eq('campaignId', campaign._id).eq('isPublished', true)
+			)
 			.collect();
 
 		let goalMetCount = 0;

@@ -138,7 +138,10 @@ export function resolveFieldDefinitions(
 
 	for (const def of defs) {
 		if (def.entity !== entity) continue;
-		if (def.scope === 'org') byKey.set(def.key, def);
+		// An org-scope row carrying a campaignId is malformed. Skip it rather
+		// than treating it as org-wide, which would apply one campaign's field
+		// to every campaign.
+		if (def.scope === 'org' && def.campaignId === null) byKey.set(def.key, def);
 	}
 	for (const def of defs) {
 		if (def.entity !== entity) continue;

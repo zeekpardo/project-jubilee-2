@@ -13,12 +13,18 @@
 //
 //   EXPOSED, and nothing else:
 //   - project `number` (the public identifier)
-//   - `name` reduced to its FIRST WORD ("Ahmed Bhatti family" -> "Ahmed")
+//   - `publicName`, if an admin set one. Never derived from the real name:
+//     no rule separates given name from surname across cultures. Null
+//     otherwise, leaving `number` as the only identifier.
 //   - story, photoUrl, videoUrl, stage key and label
 //   - memberCount (a COUNT, never the member rows)
-//   - memberFirstNames (FIRST NAME ONLY of each member)
+//   - memberFirstNames — only members given an explicit public first name;
+//     the rest are counted but unnamed
 //   - custom attributes whose field definition is explicitly isPublic
-//   - raised / target / progress, derived from the ledger
+//   - isGoalMet and the campaign's goalLabel (the "Freed" badge)
+//   - raised / target / progress, derived from the ledger. targetCents is
+//     derived from the bonded debt owed for this family, so it quantifies
+//     their bondage; it is exposed because it IS the fundraising ask.
 //
 //   NEVER EXPOSED. Do not add without a privacy review:
 //   - siteRef — the internal factory/site reference. This app serves people
@@ -42,14 +48,22 @@ import {
 } from '../../lib/domain/field-definitions';
 import { raisedForProject } from '../../lib/domain/reconciliation';
 
-/** First whitespace-separated token, so surnames never leave the wall. */
-export function firstNameOnly(name: string): string {
-	return name.trim().split(/\s+/)[0] ?? '';
+/**
+ * Public names are ADMIN-ENTERED, never derived. Taking the first token of a
+ * name leaks the surname for "Bhatti, Ahmed", for every name written without a
+ * separator, and for every surname-first culture. There is no rule that works
+ * across cultures, so an unset public name yields null and the project is
+ * identified by its number alone.
+ */
+function publicNameOf(explicit: string | undefined): string | null {
+	const trimmed = explicit?.trim();
+	return trimmed ? trimmed : null;
 }
 
 export type PublicProject = {
 	number: string;
-	name: string;
+	/** Null unless an admin set an explicit public name. */
+	name: string | null;
 	story: string | null;
 	photoUrl: string | null;
 	videoUrl: string | null;
@@ -65,7 +79,7 @@ export type PublicProject = {
 	progress: number | null;
 };
 
-async function publicFieldDefs(
+export async function publicFieldDefs(
 	ctx: QueryCtx,
 	orgId: string,
 	campaignId: Id<'campaigns'>
@@ -75,7 +89,14 @@ async function publicFieldDefs(
 		.withIndex('by_orgId_and_entity', (q) => q.eq('orgId', orgId).eq('entity', 'project'))
 		.collect();
 
-	const defs: FieldDefinition[] = rows.map((row) => ({
+	// Fail closed on a malformed row rather than trusting the write path: an
+	// org-scope row must carry no campaignId, a campaign-scope row must carry
+	// one. A mislabelled row would otherwise apply to every campaign.
+	const wellFormed = rows.filter((row) =>
+		row.scope === 'org' ? row.campaignId === undefined : row.campaignId !== undefined
+	);
+
+	const defs: FieldDefinition[] = wellFormed.map((row) => ({
 		id: row._id,
 		entity: row.entity,
 		scope: row.scope,
@@ -135,7 +156,8 @@ async function raisedCentsFor(ctx: QueryCtx, projectId: Id<'projects'>): Promise
 export async function toPublicProject(
 	ctx: QueryCtx,
 	project: Doc<'projects'>,
-	campaign: Doc<'campaigns'>
+	campaign: Doc<'campaigns'>,
+	presolvedDefs?: FieldDefinition[]
 ): Promise<PublicProject> {
 	const stage = await ctx.db
 		.query('pipelineStages')
@@ -149,10 +171,13 @@ export async function toPublicProject(
 		.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
 		.collect();
 
+	// Only members with an explicit public first name are listed. A member
+	// without one is counted, never named.
 	const memberFirstNames: string[] = [];
 	for (const link of memberLinks) {
 		const contact = await ctx.db.get('contacts', link.contactId);
-		if (contact) memberFirstNames.push(firstNameOnly(contact.name));
+		const publicFirst = publicNameOf(contact?.publicFirstName);
+		if (publicFirst) memberFirstNames.push(publicFirst);
 	}
 
 	const budget = await ctx.db
@@ -163,11 +188,11 @@ export async function toPublicProject(
 	const raisedCents = await raisedCentsFor(ctx, project._id);
 	const targetCents = budget?.targetCents ?? null;
 
-	const defs = await publicFieldDefs(ctx, project.orgId, project.campaignId);
+	const defs = presolvedDefs ?? (await publicFieldDefs(ctx, project.orgId, project.campaignId));
 
 	return {
 		number: project.number,
-		name: firstNameOnly(project.name),
+		name: publicNameOf(project.publicName),
 		story: project.story ?? null,
 		photoUrl: project.photoUrl ?? null,
 		videoUrl: project.videoUrl ?? null,
@@ -180,8 +205,7 @@ export async function toPublicProject(
 		attributes: publicAttributes(defs, project.attributes),
 		raisedCents,
 		targetCents,
-		progress:
-			targetCents && targetCents > 0 ? Math.min(1, raisedCents / targetCents) : null
+		progress: targetCents && targetCents > 0 ? Math.min(1, raisedCents / targetCents) : null
 	};
 }
 

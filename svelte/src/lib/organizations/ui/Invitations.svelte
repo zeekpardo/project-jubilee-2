@@ -68,11 +68,12 @@
 				return invitation.email.toLowerCase().includes(searchQuery.toLowerCase());
 			})
 			.sort((a, b) => {
-				// Sort by role (owner first, then admin, then member)
+				// Sort by role (owner first, then admin, then team leader, then member)
 				const roleOrder: Record<Role, number> = {
 					owner: 0,
 					admin: 1,
-					member: 2
+					team_leader: 2,
+					member: 3
 				};
 
 				// Primary sort by role

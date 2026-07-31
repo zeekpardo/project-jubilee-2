@@ -24,6 +24,7 @@ import {
 
 // Constants
 import { AUTH_CONSTANTS } from './auth.constants';
+import { orgAc, orgRoles } from '../lib/domain/org-roles';
 import { getBetterAuthBaseUrl, getBetterAuthFallbackUrl, resolveRequestBaseUrl } from './url';
 
 // Typesafe way to pass Convex functions defined in this file
@@ -300,6 +301,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
 			...(AUTH_CONSTANTS.organizations
 				? [
 						organization({
+							ac: orgAc,
+							roles: orgRoles,
 							schema: {
 								organization: {
 									additionalFields: {

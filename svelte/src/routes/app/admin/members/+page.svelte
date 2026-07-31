@@ -74,7 +74,7 @@
 		organizationResponse.isLoading || campaignsResponse.isLoading || assignmentsResponse.isLoading
 	);
 
-	const inviteHref = $derived(`${resolve('/app/members')}?dialog=${DIALOG_KEY}&tab=members`);
+	const inviteHref = $derived(`${resolve('/app/admin/members')}?dialog=${DIALOG_KEY}&tab=members`);
 
 	let assignOpen = $state(false);
 	let assignTarget = $state<Member | null>(null);

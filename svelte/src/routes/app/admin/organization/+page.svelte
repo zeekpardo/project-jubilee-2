@@ -33,7 +33,7 @@
 	);
 	const settings = $derived(settingsResponse?.data);
 
-	const editHref = $derived(resolve(`/app/organization?dialog=${DIALOG_KEY}`));
+	const editHref = $derived(resolve(`/app/admin/organization?dialog=${DIALOG_KEY}`));
 </script>
 
 <PageContainer title={m.org_title()} description={m.org_subtitle()} access={allowed}>

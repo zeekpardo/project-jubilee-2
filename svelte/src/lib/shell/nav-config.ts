@@ -26,75 +26,44 @@ export type NavItem = {
 	usesObjectLabel?: boolean;
 };
 
-export type NavSection = {
-	key: string;
-	items: NavItem[];
-};
-
-export const NAV_SECTIONS: NavSection[] = [
+/**
+ * Two separate menus rather than two sections of one. Admin is a mode you
+ * enter from the campaign switcher, so the campaign workspace stays free of
+ * org-wide entries and vice versa.
+ */
+export const CAMPAIGN_NAV: NavItem[] = [
+	{ key: 'dashboard', href: '/app', icon: LayoutDashboard, capability: 'projects:read' },
 	{
-		key: 'overview',
-		items: [
-			{
-				key: 'dashboard',
-				href: '/app',
-				icon: LayoutDashboard,
-				capability: 'projects:read'
-			},
-			{
-				key: 'projects',
-				href: '/app/projects',
-				icon: Users,
-				capability: 'projects:read',
-				usesObjectLabel: true
-			},
-			{
-				key: 'money',
-				href: '/app/money',
-				icon: Wallet,
-				capability: 'money:read'
-			},
-			{
-				key: 'contacts',
-				href: '/app/contacts',
-				icon: Contact,
-				capability: 'contacts:read'
-			},
-			{
-				key: 'households',
-				href: '/app/households',
-				icon: Home,
-				capability: 'contacts:read'
-			}
-		]
+		key: 'projects',
+		href: '/app/projects',
+		icon: Users,
+		capability: 'projects:read',
+		usesObjectLabel: true
 	},
+	{ key: 'money', href: '/app/money', icon: Wallet, capability: 'money:read' },
+	{ key: 'settings', href: '/app/settings', icon: Settings, capability: 'settings:manage' }
+];
+
+export const ADMIN_NAV: NavItem[] = [
 	{
-		key: 'admin',
-		items: [
-			{
-				key: 'campaigns',
-				href: '/app/campaigns',
-				icon: Megaphone,
-				capability: 'campaign:create'
-			},
-			{
-				key: 'members',
-				href: '/app/members',
-				icon: UserCog,
-				capability: 'members:manage'
-			},
-			{
-				key: 'settings',
-				href: '/app/settings',
-				icon: Settings,
-				capability: 'settings:manage'
-			},
-			{
-				key: 'organization',
-				href: '/app/organization',
-				icon: Building2,
-				capability: 'org:manage'
-			}
-		]
+		key: 'campaigns',
+		href: '/app/admin/campaigns',
+		icon: Megaphone,
+		capability: 'campaign:create'
+	},
+	{ key: 'members', href: '/app/admin/members', icon: UserCog, capability: 'members:manage' },
+	{ key: 'contacts', href: '/app/admin/contacts', icon: Contact, capability: 'contacts:read' },
+	{ key: 'households', href: '/app/admin/households', icon: Home, capability: 'contacts:read' },
+	{
+		key: 'organization',
+		href: '/app/admin/organization',
+		icon: Building2,
+		capability: 'org:manage'
 	}
 ];
+
+export const ADMIN_ROOT = '/app/admin';
+
+export function isAdminPath(pathname: string): boolean {
+	return pathname === ADMIN_ROOT || pathname.startsWith(`${ADMIN_ROOT}/`);
+}

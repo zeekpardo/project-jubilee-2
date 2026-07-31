@@ -297,6 +297,7 @@
 	"projects_memberRole_member": "Member",
 	"projects_memberRole_head": "Head",
 	"projects_removeMember": "Remove",
+	"projects_removeMemberBody": "This removes the person from this record. The contact itself is not deleted, and stays available to add elsewhere.",
 	"projects_noMembers": "Nobody added yet",
 	"projects_selectContact": "Choose a contact",
 	"projects_budgetCreate": "Set a budget",
@@ -373,5 +374,6 @@
 	"org_publicTagline": "Tagline",
 	"org_campaignLabel": "Word for a campaign",
 	"org_campaignLabelPlural": "Plural",
-	"org_settingsSaved": "Settings saved"
+	"org_settingsSaved": "Settings saved",
+	"money_transactionUpdated": "Transaction saved"
 }

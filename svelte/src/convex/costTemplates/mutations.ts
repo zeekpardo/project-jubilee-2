@@ -1,0 +1,64 @@
+import { ConvexError, v } from 'convex/values';
+import { mutation } from '../_generated/server';
+import type { MutationCtx } from '../_generated/server';
+import { authComponent, createAuth } from '../auth';
+
+async function requireOrgId(ctx: MutationCtx): Promise<string> {
+	const user = await authComponent.safeGetAuthUser(ctx);
+	if (!user) {
+		throw new ConvexError('Not authenticated');
+	}
+
+	const auth = createAuth(ctx);
+	const organization = await auth.api.getFullOrganization({
+		headers: await authComponent.getHeaders(ctx)
+	});
+	if (!organization) {
+		throw new ConvexError('No active organization');
+	}
+
+	return organization.id;
+}
+
+// Append-only: a rate-card change is a new version row, never an edit of an
+// existing one, so budgets keep the version they snapshotted.
+export const createCostTemplateVersion = mutation({
+	args: {
+		campaignId: v.id('campaigns'),
+		version: v.string(),
+		lineItems: v.record(v.string(), v.number()),
+		effectiveFrom: v.optional(v.string())
+	},
+	handler: async (ctx, args) => {
+		const orgId = await requireOrgId(ctx);
+
+		const campaign = await ctx.db.get('campaigns', args.campaignId);
+		if (!campaign || campaign.orgId !== orgId) {
+			throw new ConvexError('Campaign not found');
+		}
+
+		const conflict = await ctx.db
+			.query('costTemplates')
+			.withIndex('by_campaignId_and_version', (q) =>
+				q.eq('campaignId', args.campaignId).eq('version', args.version)
+			)
+			.first();
+		if (conflict) {
+			throw new ConvexError('Cost template version already exists for this campaign');
+		}
+
+		for (const [key, amount] of Object.entries(args.lineItems)) {
+			if (!Number.isInteger(amount)) {
+				throw new ConvexError(`Line item "${key}" must be an integer number of cents`);
+			}
+		}
+
+		return await ctx.db.insert('costTemplates', {
+			orgId,
+			campaignId: args.campaignId,
+			version: args.version,
+			effectiveFrom: args.effectiveFrom,
+			lineItems: args.lineItems
+		});
+	}
+});

@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as access_mutations from "../access/mutations.js";
+import type * as access_queries from "../access/queries.js";
 import type * as allocations_mutations from "../allocations/mutations.js";
 import type * as allocations_queries from "../allocations/queries.js";
 import type * as auth from "../auth.js";
@@ -29,6 +31,7 @@ import type * as households_mutations from "../households/mutations.js";
 import type * as households_queries from "../households/queries.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
+import type * as model_access from "../model/access.js";
 import type * as model_auth from "../model/auth.js";
 import type * as model_budgets from "../model/budgets.js";
 import type * as model_campaigns from "../model/campaigns.js";
@@ -75,6 +78,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "access/mutations": typeof access_mutations;
+  "access/queries": typeof access_queries;
   "allocations/mutations": typeof allocations_mutations;
   "allocations/queries": typeof allocations_queries;
   auth: typeof auth;
@@ -96,6 +101,7 @@ declare const fullApi: ApiFromModules<{
   "households/queries": typeof households_queries;
   http: typeof http;
   migrations: typeof migrations;
+  "model/access": typeof model_access;
   "model/auth": typeof model_auth;
   "model/budgets": typeof model_budgets;
   "model/campaigns": typeof model_campaigns;

@@ -392,6 +392,20 @@ const customFieldDefinitions = defineTable({
 	.index('by_campaignId_and_entity_and_key', ['campaignId', 'entity', 'key'])
 	.index('by_categoryId', ['categoryId']);
 
+// Which campaigns a team leader may work in. Carries orgId directly rather
+// than being reached by traversal, so a lookup can never return an assignment
+// belonging to a different organization.
+const campaignAssignments = defineTable({
+	orgId: v.string(),
+	// Better Auth user id.
+	userId: v.string(),
+	campaignId: v.id('campaigns')
+})
+	// unique(orgId, userId, campaignId)
+	.index('by_orgId_and_userId', ['orgId', 'userId'])
+	.index('by_orgId_and_userId_and_campaignId', ['orgId', 'userId', 'campaignId'])
+	.index('by_campaignId', ['campaignId']);
+
 export default defineSchema({
 	campaigns,
 	orgSettings,
@@ -408,5 +422,6 @@ export default defineSchema({
 	householdMembers,
 	projectMembers,
 	customFieldCategories,
-	customFieldDefinitions
+	customFieldDefinitions,
+	campaignAssignments
 });

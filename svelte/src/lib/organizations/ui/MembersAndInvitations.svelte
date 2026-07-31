@@ -3,6 +3,8 @@
 	import * as Tabs from '$lib/primitives/ui/tabs';
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Drawer from '$lib/primitives/ui/drawer';
+	import { Badge } from '$lib/primitives/ui/badge';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
 	import { Dialog as ArkDialog, useDialog } from '@ark-ui/svelte/dialog';
 	// Icons
 	import PlusIcon from '@lucide/svelte/icons/plus';
@@ -71,34 +73,32 @@
 </script>
 
 <Tabs.Root value="members">
-	<div
-		class="border-surface-300-700 flex w-full flex-row justify-between border-b pb-6 align-middle"
-	>
+	<div class="border-border flex w-full flex-row justify-between border-b pb-6 align-middle">
 		<Tabs.List class="flex-1 md:flex-initial">
 			<Tabs.Trigger value="members" class="flex-1 gap-2 md:flex-initial">
 				Members
-				<span class="badge preset-filled-surface-300-700 size-6 rounded-full">
+				<Badge variant="secondary" class="size-6 shrink-0 justify-center rounded-full p-0">
 					{members && `${members.length}`}
-				</span>
+				</Badge>
 			</Tabs.Trigger>
 			{#if isOwnerOrAdmin}
 				<Tabs.Trigger value="invitations" class="flex-1 gap-2 md:flex-initial">
 					Invitations
-					<span class="badge preset-filled-surface-300-700 size-6 rounded-full">
+					<Badge variant="secondary" class="size-6 shrink-0 justify-center rounded-full p-0">
 						{invitationList && `${invitationList.filter((i) => i.status === 'pending').length}`}
-					</span>
+					</Badge>
 				</Tabs.Trigger>
 			{/if}
 		</Tabs.List>
 		{#if isOwnerOrAdmin}
-			<button
+			<Button
 				type="button"
-				class="btn preset-filled-primary-500 hidden h-10 items-center gap-2 text-sm md:flex"
+				class="hidden md:flex"
 				onclick={() => inviteMembersDialog().setOpen(true)}
 			>
 				<PlusIcon class="size-5" />
 				<span>Invite members</span>
-			</button>
+			</Button>
 			<ArkDialog.RootProvider value={inviteMembersDialog}>
 				<Dialog.Content class="max-w-100">
 					<Dialog.Header>
@@ -109,9 +109,7 @@
 				</Dialog.Content>
 			</ArkDialog.RootProvider>
 			<Drawer.Root bind:open={inviteMembersDrawerOpen}>
-				<Drawer.Trigger
-					class="btn preset-filled-primary-500 absolute right-4 bottom-4 z-10 h-10 text-sm md:hidden"
-				>
+				<Drawer.Trigger class={buttonVariants() + ' absolute right-4 bottom-4 z-10 md:hidden'}>
 					<PlusIcon class="size-5" /> Invite members
 				</Drawer.Trigger>
 				<Drawer.Content>

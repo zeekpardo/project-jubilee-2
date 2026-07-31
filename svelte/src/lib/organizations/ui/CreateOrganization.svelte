@@ -10,12 +10,14 @@
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import Building2Icon from '@lucide/svelte/icons/building-2';
-	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	// Primitives
 	import { toast } from 'svelte-sonner';
 	import * as Avatar from '$lib/primitives/ui/avatar';
 	import * as ImageCropper from '$lib/primitives/ui/image-cropper';
 	import { getFileFromUrl } from '$lib/primitives/ui/image-cropper';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
 
 	// Utils
 	import { optimizeImage } from '$lib/primitives/utils/optimizeImage';
@@ -222,20 +224,18 @@
 <!-- Show loading state -->
 {#if isLoading}
 	<div class="mx-auto w-full max-w-md animate-pulse">
-		<div class="placeholder mb-4 h-8 w-full"></div>
-		<div class="placeholder mb-4 h-40 w-full"></div>
-		<div class="placeholder mb-2 h-10 w-full"></div>
-		<div class="placeholder h-10 w-full"></div>
+		<div class="bg-muted mb-4 h-8 w-full rounded"></div>
+		<div class="bg-muted mb-4 h-40 w-full rounded"></div>
+		<div class="bg-muted mb-2 h-10 w-full rounded"></div>
+		<div class="bg-muted h-10 w-full rounded"></div>
 	</div>
 
 	<!-- Show message for unauthenticated users -->
 {:else if !isAuthenticated}
-	<div
-		class="border-surface-200-800 rounded-container mx-auto w-full max-w-md border p-6 text-center"
-	>
-		<LogInIcon class="text-surface-400-600 mx-auto mb-4 size-10" />
+	<div class="border-border mx-auto w-full max-w-md rounded-xl border p-6 text-center">
+		<LogInIcon class="text-muted-foreground mx-auto mb-4 size-10" />
 		<h2 class="mb-2 text-xl font-semibold">Authentication Required</h2>
-		<p class="text-surface-600-400 mb-4">Please sign in to create an organization</p>
+		<p class="text-muted-foreground mb-4">Please sign in to create an organization</p>
 	</div>
 
 	<!-- Show the form for authenticated users -->
@@ -244,19 +244,17 @@
 		<div class="my-6">
 			<ImageCropper.Root bind:src={cropSrc} accept="image/*" onCropped={handleCropped}>
 				<ImageCropper.UploadTrigger>
-					<div
-						class="rounded-container relative size-20 cursor-pointer transition-all duration-200"
-					>
-						<Avatar.Root class="rounded-container size-20">
+					<div class="relative size-20 cursor-pointer rounded-xl transition-all duration-200">
+						<Avatar.Root class="size-20 rounded-xl">
 							<Avatar.Image src={logo} alt={name.length > 0 ? name : 'My Organization'} />
 							<Avatar.Fallback
-								class="bg-surface-300-700 hover:bg-surface-400-600/80 rounded-container duration-150 ease-in-out"
+								class="bg-muted hover:bg-muted/80 rounded-xl duration-150 ease-in-out"
 							>
-								<Building2Icon class="text-surface-700-300 size-10" />
+								<Building2Icon class="text-muted-foreground size-10" />
 							</Avatar.Fallback>
 						</Avatar.Root>
 						<div
-							class="badge-icon preset-filled-surface-300-700 ring-surface-50-950 dark:ring-surface-100-900 absolute -right-1.5 -bottom-1.5 size-3 rounded-full ring-4"
+							class="bg-muted ring-background absolute -right-1.5 -bottom-1.5 flex size-6 items-center justify-center rounded-full ring-4"
 						>
 							<PencilIcon class="size-4" />
 						</div>
@@ -273,52 +271,44 @@
 		</div>
 
 		<div class="flex flex-col gap-5">
-			<div>
-				<label for="name" class="label">Name</label>
-				<input
+			<div class="flex flex-col gap-2">
+				<Label for="name">Name</Label>
+				<Input
 					type="text"
 					id="name"
 					value={name}
 					oninput={handleNameInput}
 					required
-					class="input w-full"
 					placeholder="My Organization..."
 				/>
 			</div>
-			<div>
-				<label for="slug" class="label">Slug URL</label>
-				<input
+			<div class="flex flex-col gap-2">
+				<Label for="slug">Slug URL</Label>
+				<Input
 					type="text"
 					id="slug"
 					value={slug}
 					oninput={(e) => (slug = (e.target as HTMLInputElement).value)}
 					required
-					class="input w-full"
 					placeholder="my-organization"
 				/>
 			</div>
 		</div>
 
 		<div class="flex justify-end gap-2 pt-6 md:flex-row">
-			<button
-				type="submit"
-				class="btn preset-filled-primary-500"
-				disabled={isCreating}
-				aria-busy={isCreating}
-			>
+			<Button type="submit" disabled={isCreating} loading={isCreating}>
 				{#if isCreating}
-					<Loader2Icon class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 					Creating...
 				{:else}
 					Create Organization
 				{/if}
-			</button>
+			</Button>
 		</div>
 	</form>
 {/if}
 
 <style>
 	:global(.svelte-easy-crop-area) {
-		border-radius: var(--radius-container);
+		border-radius: 0.75rem;
 	}
 </style>

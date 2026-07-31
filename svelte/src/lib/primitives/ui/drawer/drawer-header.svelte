@@ -14,7 +14,7 @@
 	bind:this={ref}
 	data-scope="drawer"
 	data-part="header"
-	class={cn('flex flex-col gap-4', className)}
+	class={cn('flex flex-col gap-1.5 pt-4', className)}
 	{...restProps}
 >
 	{@render children?.()}

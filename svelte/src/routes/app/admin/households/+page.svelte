@@ -111,38 +111,40 @@
 	{:else if households.length === 0}
 		<EmptyState title={m.state_empty()} />
 	{:else}
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head>{m.field_name()}</Table.Head>
-					<Table.Head>{m.households_members()}</Table.Head>
-					<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#each households as household (household._id)}
+		<div class="overflow-hidden rounded-lg border">
+			<Table.Root>
+				<Table.Header class="bg-muted">
 					<Table.Row>
-						<Table.Cell class="font-medium">{household.name}</Table.Cell>
-						<Table.Cell>
-							<Badge variant="secondary">{household.memberCount}</Badge>
-						</Table.Cell>
-						<Table.Cell class="text-right whitespace-nowrap">
-							{#if canWrite}
-								<Button size="sm" variant="ghost" onclick={() => openMembers(household._id)}>
-									{m.households_members()}
-								</Button>
-								<Button size="sm" variant="ghost" onclick={() => openEdit(household)}>
-									{m.action_edit()}
-								</Button>
-								<Button size="sm" variant="ghost" onclick={() => openDelete(household._id)}>
-									{m.action_delete()}
-								</Button>
-							{/if}
-						</Table.Cell>
+						<Table.Head>{m.field_name()}</Table.Head>
+						<Table.Head>{m.households_members()}</Table.Head>
+						<Table.Head class="w-1 text-right">{m.field_actions()}</Table.Head>
 					</Table.Row>
-				{/each}
-			</Table.Body>
-		</Table.Root>
+				</Table.Header>
+				<Table.Body>
+					{#each households as household (household._id)}
+						<Table.Row>
+							<Table.Cell class="font-medium">{household.name}</Table.Cell>
+							<Table.Cell>
+								<Badge variant="secondary">{household.memberCount}</Badge>
+							</Table.Cell>
+							<Table.Cell class="text-right whitespace-nowrap">
+								{#if canWrite}
+									<Button size="sm" variant="ghost" onclick={() => openMembers(household._id)}>
+										{m.households_members()}
+									</Button>
+									<Button size="sm" variant="ghost" onclick={() => openEdit(household)}>
+										{m.action_edit()}
+									</Button>
+									<Button size="sm" variant="ghost" onclick={() => openDelete(household._id)}>
+										{m.action_delete()}
+									</Button>
+								{/if}
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
 	{/if}
 </PageContainer>
 

@@ -18,6 +18,10 @@
 	// Icons
 	import MailIcon from '@lucide/svelte/icons/mail';
 
+	// Primitives
+	import * as Card from '$lib/primitives/ui/card';
+	import { Button } from '$lib/primitives/ui/button';
+
 	// Utils
 	import { cn } from '$lib/primitives/utils';
 
@@ -319,123 +323,125 @@
 	});
 </script>
 
-<div class={cn('mx-auto flex h-full w-full max-w-md flex-col justify-center p-4 pb-8', className)}>
-	{#if authConstants.sendEmails && (currentStep === 'verify-email' || (verifyContext === 'magicLink' && magicLinkSent))}
-		<div class="flex flex-col">
-			<!-- Circle -->
-			<div class="mb-4 flex">
-				<div class="bg-surface-200-800 flex h-16 w-16 items-center justify-center rounded-full">
-					<MailIcon class="text-surface-600-400 size-8" />
+<div class={cn('mx-auto flex w-full max-w-md flex-col justify-center p-4', className)}>
+	<Card.Root>
+		{#if authConstants.sendEmails && (currentStep === 'verify-email' || (verifyContext === 'magicLink' && magicLinkSent))}
+			<Card.Header>
+				<!-- Circle -->
+				<div class="mb-2 flex">
+					<div class="bg-muted flex h-16 w-16 items-center justify-center rounded-full">
+						<MailIcon class="text-muted-foreground size-8" />
+					</div>
 				</div>
-			</div>
 
-			<!-- Info -->
-			<h3 class="h5 w-full text-left leading-8">Check your email</h3>
-			<p class="text-surface-600-400 mt-2 text-sm">
-				{#if verifyContext === 'magicLink'}
-					We've sent a magic link to <strong>{email}</strong>.
-				{:else}
-					We've sent a verification link to <strong>{email}</strong>.
+				<Card.Title class="text-lg">Check your email</Card.Title>
+				<Card.Description>
+					{#if verifyContext === 'magicLink'}
+						We've sent a magic link to <strong>{email}</strong>.
+					{:else}
+						We've sent a verification link to <strong>{email}</strong>.
+					{/if}
+					{#if verifyContext === 'magicLink'}
+						Click the link in your email to sign in instantly.
+					{:else}
+						Click the link to verify your email. You'll be signed in automatically after
+						verification.
+					{/if}
+				</Card.Description>
+			</Card.Header>
+
+			<Card.Content>
+				<Button type="button" variant="secondary" class="w-full" onclick={resetToEmailStep}>
+					Use a different email
+				</Button>
+			</Card.Content>
+		{:else}
+			<Card.Header>
+				<Card.Title class="text-lg">{getStepTitle()}</Card.Title>
+				<Card.Description>{getStepDescription()}</Card.Description>
+			</Card.Header>
+
+			<Card.Content class="flex flex-col gap-6">
+				<!-- Social Sign In -->
+				<SocialFlow
+					show={currentStep === 'email'}
+					onSuccess={handleAuthSuccess}
+					onSubmittingChange={(value) => (submitting = value)}
+					callbackURL={getRedirectURL() || '/'}
+					dividerAfter={availableEmailMethods.length > 0}
+				/>
+
+				<!-- Email-based Auth Methods -->
+				{#if availableEmailMethods.length > 0}
+					{#if currentStep === 'email'}
+						<EmailStep
+							{email}
+							onEmailChange={(newEmail) => (email = newEmail)}
+							onMethodSelect={handleMethodSelect}
+							{submitting}
+							availableMethods={availableEmailMethods}
+						/>
+					{:else if currentStep === 'password-flow'}
+						<PasswordFlow
+							{email}
+							emailExists={emailExistsRef}
+							onSuccess={handleAuthSuccess}
+							onBack={resetToEmailStep}
+							{submitting}
+							onSubmittingChange={(value) => (submitting = value)}
+							callbackURL={getRedirectURL() || '/'}
+							onVerifyEmail={() => {
+								currentStep = 'verify-email';
+								verifyContext = 'emailVerification';
+								isSigningIn = true;
+							}}
+						/>
+					{:else if currentStep === 'email-otp-flow'}
+						<EmailOtpFlow
+							{email}
+							emailExists={emailExistsRef}
+							onSuccess={handleAuthSuccess}
+							onBack={resetToEmailStep}
+							{submitting}
+							onSubmittingChange={(value) => (submitting = value)}
+						/>
+					{:else if currentStep === 'magic-link-flow'}
+						<MagicLinkFlow
+							{email}
+							onBack={resetToEmailStep}
+							{submitting}
+							onSubmittingChange={(value) => (submitting = value)}
+							callbackURL={getRedirectURL() || '/'}
+							onLinkSent={() => {
+								verifyContext = 'magicLink';
+								magicLinkSent = true;
+								isSigningIn = true;
+							}}
+						/>
+					{/if}
 				{/if}
-			</p>
-			<p class="text-surface-600-400 pb-8 text-sm">
-				{#if verifyContext === 'magicLink'}
-					Click the link in your email to sign in instantly.
-				{:else}
-					Click the link to verify your email. You'll be signed in automatically after verification.
-				{/if}
-			</p>
+			</Card.Content>
 
-			<!-- Action -->
-			<button type="button" class="btn preset-filled-surface-300-700" onclick={resetToEmailStep}>
-				Use a different email
-			</button>
-		</div>
-	{:else}
-		<h5 class="h5 w-full text-left leading-8">{getStepTitle()}</h5>
-		<p class="text-surface-600-400 mt-2 max-w-96 pb-16 text-left text-sm sm:pb-12">
-			{getStepDescription()}
-		</p>
-
-		<div class="flex h-full w-full flex-col gap-6">
-			<!-- Social Sign In -->
-			<SocialFlow
-				show={currentStep === 'email'}
-				onSuccess={handleAuthSuccess}
-				onSubmittingChange={(value) => (submitting = value)}
-				callbackURL={getRedirectURL() || '/'}
-				dividerAfter={availableEmailMethods.length > 0}
-			/>
-
-			<!-- Email-based Auth Methods -->
-			{#if availableEmailMethods.length > 0}
-				{#if currentStep === 'email'}
-					<EmailStep
-						{email}
-						onEmailChange={(newEmail) => (email = newEmail)}
-						onMethodSelect={handleMethodSelect}
-						{submitting}
-						availableMethods={availableEmailMethods}
-					/>
-				{:else if currentStep === 'password-flow'}
-					<PasswordFlow
-						{email}
-						emailExists={emailExistsRef}
-						onSuccess={handleAuthSuccess}
-						onBack={resetToEmailStep}
-						{submitting}
-						onSubmittingChange={(value) => (submitting = value)}
-						callbackURL={getRedirectURL() || '/'}
-						onVerifyEmail={() => {
-							currentStep = 'verify-email';
-							verifyContext = 'emailVerification';
-							isSigningIn = true;
-						}}
-					/>
-				{:else if currentStep === 'email-otp-flow'}
-					<EmailOtpFlow
-						{email}
-						emailExists={emailExistsRef}
-						onSuccess={handleAuthSuccess}
-						onBack={resetToEmailStep}
-						{submitting}
-						onSubmittingChange={(value) => (submitting = value)}
-					/>
-				{:else if currentStep === 'magic-link-flow'}
-					<MagicLinkFlow
-						{email}
-						onBack={resetToEmailStep}
-						{submitting}
-						onSubmittingChange={(value) => (submitting = value)}
-						callbackURL={getRedirectURL() || '/'}
-						onLinkSent={() => {
-							verifyContext = 'magicLink';
-							magicLinkSent = true;
-							isSigningIn = true;
-						}}
-					/>
-				{/if}
+			{#if showLegal}
+				<Card.Footer>
+					<p class="text-muted-foreground text-xs">
+						By continuing, you agree to our
+						{#if showTerms}
+							<a href={termsUrl} rel="external noreferrer" class="text-foreground underline"
+								>Terms</a
+							>
+						{/if}
+						{#if showTerms && showPrivacy}
+							and
+						{/if}
+						{#if showPrivacy}
+							<a href={privacyUrl} rel="external noreferrer" class="text-foreground underline"
+								>Privacy Policies</a
+							>
+						{/if}
+					</p>
+				</Card.Footer>
 			{/if}
-		</div>
-
-		{#if showLegal}
-			<div>
-				<p class="text-surface-600-400 mt-10 text-xs">
-					By continuing, you agree to our
-					{#if showTerms}
-						<a href={termsUrl} rel="external noreferrer" class="anchor text-surface-950-50">Terms</a
-						>
-					{/if}
-					{#if showTerms && showPrivacy}
-						and
-					{/if}
-					{#if showPrivacy}
-						<a href={privacyUrl} rel="external noreferrer" class="anchor text-surface-950-50"
-							>Privacy Policies</a
-						>
-					{/if}
-				</p>
-			</div>
 		{/if}
-	{/if}
+	</Card.Root>
 </div>

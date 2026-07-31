@@ -45,7 +45,7 @@
 	{/if}
 	<ProgressPrimitive.Track
 		data-slot="progress-track"
-		class={cn('bg-muted relative h-2 w-full overflow-hidden rounded-full', trackClass)}
+		class={cn('bg-primary/20 relative h-2 w-full overflow-hidden rounded-full', trackClass)}
 	>
 		<ProgressPrimitive.Range
 			data-slot="progress-range"

@@ -138,7 +138,7 @@
 							<EmptyState size="sm" variant="plain" title={m.state_empty()} />
 						{:else}
 							<Table.Root>
-								<Table.Header>
+								<Table.Header class="bg-muted">
 									<Table.Row>
 										<Table.Head class="w-16">{m.settings_stageOrder()}</Table.Head>
 										<Table.Head>{m.settings_taskItemKey()}</Table.Head>

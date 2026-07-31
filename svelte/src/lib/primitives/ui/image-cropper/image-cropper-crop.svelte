@@ -24,7 +24,7 @@
 <button
 	{...rest}
 	bind:this={ref}
-	class={cn('btn preset-filled-primary-500', className)}
+	class={cn('btn bg-primary text-primary-foreground hover:bg-primary/90', className)}
 	onclick={(
 		e: MouseEvent & {
 			currentTarget: EventTarget & HTMLButtonElement;

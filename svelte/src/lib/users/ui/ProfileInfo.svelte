@@ -18,6 +18,9 @@
 	import * as Avatar from '$lib/primitives/ui/avatar';
 	import * as ImageCropper from '$lib/primitives/ui/image-cropper';
 	import { getFileFromUrl } from '$lib/primitives/ui/image-cropper';
+	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Skeleton } from '$lib/primitives/ui/skeleton';
 
 	// Utils
 	import { optimizeImage } from '$lib/primitives/utils/optimizeImage';
@@ -175,21 +178,19 @@
 
 <div class="flex flex-col gap-6">
 	{#if !activeUser}
-		<div class="placeholder h-16 w-full animate-pulse"></div>
+		<Skeleton class="h-16 w-full" />
 	{:else}
 		<!-- Avatar + Upload via ImageCropper (rounded crop) -->
-		<div class="rounded-base flex items-center justify-start pt-6 pl-0.5">
+		<div class="flex items-center justify-start rounded-md pt-6 pl-0.5">
 			<ImageCropper.Root bind:src={cropSrc} accept="image/*" onCropped={handleCropped}>
 				<ImageCropper.UploadTrigger>
-					<div
-						class="rounded-container relative size-20 cursor-pointer transition-all duration-200"
-					>
+					<div class="relative size-20 cursor-pointer rounded-xl transition-all duration-200">
 						<div class="relative cursor-pointer transition-colors">
 							{#key avatarKey}
 								<Avatar.Root class="size-20" onStatusChange={(e) => (loadingStatus = e.status)}>
 									<Avatar.Image src={displayedAvatarSrc} alt={activeUser.name} />
 									<Avatar.Fallback
-										class="bg-surface-300-700 hover:bg-surface-400-600/80 rounded-container duration-150 ease-in-out"
+										class="bg-muted hover:bg-muted/80 rounded-xl duration-150 ease-in-out"
 									>
 										<Avatar.Marble name={activeUser.name} />
 									</Avatar.Fallback>
@@ -198,7 +199,7 @@
 
 							{#if showAvatarOverlay}
 								<div
-									class="bg-surface-50-950 pointer-events-none absolute inset-0 flex items-center justify-center rounded-full"
+									class="bg-background/80 pointer-events-none absolute inset-0 flex items-center justify-center rounded-full"
 								>
 									<div
 										class="h-6 w-6 animate-spin rounded-full border-2 border-white border-b-transparent"
@@ -207,7 +208,7 @@
 							{/if}
 
 							<div
-								class="badge-icon preset-filled-surface-300-700 ring-surface-50-950 dark:ring-surface-100-900 hover:bg-surface-400-600 absolute -right-1.5 -bottom-1.5 size-3 rounded-full ring-4"
+								class="bg-muted ring-background hover:bg-muted/80 absolute -right-1.5 -bottom-1.5 flex size-6 items-center justify-center rounded-full ring-4"
 							>
 								<PencilIcon class="size-4" />
 							</div>
@@ -227,17 +228,16 @@
 		<!-- Inline editable name -->
 		<div
 			class={[
-				'border-surface-300-700 rounded-container relative w-full border px-3.5 py-2 transition-all duration-200 ease-in-out',
+				'border-border relative w-full rounded-xl border px-3.5 py-2 transition-all duration-200 ease-in-out',
 				{
 					'cursor-pointer': !isEditingName,
-					'hover:bg-surface-200-800': !isEditingName,
-					'hover:border-surface-200-800': !isEditingName
+					'hover:bg-muted': !isEditingName
 				}
 			]}
 		>
 			<div class="flex items-center justify-between gap-3 transition-all duration-200 ease-in-out">
 				<div class="flex w-full flex-col">
-					<span class="text-surface-600-400 text-xs">Name</span>
+					<span class="text-muted-foreground text-xs">Name</span>
 					<!-- View mode (collapses when editing) -->
 					<div
 						class={[
@@ -265,25 +265,28 @@
 					>
 						<div class="overflow-hidden">
 							<form onsubmit={handleSubmit} class="flex w-full flex-col gap-3">
-								<input bind:this={nameInputEl} type="text" class="input w-full" bind:value={name} />
+								<Input bind:ref={nameInputEl} type="text" bind:value={name} />
 								<div class="mb-1 flex gap-1.5">
-									<button
+									<Button
 										type="button"
-										class="btn btn-sm preset-tonal w-full"
+										variant="secondary"
+										size="sm"
+										class="w-full"
 										onclick={() => {
 											name = activeUser.name;
 											isEditingName = false;
 										}}
 									>
 										Cancel
-									</button>
-									<button
+									</Button>
+									<Button
 										type="submit"
-										class="btn btn-sm preset-filled-primary-500 w-full"
+										size="sm"
+										class="w-full"
 										disabled={!name || name.trim() === '' || name.trim() === activeUser.name.trim()}
 									>
 										Save
-									</button>
+									</Button>
 								</div>
 							</form>
 						</div>
@@ -292,7 +295,9 @@
 				<!-- Edit affordance and full-area overlay button in view mode -->
 				{#if !isEditingName}
 					<div>
-						<span class="btn-icon preset-filled-surface-50-950 pointer-events-none p-2">
+						<span
+							class="bg-muted pointer-events-none flex size-8 items-center justify-center rounded-md"
+						>
 							<PencilIcon class="size-4" />
 						</span>
 					</div>

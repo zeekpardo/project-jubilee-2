@@ -6,6 +6,10 @@
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Select from '$lib/primitives/ui/select';
 	import * as Menu from '$lib/primitives/ui/menu';
+	import * as Table from '$lib/primitives/ui/table';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
+	import { Label } from '$lib/primitives/ui/label';
 	import { Toggle } from '@ark-ui/svelte/toggle';
 	import { createListCollection } from '@ark-ui/svelte/select';
 	import { toast } from 'svelte-sonner';
@@ -233,63 +237,59 @@
 </script>
 
 <div class="flex w-full flex-col gap-3 pb-6">
-	<span class="text-surface-600-400 text-xs">API Keys</span>
+	<span class="text-muted-foreground text-xs">API Keys</span>
 	<!-- List api keys with name, creation data, expiry data -->
 	{#if apiKeysData}
 		{#if apiKeys.length > 0}
-			<div class="table-wrap">
-				<table class="table caption-bottom">
-					<thead>
-						<tr>
-							<th>Name</th>
-							<th>Created At</th>
-							<th>Expires At</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{#each apiKeys as apiKey (apiKey.id)}
-							<tr>
-								<td>{apiKey.name}</td>
-								<td>{new Date(apiKey.createdAt).toLocaleDateString()}</td>
-								<td
-									>{apiKey.expiresAt
-										? new Date(apiKey.expiresAt).toLocaleDateString()
-										: 'Never'}</td
-								>
-								<td class="text-right">
-									<Menu.Root>
-										<Menu.Trigger class="btn-icon hover:preset-tonal">
-											<EllipsisVerticalIcon class="size-4" />
-										</Menu.Trigger>
-										<Portal>
-											<Menu.Content class="bg-surface-50-950">
-												<Menu.Item value="update" onclick={() => openUpdate(apiKey)}
-													>Update</Menu.Item
-												>
-												<Menu.Item
-													value="delete"
-													variant="destructive"
-													onclick={() =>
-														openConfirmDelete({ id: apiKey.id, name: apiKey.name ?? '' })}
-													>Delete</Menu.Item
-												>
-											</Menu.Content>
-										</Portal>
-									</Menu.Root>
-								</td>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			</div>
+			<Table.Root>
+				<Table.Header>
+					<Table.Row>
+						<Table.Head>Name</Table.Head>
+						<Table.Head>Created At</Table.Head>
+						<Table.Head>Expires At</Table.Head>
+						<Table.Head></Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each apiKeys as apiKey (apiKey.id)}
+						<Table.Row>
+							<Table.Cell>{apiKey.name}</Table.Cell>
+							<Table.Cell>{new Date(apiKey.createdAt).toLocaleDateString()}</Table.Cell>
+							<Table.Cell>
+								{apiKey.expiresAt ? new Date(apiKey.expiresAt).toLocaleDateString() : 'Never'}
+							</Table.Cell>
+							<Table.Cell class="text-right">
+								<Menu.Root>
+									<Menu.Trigger class={buttonVariants({ variant: 'ghost', size: 'icon' })}>
+										<EllipsisVerticalIcon class="size-4" />
+									</Menu.Trigger>
+									<Portal>
+										<Menu.Content>
+											<Menu.Item value="update" onclick={() => openUpdate(apiKey)}>Update</Menu.Item
+											>
+											<Menu.Item
+												value="delete"
+												variant="destructive"
+												onclick={() =>
+													openConfirmDelete({ id: apiKey.id, name: apiKey.name ?? '' })}
+												>Delete</Menu.Item
+											>
+										</Menu.Content>
+									</Portal>
+								</Menu.Root>
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
 		{/if}
 
 		<!-- Create / Update dialog -->
 		<Dialog.Root bind:open={dialogOpen}>
 			<div>
-				<Dialog.Trigger class="btn btn-sm preset-filled-surface-200-800" onclick={openCreate}
-					>Create API Key</Dialog.Trigger
+				<Dialog.Trigger
+					class={buttonVariants({ variant: 'secondary', size: 'sm' })}
+					onclick={openCreate}>Create API Key</Dialog.Trigger
 				>
 			</div>
 			<Dialog.Content class="sm:w-md">
@@ -300,20 +300,19 @@
 				<div class="mt-4 flex flex-col gap-4">
 					<!-- Name input -->
 					<div class="flex flex-col gap-1.5">
-						<label for="api-key-name" class="text-sm font-medium">Name</label>
-						<input
+						<Label for="api-key-name">Name</Label>
+						<Input
 							id="api-key-name"
 							type="text"
 							bind:value={name}
 							placeholder="Enter API key name"
-							class="input"
 							disabled={isSubmitting}
 						/>
 					</div>
 
 					<!-- Expiration selector -->
 					<div class="flex flex-col gap-1.5">
-						<label for="expiration" class="text-sm font-medium">Expiration</label>
+						<Label for="expiration">Expiration</Label>
 						<Select.Root
 							collection={expirationCollection}
 							value={[expirationOption]}
@@ -340,31 +339,21 @@
 					<!-- Custom date picker (only shown when Custom is selected) -->
 					{#if expirationOption === 'custom'}
 						<div class="flex flex-col gap-1.5">
-							<label for="custom-date" class="text-sm font-medium">Select date *</label>
-							<input
-								id="custom-date"
-								type="date"
-								bind:value={customDate}
-								class="input"
-								disabled={isSubmitting}
-							/>
+							<Label for="custom-date">Select date *</Label>
+							<Input id="custom-date" type="date" bind:value={customDate} disabled={isSubmitting} />
 						</div>
 					{/if}
 				</div>
 
 				<div class="mt-6 flex w-full items-center justify-end gap-2">
-					<Dialog.Close class="btn preset-filled-surface-200-800">Cancel</Dialog.Close>
-					<button
-						onclick={handleSubmit}
-						class="btn preset-filled-primary-500"
-						disabled={isSubmitting}
-					>
+					<Dialog.Close class={buttonVariants({ variant: 'secondary' })}>Cancel</Dialog.Close>
+					<Button onclick={handleSubmit} loading={isSubmitting}>
 						{#if isSubmitting}
 							{mode === 'create' ? 'Creating...' : 'Saving...'}
 						{:else}
 							{mode === 'create' ? 'Create' : 'Save'}
 						{/if}
-					</button>
+					</Button>
 				</div>
 				<Dialog.CloseX />
 			</Dialog.Content>
@@ -380,14 +369,17 @@
 					Are you sure you want to delete '{toDeleteName}'? This action cannot be undone.
 				</p>
 				<div class="mt-4 flex w-full items-center justify-end gap-2">
-					<Dialog.Close class="btn btn-sm preset-filled-surface-200-800">Cancel</Dialog.Close>
-					<button
-						class="btn btn-sm preset-filled-error-500"
+					<Dialog.Close class={buttonVariants({ variant: 'secondary', size: 'sm' })}
+						>Cancel</Dialog.Close
+					>
+					<Button
+						variant="destructive"
+						size="sm"
 						onclick={handleConfirmDelete}
-						disabled={isDeleting}
+						loading={isDeleting}
 					>
 						{#if isDeleting}Deleting...{:else}Delete{/if}
-					</button>
+					</Button>
 				</div>
 				<Dialog.CloseX />
 			</Dialog.Content>
@@ -400,12 +392,12 @@
 					<Dialog.Title>Your new API key</Dialog.Title>
 				</Dialog.Header>
 				<p class="text-sm">Copy and store this key now. You won’t be able to see it again.</p>
-				<div class="input-group mt-4 grid-cols-[1fr_auto]">
-					<input class="ig-input" readonly value={newKey} />
+				<div class="mt-4 flex items-center gap-2">
+					<Input readonly value={newKey} class="font-mono" />
 					<Toggle.Root
 						bind:pressed={copied}
 						onclick={handleCopyClick}
-						class="ig-btn preset-filled-surface-200-800"
+						class={buttonVariants({ variant: 'secondary', size: 'icon' }) + ' shrink-0'}
 						aria-label="Copy API key"
 					>
 						{#if copied}
@@ -416,7 +408,9 @@
 					</Toggle.Root>
 				</div>
 				<div class="mt-4 flex w-full items-center justify-end gap-2">
-					<Dialog.Close class="btn btn-sm preset-filled-surface-200-800">Close</Dialog.Close>
+					<Dialog.Close class={buttonVariants({ variant: 'secondary', size: 'sm' })}
+						>Close</Dialog.Close
+					>
 				</div>
 				<Dialog.CloseX />
 			</Dialog.Content>

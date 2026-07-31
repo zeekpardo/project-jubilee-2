@@ -12,6 +12,6 @@
 <DialogPrimitive.Title
 	bind:ref
 	data-slot="drawer-title"
-	class={cn('pb-6 text-left text-xl leading-none tracking-tight', className)}
+	class={cn('text-foreground font-semibold', className)}
 	{...restProps}
 />

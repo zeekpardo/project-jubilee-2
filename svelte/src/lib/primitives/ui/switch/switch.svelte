@@ -31,7 +31,7 @@
 	<SwitchPrimitive.Control
 		data-slot="switch-control"
 		class={cn(
-			'data-[state=checked]:bg-primary data-[state=unchecked]:bg-border focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-px shadow-xs transition-all outline-none focus-visible:ring-[3px]',
+			'data-[state=checked]:bg-primary data-[state=unchecked]:bg-input focus-visible:border-ring focus-visible:ring-ring/50 inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent p-px shadow-xs transition-all outline-none focus-visible:ring-[3px]',
 			controlClass
 		)}
 	>

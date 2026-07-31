@@ -12,6 +12,6 @@
 <DialogPrimitive.Description
 	bind:ref
 	data-scope="drawer"
-	class={cn('text-surface-600-400 text-sm', className)}
+	class={cn('text-muted-foreground text-sm', className)}
 	{...restProps}
 />

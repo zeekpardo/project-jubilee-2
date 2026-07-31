@@ -19,9 +19,7 @@ export const deleteUser = mutation({
 		const ownerMemberships: Doc<'member'>[] = [];
 
 		// 1) Delete organization memberships where the user is NOT the owner.
-		const memberships = ctx.db
-			.query('member')
-			.withIndex('userId', (q) => q.eq('userId', args._id));
+		const memberships = ctx.db.query('member').withIndex('userId', (q) => q.eq('userId', args._id));
 
 		for await (const membership of memberships) {
 			if (membership.role === 'owner') {

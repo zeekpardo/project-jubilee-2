@@ -108,7 +108,7 @@
 			</EmptyState>
 		{:else}
 			<Table.Root>
-				<Table.Header>
+				<Table.Header class="bg-muted">
 					<Table.Row>
 						<Table.Head>{m.field_name()}</Table.Head>
 						<Table.Head class="text-right">{m.field_amount()}</Table.Head>

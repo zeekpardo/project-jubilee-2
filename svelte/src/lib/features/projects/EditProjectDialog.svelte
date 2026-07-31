@@ -104,8 +104,6 @@
 				</div>
 			</div>
 
-			<div class="grid gap-4 sm:grid-cols-2"></div>
-
 			<Dialog.Footer class="w-full">
 				<Button type="button" variant="outline" onclick={() => (open = false)} disabled={isSaving}>
 					{m.action_cancel()}

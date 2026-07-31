@@ -127,12 +127,14 @@
 		</Can>
 	{/snippet}
 
-	<div class="grid gap-4 sm:grid-cols-3">
+	<div
+		class="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-1 gap-3 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs sm:grid-cols-3 md:gap-4"
+	>
 		{#each tiles as tile (tile.key)}
-			<Card.Root>
+			<Card.Root class="@container/card">
 				<Card.Header>
 					<Card.Description>{tile.label}</Card.Description>
-					<Card.Title class="text-2xl tabular-nums">
+					<Card.Title class="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
 						{formatCentsCompact(tile.value)}
 					</Card.Title>
 				</Card.Header>
@@ -158,76 +160,82 @@
 				{:else if rowsFor(ledgerTab.value).length === 0}
 					<EmptyState title={m.money_empty()} />
 				{:else}
-					<Table.Root>
-						<Table.Header>
-							<Table.Row>
-								<Table.Head>{m.field_date()}</Table.Head>
-								<Table.Head>{m.field_amount()}</Table.Head>
-								{#if ledgerTab.value === 'donation'}
-									<Table.Head>{m.money_donor()}</Table.Head>
-								{/if}
-								<Table.Head>{m.field_notes()}</Table.Head>
-								<Table.Head>{m.money_remaining()}</Table.Head>
-								<Table.Head class="text-right">{m.field_actions()}</Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each rowsFor(ledgerTab.value) as transaction (transaction._id)}
+					<div class="overflow-hidden rounded-lg border">
+						<Table.Root>
+							<Table.Header class="bg-muted">
 								<Table.Row>
-									<Table.Cell class="text-muted-foreground">
-										{transaction.occurredOn || '—'}
-									</Table.Cell>
-									<Table.Cell class="font-medium tabular-nums">
-										{formatCents(transaction.amountCents)}
-									</Table.Cell>
+									<Table.Head>{m.field_date()}</Table.Head>
+									<Table.Head>{m.field_amount()}</Table.Head>
 									{#if ledgerTab.value === 'donation'}
-										<Table.Cell class="text-muted-foreground">
-											{transaction.contactId
-												? (donorNames.get(transaction.contactId) ?? m.money_noDonor())
-												: m.money_noDonor()}
-										</Table.Cell>
+										<Table.Head>{m.money_donor()}</Table.Head>
 									{/if}
-									<Table.Cell class="text-muted-foreground">
-										{transaction.reference || transaction.note || '—'}
-									</Table.Cell>
-									<Table.Cell class="tabular-nums">
-										{#if remainingById.has(transaction._id)}
-											<Badge variant="warning">
-												{formatCents(remainingById.get(transaction._id) ?? 0)}
-											</Badge>
-										{:else}
-											<Badge variant="success">{m.money_fullyAllocated()}</Badge>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-right">
-										<div class="flex items-center justify-end gap-1">
-											<Button size="sm" variant="outline" onclick={() => openAllocate(transaction)}>
-												{m.money_allocate()}
-											</Button>
-											<Can do="money:write" campaignId={active.id}>
-												<Button
-													size="sm"
-													variant="ghost"
-													aria-label={m.action_edit()}
-													onclick={() => openEdit(transaction)}
-												>
-													<PencilIcon class="size-4" />
-												</Button>
-												<Button
-													size="sm"
-													variant="ghost"
-													aria-label={m.money_deleteTransaction()}
-													onclick={() => openDelete(transaction)}
-												>
-													<Trash2Icon class="size-4" />
-												</Button>
-											</Can>
-										</div>
-									</Table.Cell>
+									<Table.Head>{m.field_notes()}</Table.Head>
+									<Table.Head>{m.money_remaining()}</Table.Head>
+									<Table.Head class="text-right">{m.field_actions()}</Table.Head>
 								</Table.Row>
-							{/each}
-						</Table.Body>
-					</Table.Root>
+							</Table.Header>
+							<Table.Body>
+								{#each rowsFor(ledgerTab.value) as transaction (transaction._id)}
+									<Table.Row>
+										<Table.Cell class="text-muted-foreground">
+											{transaction.occurredOn || '—'}
+										</Table.Cell>
+										<Table.Cell class="font-medium tabular-nums">
+											{formatCents(transaction.amountCents)}
+										</Table.Cell>
+										{#if ledgerTab.value === 'donation'}
+											<Table.Cell class="text-muted-foreground">
+												{transaction.contactId
+													? (donorNames.get(transaction.contactId) ?? m.money_noDonor())
+													: m.money_noDonor()}
+											</Table.Cell>
+										{/if}
+										<Table.Cell class="text-muted-foreground">
+											{transaction.reference || transaction.note || '—'}
+										</Table.Cell>
+										<Table.Cell class="tabular-nums">
+											{#if remainingById.has(transaction._id)}
+												<Badge variant="warning">
+													{formatCents(remainingById.get(transaction._id) ?? 0)}
+												</Badge>
+											{:else}
+												<Badge variant="success">{m.money_fullyAllocated()}</Badge>
+											{/if}
+										</Table.Cell>
+										<Table.Cell class="text-right">
+											<div class="flex items-center justify-end gap-1">
+												<Button
+													size="sm"
+													variant="outline"
+													onclick={() => openAllocate(transaction)}
+												>
+													{m.money_allocate()}
+												</Button>
+												<Can do="money:write" campaignId={active.id}>
+													<Button
+														size="sm"
+														variant="ghost"
+														aria-label={m.action_edit()}
+														onclick={() => openEdit(transaction)}
+													>
+														<PencilIcon class="size-4" />
+													</Button>
+													<Button
+														size="sm"
+														variant="ghost"
+														aria-label={m.money_deleteTransaction()}
+														onclick={() => openDelete(transaction)}
+													>
+														<Trash2Icon class="size-4" />
+													</Button>
+												</Can>
+											</div>
+										</Table.Cell>
+									</Table.Row>
+								{/each}
+							</Table.Body>
+						</Table.Root>
+					</div>
 				{/if}
 			</Tabs.Content>
 		{/each}
@@ -241,40 +249,42 @@
 			{:else if unallocated.length === 0}
 				<EmptyState title={m.money_fullyAllocated()} />
 			{:else}
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>{m.field_date()}</Table.Head>
-							<Table.Head>{m.field_type()}</Table.Head>
-							<Table.Head>{m.field_amount()}</Table.Head>
-							<Table.Head>{m.money_remaining()}</Table.Head>
-							<Table.Head class="text-right">{m.field_actions()}</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each unallocated as transaction (transaction._id)}
+				<div class="overflow-hidden rounded-lg border">
+					<Table.Root>
+						<Table.Header class="bg-muted">
 							<Table.Row>
-								<Table.Cell class="text-muted-foreground">
-									{transaction.occurredOn || '—'}
-								</Table.Cell>
-								<Table.Cell>
-									<Badge variant="secondary">{transactionTypeLabel(transaction.type)}</Badge>
-								</Table.Cell>
-								<Table.Cell class="font-medium tabular-nums">
-									{formatCents(transaction.amountCents)}
-								</Table.Cell>
-								<Table.Cell class="tabular-nums">
-									<Badge variant="warning">{formatCents(transaction.remainingCents)}</Badge>
-								</Table.Cell>
-								<Table.Cell class="text-right">
-									<Button size="sm" variant="outline" onclick={() => openAllocate(transaction)}>
-										{m.money_allocate()}
-									</Button>
-								</Table.Cell>
+								<Table.Head>{m.field_date()}</Table.Head>
+								<Table.Head>{m.field_type()}</Table.Head>
+								<Table.Head>{m.field_amount()}</Table.Head>
+								<Table.Head>{m.money_remaining()}</Table.Head>
+								<Table.Head class="text-right">{m.field_actions()}</Table.Head>
 							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
+						</Table.Header>
+						<Table.Body>
+							{#each unallocated as transaction (transaction._id)}
+								<Table.Row>
+									<Table.Cell class="text-muted-foreground">
+										{transaction.occurredOn || '—'}
+									</Table.Cell>
+									<Table.Cell>
+										<Badge variant="secondary">{transactionTypeLabel(transaction.type)}</Badge>
+									</Table.Cell>
+									<Table.Cell class="font-medium tabular-nums">
+										{formatCents(transaction.amountCents)}
+									</Table.Cell>
+									<Table.Cell class="tabular-nums">
+										<Badge variant="warning">{formatCents(transaction.remainingCents)}</Badge>
+									</Table.Cell>
+									<Table.Cell class="text-right">
+										<Button size="sm" variant="outline" onclick={() => openAllocate(transaction)}>
+											{m.money_allocate()}
+										</Button>
+									</Table.Cell>
+								</Table.Row>
+							{/each}
+						</Table.Body>
+					</Table.Root>
+				</div>
 			{/if}
 		</Tabs.Content>
 	</Tabs.Root>

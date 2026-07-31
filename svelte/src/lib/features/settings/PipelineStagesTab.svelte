@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Primitives
+	import * as Card from '$lib/primitives/ui/card';
 	import * as Table from '$lib/primitives/ui/table';
 	import { Badge } from '$lib/primitives/ui/badge';
 	import { Button } from '$lib/primitives/ui/button';
@@ -102,130 +103,128 @@
 	}
 </script>
 
-<div class="flex flex-col gap-4">
-	<div class="flex justify-end">
-		<Button onclick={openCreate}>
-			<PlusIcon />
-			{m.settings_stageNew()}
-		</Button>
-	</div>
-
-	{#if isLoading}
-		<div class="flex flex-col gap-2">
-			<Skeleton class="h-10 w-full" />
-			<Skeleton class="h-10 w-full" />
-			<Skeleton class="h-10 w-full" />
-		</div>
-	{:else if stages.length === 0}
-		<EmptyState title={m.settings_pipelineEmpty()}>
-			{#snippet icon()}
-				<LayersIcon />
-			{/snippet}
-			{#snippet action()}
-				<Button onclick={openCreate}>
-					<PlusIcon />
-					{m.settings_stageNew()}
-				</Button>
-			{/snippet}
-		</EmptyState>
-	{:else}
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head class="w-16">{m.settings_stageOrder()}</Table.Head>
-					<Table.Head>{m.settings_stageLabel()}</Table.Head>
-					<Table.Head>{m.settings_stageKey()}</Table.Head>
-					<Table.Head>{m.settings_stageKind()}</Table.Head>
-					<Table.Head>{m.field_status()}</Table.Head>
-					<Table.Head class="text-right">{m.field_actions()}</Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#each stages as stage, index (stage._id)}
-					{@const blocked = deleteBlockedReason(stage)}
+<Card.Root>
+	<Card.Header>
+		<Card.Title>{m.settings_pipeline()}</Card.Title>
+		<Card.Action>
+			<Button onclick={openCreate}>
+				<PlusIcon />
+				{m.settings_stageNew()}
+			</Button>
+		</Card.Action>
+	</Card.Header>
+	<Card.Content>
+		{#if isLoading}
+			<div class="flex flex-col gap-2">
+				<Skeleton class="h-10 w-full" />
+				<Skeleton class="h-10 w-full" />
+				<Skeleton class="h-10 w-full" />
+			</div>
+		{:else if stages.length === 0}
+			<EmptyState title={m.settings_pipelineEmpty()}>
+				{#snippet icon()}
+					<LayersIcon />
+				{/snippet}
+			</EmptyState>
+		{:else}
+			<Table.Root>
+				<Table.Header class="bg-muted">
 					<Table.Row>
-						<Table.Cell class="text-muted-foreground tabular-nums">{index + 1}</Table.Cell>
-						<Table.Cell class="font-medium">
-							<span class="flex items-center gap-2">
-								<span
-									class="border-border size-2.5 shrink-0 rounded-full border"
-									style:background-color={stage.accent ?? 'transparent'}
-								></span>
-								{stage.label}
-							</span>
-						</Table.Cell>
-						<Table.Cell class="text-muted-foreground font-mono text-xs">{stage.key}</Table.Cell>
-						<Table.Cell>
-							<Badge variant={stage.kind === 'terminal' ? 'outline' : 'secondary'}>
-								{stage.kind === 'terminal'
-									? m.settings_stageKind_terminal()
-									: m.settings_stageKind_funnel()}
-							</Badge>
-						</Table.Cell>
-						<Table.Cell>
-							<span class="flex flex-wrap gap-1">
-								{#if stage.isDefault}
-									<Badge variant="default">{m.settings_stageDefault()}</Badge>
-								{/if}
-								{#if stage.isFundedGate}
-									<Badge variant="success">{m.settings_stageFundedGate()}</Badge>
-								{/if}
-								{#if stage.isSystem}
-									<Badge variant="outline">{m.settings_stageSystem()}</Badge>
-								{/if}
-							</span>
-						</Table.Cell>
-						<Table.Cell>
-							<span class="flex items-center justify-end gap-1">
-								<Button
-									variant="ghost"
-									size="icon"
-									aria-label={m.settings_stageMoveUp()}
-									title={m.settings_stageMoveUp()}
-									disabled={index === 0 || isReordering}
-									onclick={() => move(index, -1)}
-								>
-									<ChevronUpIcon />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon"
-									aria-label={m.settings_stageMoveDown()}
-									title={m.settings_stageMoveDown()}
-									disabled={index === stages.length - 1 || isReordering}
-									onclick={() => move(index, 1)}
-								>
-									<ChevronDownIcon />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon"
-									aria-label={m.action_edit()}
-									title={m.action_edit()}
-									onclick={() => openEdit(stage)}
-								>
-									<PencilIcon />
-								</Button>
-								<!-- The span carries the tooltip: a disabled button takes no pointer events. -->
-								<span title={blocked ?? m.action_delete()} class="inline-flex">
+						<Table.Head class="w-16">{m.settings_stageOrder()}</Table.Head>
+						<Table.Head>{m.settings_stageLabel()}</Table.Head>
+						<Table.Head>{m.settings_stageKey()}</Table.Head>
+						<Table.Head>{m.settings_stageKind()}</Table.Head>
+						<Table.Head>{m.field_status()}</Table.Head>
+						<Table.Head class="text-right">{m.field_actions()}</Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each stages as stage, index (stage._id)}
+						{@const blocked = deleteBlockedReason(stage)}
+						<Table.Row>
+							<Table.Cell class="text-muted-foreground tabular-nums">{index + 1}</Table.Cell>
+							<Table.Cell class="font-medium">
+								<span class="flex items-center gap-2">
+									<span
+										class="border-border size-2.5 shrink-0 rounded-full border"
+										style:background-color={stage.accent ?? 'transparent'}
+									></span>
+									{stage.label}
+								</span>
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground font-mono text-xs">{stage.key}</Table.Cell>
+							<Table.Cell>
+								<Badge variant={stage.kind === 'terminal' ? 'outline' : 'secondary'}>
+									{stage.kind === 'terminal'
+										? m.settings_stageKind_terminal()
+										: m.settings_stageKind_funnel()}
+								</Badge>
+							</Table.Cell>
+							<Table.Cell>
+								<span class="flex flex-wrap gap-1">
+									{#if stage.isDefault}
+										<Badge variant="default">{m.settings_stageDefault()}</Badge>
+									{/if}
+									{#if stage.isFundedGate}
+										<Badge variant="success">{m.settings_stageFundedGate()}</Badge>
+									{/if}
+									{#if stage.isSystem}
+										<Badge variant="outline">{m.settings_stageSystem()}</Badge>
+									{/if}
+								</span>
+							</Table.Cell>
+							<Table.Cell>
+								<span class="flex items-center justify-end gap-1">
 									<Button
 										variant="ghost"
 										size="icon"
-										aria-label={m.action_delete()}
-										disabled={blocked !== null}
-										onclick={() => openDelete(stage)}
+										aria-label={m.settings_stageMoveUp()}
+										title={m.settings_stageMoveUp()}
+										disabled={index === 0 || isReordering}
+										onclick={() => move(index, -1)}
 									>
-										<Trash2Icon />
+										<ChevronUpIcon />
 									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										aria-label={m.settings_stageMoveDown()}
+										title={m.settings_stageMoveDown()}
+										disabled={index === stages.length - 1 || isReordering}
+										onclick={() => move(index, 1)}
+									>
+										<ChevronDownIcon />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										aria-label={m.action_edit()}
+										title={m.action_edit()}
+										onclick={() => openEdit(stage)}
+									>
+										<PencilIcon />
+									</Button>
+									<!-- The span carries the tooltip: a disabled button takes no pointer events. -->
+									<span title={blocked ?? m.action_delete()} class="inline-flex">
+										<Button
+											variant="ghost"
+											size="icon"
+											aria-label={m.action_delete()}
+											disabled={blocked !== null}
+											onclick={() => openDelete(stage)}
+										>
+											<Trash2Icon />
+										</Button>
+									</span>
 								</span>
-							</span>
-						</Table.Cell>
-					</Table.Row>
-				{/each}
-			</Table.Body>
-		</Table.Root>
-	{/if}
-</div>
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		{/if}
+	</Card.Content>
+</Card.Root>
 
 <StageFormDialog bind:open={formOpen} {campaignId} stage={editing} nextOrder={stages.length} />
 

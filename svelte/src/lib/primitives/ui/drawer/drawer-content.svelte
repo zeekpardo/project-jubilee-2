@@ -31,11 +31,11 @@
 			data-scope="drawer"
 			data-side={side}
 			class={cn(
-				'group/drawer-content bg-surface-100-900 fixed z-50 flex h-auto flex-col p-6',
-				side === 'top' && 'inset-x-0 top-0 mb-24 max-h-[80vh] rounded-b-lg ',
-				side === 'bottom' && 'inset-x-0 bottom-0 mt-24 max-h-[80vh] rounded-t-lg',
-				side === 'right' && 'inset-y-0 right-0 w-3/4 sm:max-w-sm',
-				side === 'left' && 'inset-y-0 left-0 w-3/4 sm:max-w-sm',
+				'group/drawer-content bg-background fixed z-50 flex h-auto flex-col gap-4 p-6 shadow-lg',
+				side === 'top' && 'inset-x-0 top-0 mb-24 max-h-[80vh] rounded-b-lg border-b',
+				side === 'bottom' && 'inset-x-0 bottom-0 mt-24 max-h-[80vh] rounded-t-lg border-t',
+				side === 'right' && 'inset-y-0 right-0 w-3/4 border-l sm:max-w-sm',
+				side === 'left' && 'inset-y-0 left-0 w-3/4 border-r sm:max-w-sm',
 				// Animate: fade and directional slide based on side + state
 				'data-[state=open]:animate-in data-[state=closed]:animate-out duration-200',
 				'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',

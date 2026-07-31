@@ -9,6 +9,7 @@
 	import * as Popover from '$lib/primitives/ui/popover';
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Avatar from '$lib/primitives/ui/avatar';
+	import { buttonVariants } from '$lib/primitives/ui/button';
 	// Icons
 	import Building2Icon from '@lucide/svelte/icons/building-2';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
@@ -241,7 +242,7 @@
 
 {#if !authConstants.organizations}
 	<!-- Gate 1: Organizations feature is disabled -->
-	<div class="text-error-600-400">
+	<div class="text-destructive">
 		Organizations are disabled, but OrganizationSwitcher is being used. Please turn them on in
 		auth.constants.ts
 	</div>
@@ -250,11 +251,11 @@
 	<!-- Return null by not rendering anything -->
 {:else if (isLoading || (organizationListResponse?.isLoading ?? false) || (activeOrganizationResponse?.isLoading ?? false)) && !organizationList && !activeOrganization}
 	<!-- Gate 3: Loading state - only show if queries are loading AND no data is available yet -->
-	<div class="placeholder h-8 w-40 animate-pulse"></div>
+	<div class="bg-muted h-8 w-40 animate-pulse rounded-md"></div>
 {:else if organizationList && organizationList.length === 0}
 	<!-- Gate 4: No organizations - show create organization modal -->
 	<Dialog.Root bind:open={createOrganizationDialogOpen}>
-		<Dialog.Trigger class="btn preset-tonal flex items-center gap-2">
+		<Dialog.Trigger class={buttonVariants({ variant: 'secondary' }) + ' items-center gap-2'}>
 			<PlusIcon class="size-4" />
 			<span>Create Organization</span>
 		</Dialog.Trigger>
@@ -267,20 +268,20 @@
 	<!-- Gate 5: Has organizations - show the switcher -->
 	<Popover.Root bind:open={switcherPopoverOpen} positioning={{ placement: popoverPlacement }}>
 		<Popover.Trigger
-			class="border-surface-200-800 rounded-container flex w-32 flex-row items-center justify-between border p-1 pr-2 duration-200 ease-in-out sm:w-40"
+			class="border-border flex w-full flex-row items-center justify-between rounded-xl border p-1 pr-2 duration-200 ease-in-out"
 		>
 			<div class="flex w-full max-w-64 items-center gap-2 overflow-hidden sm:gap-3">
-				<Avatar.Root class="rounded-container size-8 shrink-0">
+				<Avatar.Root class="size-8 shrink-0 rounded-xl">
 					<Avatar.Image
 						src={activeOrganization?.logo}
 						alt={activeOrganization?.name}
-						class="rounded-container"
+						class="rounded-xl"
 					/>
-					<Avatar.Fallback class="rounded-container">
+					<Avatar.Fallback class="rounded-xl">
 						<Building2Icon class="size-5" />
 					</Avatar.Fallback>
 				</Avatar.Root>
-				<span class="text-surface-700-300 truncate text-sm">
+				<span class="text-muted-foreground truncate text-sm">
 					{activeOrganization?.name}
 				</span>
 			</div>
@@ -288,45 +289,45 @@
 		</Popover.Trigger>
 		<Popover.Content>
 			<div class="flex flex-col gap-1">
-				<div role="list" class="bg-surface-50-950 rounded-container flex flex-col overflow-hidden">
+				<div role="list" class="bg-card flex flex-col overflow-hidden rounded-xl">
 					{#if isOwnerOrAdmin}
 						<button
 							onclick={openProfileModal}
-							class="btn hover:bg-surface-100-900/50 text-surface-700-300 flex h-14 w-full max-w-80 items-center gap-3 p-3 pr-5 text-left text-sm/6"
+							class="hover:bg-muted/50 text-muted-foreground flex h-14 w-full max-w-80 items-center gap-3 p-3 pr-5 text-left text-sm/6"
 						>
-							<Avatar.Root class="rounded-container size-8 shrink-0">
+							<Avatar.Root class="size-8 shrink-0 rounded-xl">
 								<Avatar.Image
 									src={activeOrganization?.logo}
 									alt={activeOrganization?.name}
-									class="rounded-container"
+									class="rounded-xl"
 								/>
-								<Avatar.Fallback class="rounded-container">
+								<Avatar.Fallback class="rounded-xl">
 									<Building2Icon class="size-4" />
 								</Avatar.Fallback>
 							</Avatar.Root>
-							<span class="text-surface-700-300 text-medium w-full truncate text-sm">
+							<span class="text-muted-foreground w-full truncate text-sm font-medium">
 								{activeOrganization?.name}
 							</span>
 							<SettingsIcon class="size-6" />
 						</button>
 					{:else}
 						<div
-							class="text-surface-700-300 border-surface-200-800 flex max-w-80 items-center gap-3 border-t p-3 text-sm/6"
+							class="text-muted-foreground border-border flex max-w-80 items-center gap-3 border-t p-3 text-sm/6"
 						>
-							<Avatar.Root class="rounded-container size-8 shrink-0">
+							<Avatar.Root class="size-8 shrink-0 rounded-xl">
 								<Avatar.Image
 									src={activeOrganization?.logo}
 									alt={activeOrganization?.name}
-									class="rounded-container"
+									class="rounded-xl"
 								/>
-								<Avatar.Fallback class="rounded-container">
+								<Avatar.Fallback class="rounded-xl">
 									<Building2Icon class="size-4" />
 								</Avatar.Fallback>
 							</Avatar.Root>
-							<span class="text-surface-700-300 text-medium w-full truncate">
+							<span class="text-muted-foreground w-full truncate font-medium">
 								{activeOrganization?.name}
 							</span>
-							<LeaveOrganization />
+							<LeaveOrganization variant="inline" />
 						</div>
 					{/if}
 
@@ -334,15 +335,15 @@
 						<div>
 							<button
 								onclick={() => updateActiveOrg(org.id)}
-								class="group hover:bg-surface-100-900/50 border-surface-200-800 flex w-full max-w-80 items-center gap-3 border-t p-3"
+								class="group hover:bg-muted/50 border-border flex w-full max-w-80 items-center gap-3 border-t p-3"
 							>
-								<Avatar.Root class="rounded-container size-8 shrink-0">
-									<Avatar.Image src={org.logo} alt={org.name} class="rounded-container" />
-									<Avatar.Fallback class="rounded-container">
+								<Avatar.Root class="size-8 shrink-0 rounded-xl">
+									<Avatar.Image src={org.logo} alt={org.name} class="rounded-xl" />
+									<Avatar.Fallback class="rounded-xl">
 										<Building2Icon class="size-4" />
 									</Avatar.Fallback>
 								</Avatar.Root>
-								<span class="text-surface-700-300 truncate text-sm">
+								<span class="text-muted-foreground truncate text-sm">
 									{org.name}
 								</span>
 							</button>
@@ -351,14 +352,14 @@
 				</div>
 				<button
 					onclick={openCreateOrgModal}
-					class="btn hover:bg-surface-50-950/50 flex h-12 w-full items-center justify-start gap-3 bg-transparent p-3"
+					class="hover:bg-accent flex h-12 w-full items-center justify-start gap-3 bg-transparent p-3"
 				>
 					<div
-						class="bg-surface-200-800 border-surface-300-700 rounded-base flex size-8 shrink-0 items-center justify-center border border-dashed"
+						class="bg-muted border-border flex size-8 shrink-0 items-center justify-center rounded-md border border-dashed"
 					>
 						<PlusIcon class="size-4" />
 					</div>
-					<span class="text-surface-700-300 text-sm">Create Organization</span>
+					<span class="text-muted-foreground text-sm">Create Organization</span>
 				</button>
 			</div>
 		</Popover.Content>

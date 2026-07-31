@@ -15,19 +15,20 @@
 		unstyled: true,
 		classes: {
 			toast:
-				'flex flex-row rounded-container shadow-lg w-full md:w-96 items-start p-3 transition-all font-medium gap-2 pointer-events-auto',
+				'bg-background text-foreground border-border flex w-full flex-row items-start gap-2 rounded-md border p-3 font-medium shadow-lg transition-all pointer-events-auto md:w-96',
 			title: 'break-words text-sm font-medium leading-tight',
-			description: 'text-surface-600-400 mt-1 line-clamp-2 text-xs',
+			description: 'text-muted-foreground mt-1 line-clamp-2 text-xs',
 			action: '',
 			actionButton: '',
 			cancelButton: '',
-			closeButton: 'btn hover:preset-tonal ml-auto p-1 text-xs order-last',
-			default: 'bg-surface-950 dark:bg-surface-800 text-surface-50',
-			info: 'bg-surface-950 dark:bg-surface-800 text-surface-50',
-			success: 'bg-surface-950 dark:bg-surface-800 text-surface-50',
-			error: 'bg-surface-950 dark:bg-surface-800 text-surface-50',
-			loading: 'bg-surface-950 dark:bg-surface-800 text-surface-50',
-			warning: 'bg-surface-950 dark:bg-surface-800 text-surface-50'
+			closeButton:
+				'hover:bg-accent hover:text-accent-foreground ml-auto rounded-md p-1 text-xs order-last',
+			default: 'bg-background text-foreground',
+			info: 'bg-background text-foreground',
+			success: 'bg-background text-foreground',
+			error: 'bg-destructive text-white border-transparent',
+			loading: 'bg-background text-foreground',
+			warning: 'bg-background text-foreground'
 		}
 	}}
 	{...restProps}

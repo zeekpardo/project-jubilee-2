@@ -13,6 +13,7 @@
 	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
 	import * as m from '$lib/i18n/messages';
 
+	import * as Card from '$lib/primitives/ui/card';
 	import * as Select from '$lib/primitives/ui/select';
 	import { Badge } from '$lib/primitives/ui/badge';
 	import { Button } from '$lib/primitives/ui/button';
@@ -120,93 +121,102 @@
 {:else}
 	<div class="flex flex-col gap-4">
 		{#each blocks as block (block.household._id)}
-			<div class="border-border rounded-xl border p-4">
-				<div class="flex flex-wrap items-center justify-between gap-2">
-					<a
-						class="font-medium hover:underline"
-						href={resolve('/app/admin/households')}
-						title={block.household.name}
-					>
-						{block.household.name}
-					</a>
-					<Badge variant="secondary">{householdRoleLabel(block.membership.role)}</Badge>
-				</div>
-
-				{#if block.members.length === 0}
-					<EmptyState variant="plain" size="sm" title={m.households_noMembers()} />
-				{:else}
-					<ul class="divide-border mt-3 divide-y">
-						{#each block.members as member (member._id)}
-							{@const isPrimary = block.household.primaryContactId === member.contactId}
-							<li class="flex items-center gap-2 py-2">
-								<Button
-									size="sm"
-									variant="ghost"
-									aria-label={isPrimary ? m.contactDetail_primary() : m.contactDetail_setPrimary()}
-									title={isPrimary ? m.contactDetail_primary() : m.contactDetail_setPrimary()}
-									disabled={isPrimary || !canWrite}
-									onclick={() => setPrimary(block.household._id, member.contactId)}
-								>
-									<StarIcon class={isPrimary ? 'fill-current' : ''} />
-								</Button>
-								<span class="min-w-0 flex-1 truncate">
-									{member.contact ? contactDisplayName(member.contact) : '—'}
-								</span>
-								{#if isPrimary}
-									<Badge variant="outline">{m.contactDetail_primary()}</Badge>
-								{/if}
-								<!-- No remove for the contact this page is about: it would delete the
-								     membership the page is currently reading from, under the reader. -->
-								{#if canWrite && member.contactId !== contactId}
+			<Card.Root>
+				<Card.Header>
+					<Card.Title>
+						<a
+							class="hover:underline"
+							href={resolve('/app/admin/households')}
+							title={block.household.name}
+						>
+							{block.household.name}
+						</a>
+					</Card.Title>
+					<Card.Action>
+						<Badge variant="secondary">{householdRoleLabel(block.membership.role)}</Badge>
+					</Card.Action>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-3">
+					{#if block.members.length === 0}
+						<EmptyState variant="plain" size="sm" title={m.households_noMembers()} />
+					{:else}
+						<ul class="divide-border divide-y">
+							{#each block.members as member (member._id)}
+								{@const isPrimary = block.household.primaryContactId === member.contactId}
+								<li class="flex items-center gap-2 py-2">
 									<Button
 										size="sm"
 										variant="ghost"
-										aria-label={m.households_removeMember()}
-										onclick={() => {
-											removing = member._id;
-											confirmOpen = true;
-										}}
+										aria-label={isPrimary
+											? m.contactDetail_primary()
+											: m.contactDetail_setPrimary()}
+										title={isPrimary ? m.contactDetail_primary() : m.contactDetail_setPrimary()}
+										disabled={isPrimary || !canWrite}
+										onclick={() => setPrimary(block.household._id, member.contactId)}
 									>
-										<Trash2Icon />
+										<StarIcon class={isPrimary ? 'fill-current' : ''} />
 									</Button>
-								{/if}
-							</li>
-						{/each}
-					</ul>
-				{/if}
+									<span class="min-w-0 flex-1 truncate">
+										{member.contact ? contactDisplayName(member.contact) : '—'}
+									</span>
+									{#if isPrimary}
+										<Badge variant="outline">{m.contactDetail_primary()}</Badge>
+									{/if}
+									<!-- No remove for the contact this page is about: it would delete the
+									     membership the page is currently reading from, under the reader. -->
+									{#if canWrite && member.contactId !== contactId}
+										<Button
+											size="sm"
+											variant="ghost"
+											aria-label={m.households_removeMember()}
+											onclick={() => {
+												removing = member._id;
+												confirmOpen = true;
+											}}
+										>
+											<Trash2Icon />
+										</Button>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					{/if}
 
-				{#if canWrite}
-					<div
-						class="border-border mt-3 flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-end"
-					>
-						<div class="flex flex-1 flex-col gap-1.5">
-							<Label>{m.households_addMember()}</Label>
-							<Select.Root
-								collection={block.picker}
-								value={selected[block.household._id as string] ?? []}
-								onValueChange={(d: { value: string[] }) =>
-									(selected = { ...selected, [block.household._id as string]: d.value })}
+					{#if canWrite}
+						<div class="border-border flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-end">
+							<div class="flex flex-1 flex-col gap-1.5">
+								<Label>{m.households_addMember()}</Label>
+								<Select.Root
+									collection={block.picker}
+									value={selected[block.household._id as string] ?? []}
+									onValueChange={(d: { value: string[] }) =>
+										(selected = { ...selected, [block.household._id as string]: d.value })}
+								>
+									<Select.Trigger
+										size="sm"
+										placeholder={m.projects_selectContact()}
+										class="w-full"
+									/>
+									<Select.Content>
+										{#each block.picker.items as option (option.value)}
+											<Select.Item item={option}>
+												<Select.ItemText>{option.label}</Select.ItemText>
+											</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							<Button
+								onclick={() => addMember(block.household._id)}
+								loading={adding === (block.household._id as string)}
+								disabled={(selected[block.household._id as string] ?? []).length === 0}
 							>
-								<Select.Trigger size="sm" placeholder={m.projects_selectContact()} class="w-full" />
-								<Select.Content>
-									{#each block.picker.items as option (option.value)}
-										<Select.Item item={option}>
-											<Select.ItemText>{option.label}</Select.ItemText>
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+								{m.action_add()}
+							</Button>
 						</div>
-						<Button
-							onclick={() => addMember(block.household._id)}
-							loading={adding === (block.household._id as string)}
-							disabled={(selected[block.household._id as string] ?? []).length === 0}
-						>
-							{m.action_add()}
-						</Button>
-					</div>
-				{/if}
-			</div>
+					{/if}
+				</Card.Content>
+			</Card.Root>
 		{/each}
 	</div>
 {/if}

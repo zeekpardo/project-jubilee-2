@@ -13,6 +13,10 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
+	// UI
+	import * as Card from '$lib/primitives/ui/card';
+	import { Button } from '$lib/primitives/ui/button';
+
 	// Get invitationId from page params
 	let invitationId = $derived(page.params.invitationId);
 
@@ -56,33 +60,27 @@
 </script>
 
 <div class="flex min-h-dvh items-center justify-center p-6">
-	<div class="card w-full max-w-md p-8 text-center">
-		{#if isLoading}
-			<div class="flex flex-col items-center gap-4">
-				<Loader2Icon class="size-10 animate-spin" />
-				<h1 class="text-lg font-semibold">Accepting invitation…</h1>
-				<p class="text-sm opacity-60">Please wait a moment.</p>
-			</div>
-		{:else if accepted}
-			<div class="flex flex-col items-center gap-4">
-				<CheckCircle2Icon class="size-10" />
-				<h1 class="text-lg font-semibold">Invitation accepted</h1>
-				<p class="text-sm opacity-60">Redirecting to dashboard…</p>
-			</div>
-		{:else if error}
-			<div class="flex flex-col items-center gap-4">
-				<TriangleAlertIcon class="size-10" />
-				<h1 class="text-lg font-semibold">Couldn't accept invitation</h1>
-				<p class="text-sm opacity-80">{error}</p>
-				<a class="btn preset-tonal hover:preset-filled" href={resolve('/')}>Go to Home</a>
-			</div>
-		{:else if !invitationId}
-			<div class="flex flex-col items-center gap-4">
-				<TriangleAlertIcon class="size-10" />
-				<h1 class="text-lg font-semibold">Invalid invite link</h1>
-				<p class="text-sm opacity-60">Please use a valid invite link.</p>
-				<a class="btn preset-tonal hover:preset-filled" href={resolve('/')}>Go to Home</a>
-			</div>
-		{/if}
-	</div>
+	<Card.Root class="w-full max-w-md">
+		<Card.Content class="flex flex-col items-center gap-4 text-center">
+			{#if isLoading}
+				<Loader2Icon class="text-muted-foreground size-10 animate-spin" />
+				<h1 class="text-lg leading-none font-semibold">Accepting invitation…</h1>
+				<p class="text-muted-foreground text-sm">Please wait a moment.</p>
+			{:else if accepted}
+				<CheckCircle2Icon class="text-primary size-10" />
+				<h1 class="text-lg leading-none font-semibold">Invitation accepted</h1>
+				<p class="text-muted-foreground text-sm">Redirecting to dashboard…</p>
+			{:else if error}
+				<TriangleAlertIcon class="text-destructive size-10" />
+				<h1 class="text-lg leading-none font-semibold">Couldn't accept invitation</h1>
+				<p class="text-muted-foreground text-sm">{error}</p>
+				<Button variant="outline" href={resolve('/')}>Go to Home</Button>
+			{:else if !invitationId}
+				<TriangleAlertIcon class="text-destructive size-10" />
+				<h1 class="text-lg leading-none font-semibold">Invalid invite link</h1>
+				<p class="text-muted-foreground text-sm">Please use a valid invite link.</p>
+				<Button variant="outline" href={resolve('/')}>Go to Home</Button>
+			{/if}
+		</Card.Content>
+	</Card.Root>
 </div>

@@ -85,7 +85,7 @@
 			<EmptyState variant="plain" size="sm" title={m.projects_noMembers()} />
 		{:else}
 			<Table.Root>
-				<Table.Header>
+				<Table.Header class="bg-muted">
 					<Table.Row>
 						<Table.Head>{m.field_name()}</Table.Head>
 						<Table.Head>{m.projects_memberRole()}</Table.Head>

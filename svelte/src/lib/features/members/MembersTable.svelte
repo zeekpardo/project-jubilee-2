@@ -47,69 +47,71 @@
 	}
 </script>
 
-<Table.Root>
-	<Table.Header>
-		<Table.Row>
-			<Table.Head>{m.field_name()}</Table.Head>
-			<Table.Head>{m.field_role()}</Table.Head>
-			<Table.Head>{m.members_assignedCampaigns()}</Table.Head>
-			<Table.Head class="text-right">{m.field_actions()}</Table.Head>
-		</Table.Row>
-	</Table.Header>
-	<Table.Body>
-		{#each members as member (member.id)}
-			{@const role = domainRole(member)}
+<div class="overflow-hidden rounded-lg border">
+	<Table.Root>
+		<Table.Header class="bg-muted">
 			<Table.Row>
-				<Table.Cell>
-					<div class="flex items-center gap-3">
-						<Avatar.Root class="size-8">
-							<Avatar.Image src={member.user.image} alt={member.user.name} />
-							<Avatar.Fallback>
-								<Avatar.Marble name={member.user.name} />
-							</Avatar.Fallback>
-						</Avatar.Root>
-						<div class="flex min-w-0 flex-col">
-							<span class="flex items-center gap-2 truncate text-sm font-medium">
-								{member.user.name}
-								{#if member.userId === currentUserId}
-									<Badge variant="outline">{m.members_you()}</Badge>
-								{/if}
-							</span>
-							<span class="text-muted-foreground truncate text-xs">{member.user.email}</span>
-						</div>
-					</div>
-				</Table.Cell>
-				<Table.Cell>
-					{#if role && canEditRole(member)}
-						<RoleSelect
-							value={role}
-							options={assignable}
-							onSelect={(next) => onRoleChange(member, next)}
-						/>
-					{:else if role}
-						<Badge variant={roleBadgeVariant(role)}>{roleLabel(role)}</Badge>
-					{:else}
-						<Badge variant="outline">{member.role}</Badge>
-					{/if}
-				</Table.Cell>
-				<Table.Cell class="text-muted-foreground">
-					{#if role === 'team_leader'}
-						{assignedCounts[member.userId] ?? 0}
-					{:else}
-						—
-					{/if}
-				</Table.Cell>
-				<Table.Cell>
-					<div class="flex justify-end">
-						{#if role === 'team_leader'}
-							<Button variant="outline" size="sm" onclick={() => onAssign(member)}>
-								<SlidersHorizontalIcon />
-								{m.members_assignedCampaigns()}
-							</Button>
-						{/if}
-					</div>
-				</Table.Cell>
+				<Table.Head>{m.field_name()}</Table.Head>
+				<Table.Head>{m.field_role()}</Table.Head>
+				<Table.Head>{m.members_assignedCampaigns()}</Table.Head>
+				<Table.Head class="text-right">{m.field_actions()}</Table.Head>
 			</Table.Row>
-		{/each}
-	</Table.Body>
-</Table.Root>
+		</Table.Header>
+		<Table.Body>
+			{#each members as member (member.id)}
+				{@const role = domainRole(member)}
+				<Table.Row>
+					<Table.Cell>
+						<div class="flex items-center gap-3">
+							<Avatar.Root class="size-8">
+								<Avatar.Image src={member.user.image} alt={member.user.name} />
+								<Avatar.Fallback>
+									<Avatar.Marble name={member.user.name} />
+								</Avatar.Fallback>
+							</Avatar.Root>
+							<div class="flex min-w-0 flex-col">
+								<span class="flex items-center gap-2 truncate text-sm font-medium">
+									{member.user.name}
+									{#if member.userId === currentUserId}
+										<Badge variant="outline">{m.members_you()}</Badge>
+									{/if}
+								</span>
+								<span class="text-muted-foreground truncate text-xs">{member.user.email}</span>
+							</div>
+						</div>
+					</Table.Cell>
+					<Table.Cell>
+						{#if role && canEditRole(member)}
+							<RoleSelect
+								value={role}
+								options={assignable}
+								onSelect={(next) => onRoleChange(member, next)}
+							/>
+						{:else if role}
+							<Badge variant={roleBadgeVariant(role)}>{roleLabel(role)}</Badge>
+						{:else}
+							<Badge variant="outline">{member.role}</Badge>
+						{/if}
+					</Table.Cell>
+					<Table.Cell class="text-muted-foreground">
+						{#if role === 'team_leader'}
+							{assignedCounts[member.userId] ?? 0}
+						{:else}
+							—
+						{/if}
+					</Table.Cell>
+					<Table.Cell>
+						<div class="flex justify-end">
+							{#if role === 'team_leader'}
+								<Button variant="outline" size="sm" onclick={() => onAssign(member)}>
+									<SlidersHorizontalIcon />
+									{m.members_assignedCampaigns()}
+								</Button>
+							{/if}
+						</div>
+					</Table.Cell>
+				</Table.Row>
+			{/each}
+		</Table.Body>
+	</Table.Root>
+</div>

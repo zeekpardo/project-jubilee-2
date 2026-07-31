@@ -146,7 +146,7 @@
 		}}
 	>
 		<Dialog.Content
-			class={`md:rounded-container top-0 left-0 flex h-full max-h-[100dvh] w-full max-w-full translate-x-0 translate-y-0 flex-col items-start rounded-none md:top-[50%] md:left-[50%] md:h-auto md:max-h-[90vh] md:w-auto md:translate-x-[-50%] md:translate-y-[-50%] ${userProfile.suppressTransition ? 'animate-none transition-none duration-0 data-[state=closed]:duration-0 data-[state=open]:duration-0' : ''}`}
+			class={`top-0 left-0 flex h-full max-h-[100dvh] w-full max-w-full translate-x-0 translate-y-0 flex-col items-start rounded-none md:top-[50%] md:left-[50%] md:h-auto md:max-h-[90vh] md:w-auto md:translate-x-[-50%] md:translate-y-[-50%] md:rounded-xl ${userProfile.suppressTransition ? 'animate-none transition-none duration-0 data-[state=closed]:duration-0 data-[state=open]:duration-0' : ''}`}
 		>
 			<Dialog.Header>
 				<Dialog.Title>Profile</Dialog.Title>

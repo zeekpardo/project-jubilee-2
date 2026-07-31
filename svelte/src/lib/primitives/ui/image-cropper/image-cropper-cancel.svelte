@@ -15,7 +15,7 @@
 <button
 	{...rest}
 	bind:this={ref}
-	class={cn('btn preset-tonal', className)}
+	class={cn('btn bg-secondary text-secondary-foreground hover:bg-secondary/80', className)}
 	onclick={(
 		e: MouseEvent & {
 			currentTarget: EventTarget & HTMLButtonElement;

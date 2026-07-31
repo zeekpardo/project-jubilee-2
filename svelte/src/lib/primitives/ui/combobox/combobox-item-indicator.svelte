@@ -13,4 +13,8 @@
 	}: ComboboxItemIndicatorProps = $props();
 </script>
 
-<ComboboxPrimitive.ItemIndicator bind:ref class={cn('relative', className)} {...restProps} />
+<ComboboxPrimitive.ItemIndicator
+	bind:ref
+	class={cn('ml-auto flex size-4 items-center justify-center', className)}
+	{...restProps}
+/>

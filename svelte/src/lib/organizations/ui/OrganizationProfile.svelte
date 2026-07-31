@@ -8,6 +8,7 @@
 	/** UI **/
 	// Primitives
 	import * as Tabs from '$lib/primitives/ui/tabs';
+	import { Button } from '$lib/primitives/ui/button';
 	// Icons
 	import BoltIcon from '@lucide/svelte/icons/bolt';
 	import ChevronLeftIcon from '@lucide/svelte/icons/chevron-left';
@@ -287,8 +288,8 @@
 	<!-- Desktop Layout -->
 	<div class="hidden h-full w-full md:flex">
 		<!-- Desktop Navigation -->
-		<div class="bg-surface-50 dark:bg-surface-800 sm:bg-surface-300-700 h-full w-56 p-2">
-			<div class="text-surface-600-400 p-3 pt-2 text-xs font-medium">Organization</div>
+		<div class="bg-muted/50 h-full w-56 p-2">
+			<div class="text-muted-foreground p-3 pt-2 text-xs font-medium">Organization</div>
 			<Tabs.List class="flex flex-col">
 				{#each visibleTabs as tab (tab.value)}
 					<Tabs.Trigger value={tab.value} class="gap-2 pl-2">
@@ -303,12 +304,12 @@
 
 		<!-- Desktop Content -->
 		<div class="flex w-full">
-			<Tabs.Content value="general" class="w-ful flex h-full flex-col">
+			<Tabs.Content value="general" class="w-ful flex h-full flex-col gap-4">
 				<div class="h-full">
-					<h6 class=" h6 pb-6 text-left">General settings</h6>
+					<h6 class="pb-6 text-left text-lg font-semibold">General settings</h6>
 					<GeneralSettings {initialData} />
 				</div>
-				<div>
+				<div class="flex flex-col gap-4">
 					<LeaveOrganization {initialData} />
 					<DeleteOrganization {onSuccessfulDelete} {initialData} />
 				</div>
@@ -316,11 +317,11 @@
 
 			{#if isOwnerOrAdmin}
 				<Tabs.Content value="members">
-					<h6 class="h6 pb-6 text-left">Members</h6>
+					<h6 class="pb-6 text-left text-lg font-semibold">Members</h6>
 					<MembersAndInvitations {initialData} />
 				</Tabs.Content>
 				<Tabs.Content value="billing">
-					<h6 class="h6 pb-6 text-left">Billing</h6>
+					<h6 class="pb-6 text-left text-lg font-semibold">Billing</h6>
 				</Tabs.Content>
 			{/if}
 		</div>
@@ -333,20 +334,19 @@
 			class={`flex h-full ${closingFromContent ? 'w-full transform-none' : 'w-[200%] transform'} ${!suppressMobileTransition && !closingFromContent ? 'transition-transform duration-300 ease-out' : ''} ${!closingFromContent && activeMobileTab !== '' ? '-translate-x-1/2' : !closingFromContent ? 'translate-x-0' : ''}`}
 		>
 			<!-- Mobile Navigation (left half) -->
-			<div
-				class="bg-surface-100 dark:bg-surface-900 sm:bg-surface-300-700 relative h-full w-1/2 p-2"
-				class:hidden={closingFromContent}
-			>
-				<div class="h5 px-3 pt-3 pb-8">Organization settings</div>
+			<div class="bg-muted/50 relative h-full w-1/2 p-2" class:hidden={closingFromContent}>
+				<div class="px-3 pt-3 pb-8 text-lg font-semibold">Organization settings</div>
 				<!-- Close button (close entire modal) shown on list view for ideal fade-out -->
-				<button
-					class="ring-offset-background focus:ring-ring hover:bg-surface-300-700 rounded-base absolute top-5 right-4 z-10 p-2 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+				<Button
+					variant="ghost"
+					size="icon"
+					class="absolute top-5 right-4 z-10 opacity-70 hover:opacity-100"
 					onclick={closeFromContent}
 					aria-label="Close organization profile"
 					type="button"
 				>
 					<XIcon />
-				</button>
+				</Button>
 				<Tabs.List class=" flex w-full flex-col  pr-2">
 					{#each visibleTabs as tab, index (tab.value)}
 						<Tabs.Trigger
@@ -354,17 +354,15 @@
 							onclick={() => handleMobileTabChange(tab.value)}
 							class=" flex w-full items-center justify-between gap-3 aria-selected:bg-transparent aria-selected:text-inherit"
 						>
-							<div
-								class="bg-surface-300-700 rounded-base flex size-8 shrink-0 items-center justify-center"
-							>
+							<div class="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
 								<tab.icon />
 							</div>
 							<span class="w-full">{tab.label}</span>
-							<ChevronRightIcon class="text-surface-500 flex" />
+							<ChevronRightIcon class="text-muted-foreground flex" />
 						</Tabs.Trigger>
 						{#if index < visibleTabs.length - 1}
 							<div class="flex h-2 w-full items-center justify-center px-3">
-								<hr class="border-surface-200-800 w-full border" />
+								<hr class="border-border w-full border" />
 							</div>
 						{/if}
 					{/each}
@@ -373,29 +371,31 @@
 
 			<!-- Mobile Content (right half) -->
 			<div
-				class={`bg-surface-50 dark:bg-surface-900 flex h-full flex-col gap-4 px-4 py-6 ${closingFromContent ? 'absolute inset-0 w-full' : 'relative w-1/2'}`}
+				class={`bg-background flex h-full flex-col gap-4 px-4 py-6 ${closingFromContent ? 'absolute inset-0 w-full' : 'relative w-1/2'}`}
 			>
 				<!-- Back button (go back to tabs list) -->
-				<button
-					class="ring-offset-background focus:ring-ring hover:bg-surface-300-700 rounded-base absolute top-5 left-4 z-10 p-2 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+				<Button
+					variant="ghost"
+					size="icon"
+					class="absolute top-5 left-4 z-10 opacity-70 hover:opacity-100"
 					onclick={closeMobileTab}
 					aria-label="Go back to organization settings menu"
 				>
 					<ChevronLeftIcon />
-				</button>
+				</Button>
 
 				{#if activeMobileTab === 'general'}
 					<div class="h-full">
-						<h6 class="h6 pb-12 pl-10">General settings</h6>
+						<h6 class="pb-12 pl-10 text-lg font-semibold">General settings</h6>
 						<GeneralSettings {initialData} />
 					</div>
 					<DeleteOrganization {onSuccessfulDelete} {initialData} />
 					<LeaveOrganization {initialData} />
 				{:else if activeMobileTab === 'members'}
-					<h6 class="h6 pb-6 pl-10">Members</h6>
+					<h6 class="pb-6 pl-10 text-lg font-semibold">Members</h6>
 					<MembersAndInvitations {initialData} />
 				{:else if activeMobileTab === 'billing'}
-					<h6 class="h6 pb-6 pl-10">Billing</h6>
+					<h6 class="pb-6 pl-10 text-lg font-semibold">Billing</h6>
 				{/if}
 			</div>
 		</div>

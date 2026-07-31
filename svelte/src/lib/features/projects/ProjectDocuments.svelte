@@ -79,7 +79,7 @@
 			<EmptyState variant="plain" size="sm" title={m.projects_noDocuments()} />
 		{:else}
 			<Table.Root>
-				<Table.Header>
+				<Table.Header class="bg-muted">
 					<Table.Row>
 						<Table.Head>{m.projects_documentKind()}</Table.Head>
 						<Table.Head>{m.projects_documentStage()}</Table.Head>

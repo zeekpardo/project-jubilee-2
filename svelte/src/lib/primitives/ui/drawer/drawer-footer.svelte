@@ -14,7 +14,7 @@
 	bind:this={ref}
 	data-scope="drawer"
 	data-part="footer"
-	class={cn('sticky bottom-0 mt-auto flex flex-row gap-2 pt-6', className)}
+	class={cn('sticky bottom-0 mt-auto flex flex-col gap-2 pb-4', className)}
 	{...restProps}
 >
 	{@render children?.()}

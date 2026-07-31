@@ -37,6 +37,10 @@
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	const { authClient, authConstants } = getAuthContext();
 
+	// Primitives
+	import { Button } from '$lib/primitives/ui/button';
+	import { Separator } from '$lib/primitives/ui/separator';
+
 	type Provider =
 		| 'github'
 		| 'google'
@@ -189,31 +193,29 @@
 {#if show && hasAnyProvider}
 	<div class={'flex flex-col gap-3 ' + (className ?? '')}>
 		{#each activeProviders as p (p.id)}
-			<button
-				class="btn preset-outlined-surface-400-600 hover:border-surface-600-400 w-full"
+			<Button
+				type="button"
+				variant="outline"
+				class="w-full"
 				onclick={() => handleSocialSignIn(p.id)}
 				disabled={!!submittingProvider}
 				aria-busy={submittingProvider === p.id}
+				loading={submittingProvider === p.id}
 			>
 				{#if submittingProvider === p.id}
-					<div class="flex items-center gap-2">
-						<div
-							class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-						></div>
-						Signing in...
-					</div>
+					Signing in...
 				{:else}
 					<p.Icon size={16} />
 					{p.label}
 				{/if}
-			</button>
+			</Button>
 		{/each}
 
 		{#if dividerAfter}
-			<div class="relative flex items-center px-1">
-				<div class="border-surface-600-400/30 flex-1 border-t"></div>
-				<span class="text-surface-500 px-2 text-xs">or</span>
-				<div class="border-surface-600-400/30 flex-1 border-t"></div>
+			<div class="relative flex items-center gap-2 px-1">
+				<Separator class="flex-1" />
+				<span class="text-muted-foreground text-xs">or</span>
+				<Separator class="flex-1" />
 			</div>
 		{/if}
 	</div>

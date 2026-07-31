@@ -2,6 +2,9 @@
 @plugin '@tailwindcss/forms';
 @import 'tw-animate-css';
 
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
 @import '@skeletonlabs/skeleton';
 
 @import '../themes/skeleton-components.css';
@@ -25,58 +28,94 @@
 		}
 	}
 
-	/* Shadcn */
+	/* Layout constants shared with the reference dashboard. */
+	--spacing-sidebar: 16rem;
+	--spacing-sidebar-icon: 3rem;
+	--spacing-header: 3.5rem;
+}
+
+/* Shadcn semantic tokens.
+   Each theme file (themes/*.css) owns the raw --background / --card / … values
+   for light and dark; this block only exposes them to Tailwind so `bg-card`,
+   `text-muted-foreground`, `border-border` etc. resolve. `inline` matters: it
+   makes utilities emit `var(--card)` directly instead of re-declaring the token
+   on :root, which would collide with the theme's own declaration on <html>. */
+@theme inline {
+	--font-sans:
+		'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+	--font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
 
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
 	--radius-xl: calc(var(--radius) + 4px);
-	--color-background: var(--color-surface-50-950);
-	--color-foreground: var(--color-surface-contrast-50-950);
-	--color-card: var(--color-surface-100-900);
-	--color-card-foreground: var(--color-surface-contrast-100-900);
-	--color-popover: var(--color-surface-200-800);
-	--color-popover-foreground: var(--color-surface-contrast-200-800);
-	--color-primary: var(--color-surface-950-50);
-	--color-primary-foreground: var(--color-surface-contrast-950-50);
-	--color-secondary: var(--color-secondary-500);
-	--color-secondary-foreground: var(--color-secondary-contrast-500);
-	--color-muted: var(--color-surface-100-900);
-	--color-muted-foreground: var(--color-surface-contrast-100-900);
-	--color-accent: var(--color-primary-200-800);
-	--color-accent-foreground: var(--color-primary-contrast-200-800);
-	--color-destructive: var(--color-error-500);
-	--color-border: var(--color-surface-300-700);
-	--color-input: var(--color-surface-100-900);
-	--color-ring: var(--color-surface-400-600);
-	--color-chart-1: var(--color-primary-900-100);
-	--color-chart-2: var(--color-primary-700-300);
-	--color-chart-3: var(--color-primary-500);
-	--color-chart-4: var(--color-primary-300-700);
-	--color-chart-5: var(--color-primary-100-900);
-	--color-sidebar: var(--color-surface-50-950);
-	--color-sidebar-foreground: var(--color-surface-contrast-50-950);
-	--color-sidebar-primary: var(--color-primary-950-50);
-	--color-sidebar-primary-foreground: var(--color-primary-contrast-950-50);
-	--color-sidebar-accent: var(--color-surface-400-600);
-	--color-sidebar-accent-foreground: var(--color-surface-contrast-400-600);
-	--color-sidebar-border: var(--color-surface-300-700);
-	--color-sidebar-ring: var(--color-surface-400-600);
+
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+
+	--shadow-2xs: var(--shadow-2xs);
+	--shadow-xs: var(--shadow-xs);
+	--shadow-sm: var(--shadow-sm);
+	--shadow-md: var(--shadow-md);
+	--shadow-lg: var(--shadow-lg);
+	--shadow-xl: var(--shadow-xl);
+	--shadow-2xl: var(--shadow-2xl);
+
+	--tracking-tighter: calc(var(--tracking-normal) - 0.05em);
+	--tracking-tight: calc(var(--tracking-normal) - 0.025em);
+	--tracking-normal: var(--tracking-normal);
+	--tracking-wide: calc(var(--tracking-normal) + 0.025em);
+	--tracking-wider: calc(var(--tracking-normal) + 0.05em);
+	--tracking-widest: calc(var(--tracking-normal) + 0.1em);
 }
 
+/* Skeleton's recipe classes, retargeted onto the shadcn semantic tokens so the
+   handful of components still using `.input` / `.select` / `.label` render
+   identically to the Input primitive instead of drifting a shade off it. */
 @utility input {
-	@apply border-surface-400-600 placeholder:text-surface-400-600 hover:border-surface-500 text-surface-950-50 disabled:bg-surface-200-800 disabled:text-surface-600-400 active:border-primary-500 focus:border-primary-500 h-9 w-full border px-2.5 text-sm ring-0 duration-300 ease-in-out;
+	@apply border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 h-9 w-full rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
 }
 @utility textarea {
-	@apply border-surface-400-600 placeholder:text-surface-500 hover:border-surface-500 text-surface-950-50 rounded-container border px-2.5 text-sm duration-300 ease-in-out;
+	@apply border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
 }
 
 @utility select {
-	@apply border-surface-400-600 placeholder:text-surface-500 hover:border-surface-500 text-surface-950-50 h-9 w-full border px-2.5 text-sm duration-300 ease-in-out;
+	@apply border-input focus-visible:border-ring focus-visible:ring-ring/50 h-9 w-full rounded-md border bg-transparent px-3 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm;
 }
 
 @utility label {
-	@apply text-surface-950-50 mb-1.5 text-xs font-medium;
+	@apply text-foreground mb-1.5 text-sm font-medium;
 }
 
 @utility btn {
@@ -92,7 +131,7 @@
 }
 
 @utility anchor {
-	@apply text-primary-700-300;
+	@apply text-primary underline-offset-4 hover:underline;
 }
 
 @layer base {
@@ -100,5 +139,58 @@
 		:where(a, button, [role='button'], input, label, textarea, select) {
 			-webkit-tap-highlight-color: transparent;
 		}
+	}
+
+	/* Anything that opts into a border gets the themed border colour, and the
+	   focus ring defaults to the themed ring — matches the reference dashboard
+	   so ported class strings behave identically. */
+	*,
+	::after,
+	::before,
+	::backdrop,
+	::file-selector-button {
+		border-color: var(--border);
+	}
+
+	* {
+		outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+	}
+
+	html {
+		font-family: var(--font-sans);
+	}
+
+	body {
+		background-color: var(--background);
+		color: var(--foreground);
+		overscroll-behavior: none;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	/* Scrollbars follow the theme instead of the OS default. */
+	* {
+		scrollbar-width: thin;
+		scrollbar-color: var(--border) transparent;
+	}
+
+	::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	::-webkit-scrollbar-thumb {
+		background-color: var(--border);
+		border-radius: 9999px;
+		border: 2px solid transparent;
+		background-clip: content-box;
+	}
+
+	::-webkit-scrollbar-thumb:hover {
+		background-color: var(--muted-foreground);
 	}
 }

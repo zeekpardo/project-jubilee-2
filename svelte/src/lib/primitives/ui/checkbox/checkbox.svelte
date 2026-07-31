@@ -31,7 +31,7 @@
 	<CheckboxPrimitive.Control
 		data-slot="checkbox-control"
 		class={cn(
-			'border-border data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:border-primary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 dark:bg-input/30 inline-flex size-4 shrink-0 items-center justify-center rounded-sm border shadow-xs transition-[color,background-color,box-shadow] outline-none focus-visible:ring-[3px]',
+			'border-input data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=checked]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground data-[state=indeterminate]:border-primary focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 dark:bg-input/30 inline-flex size-4 shrink-0 items-center justify-center rounded-sm border shadow-xs transition-[color,background-color,box-shadow] outline-none focus-visible:ring-[3px]',
 			controlClass
 		)}
 	>

@@ -9,8 +9,9 @@
 	import { toast } from 'svelte-sonner';
 	import * as Select from '$lib/primitives/ui/select';
 	import { createListCollection } from '@ark-ui/svelte/select';
-	// Icons
-	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import * as Card from '$lib/primitives/ui/card';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
+	import { Label } from '$lib/primitives/ui/label';
 
 	// API
 	import { useQuery, useConvexClient } from '@mmailaender/convex-svelte';
@@ -26,13 +27,19 @@
 
 	// Props
 	let {
-		initialData
+		initialData,
+		variant = 'panel'
 	}: {
 		initialData?: {
 			activeUser?: GetActiveUserType;
 			activeOrganization?: GetActiveOrganizationType;
 			role?: Role;
 		};
+		/**
+		 * `panel` renders the full destructive settings-card treatment (General settings tab).
+		 * `inline` renders just the trigger button for compact contexts (e.g. the organization switcher).
+		 */
+		variant?: 'panel' | 'inline';
 	} = $props();
 
 	// Auth
@@ -137,10 +144,12 @@
 	}
 </script>
 
-{#if activeOrganization && members && members.length > 1}
+{#snippet leaveDialog()}
 	<Dialog.Root bind:open={isOpen}>
 		<Dialog.Trigger
-			class="btn btn-sm preset-faded-surface-50-950 text-surface-600-400 hover:bg-error-300-700 hover:text-error-950-50 w-fit justify-between gap-1 text-sm"
+			class={variant === 'panel'
+				? buttonVariants({ variant: 'destructive' })
+				: buttonVariants({ variant: 'ghost', size: 'sm' }) + ' text-destructive w-fit'}
 		>
 			Leave organization
 		</Dialog.Trigger>
@@ -159,7 +168,7 @@
 
 			{#if isOwner}
 				<div class="w-full space-y-2">
-					<label for="successor" class="label"> New owner: </label>
+					<Label for="successor">New owner:</Label>
 					<Select.Root collection={successorCollection} bind:value={selectedSuccessor}>
 						<Select.Trigger class="w-full" placeholder="Choose a successor" />
 						<Select.Content>
@@ -175,24 +184,40 @@
 			{/if}
 
 			<Dialog.Footer>
-				<button class="btn preset-tonal" onclick={() => (isOpen = false)} disabled={isLeaving}>
+				<Dialog.Close class={buttonVariants({ variant: 'outline' })} disabled={isLeaving}>
 					Cancel
-				</button>
-				<button
-					type="button"
-					class="btn bg-error-500 hover:bg-error-600 text-white"
+				</Dialog.Close>
+				<Button
+					variant="destructive"
 					onclick={handleLeaveOrganization}
-					disabled={isLeaving || (isOwner && !selectedSuccessor)}
-					aria-busy={isLeaving}
+					disabled={isOwner && !selectedSuccessor}
+					loading={isLeaving}
 				>
 					{#if isLeaving}
-						<Loader2Icon class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
 						Leaving...
 					{:else}
 						Confirm
 					{/if}
-				</button>
+				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
+{/snippet}
+
+{#if activeOrganization && members && members.length > 1}
+	{#if variant === 'panel'}
+		<Card.Root class="border-destructive/50 w-full">
+			<Card.Header>
+				<Card.Title>Leave organization</Card.Title>
+				<Card.Description>
+					You'll lose access to all projects and resources in this organization.
+				</Card.Description>
+			</Card.Header>
+			<Card.Footer>
+				{@render leaveDialog()}
+			</Card.Footer>
+		</Card.Root>
+	{:else}
+		{@render leaveDialog()}
+	{/if}
 {/if}

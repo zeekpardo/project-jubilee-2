@@ -53,11 +53,6 @@
 		removeOpen = true;
 	}
 
-	function attributeText(value: unknown): string | null {
-		if (value === null || value === undefined || value === '') return null;
-		return String(value);
-	}
-
 	async function removeMember(): Promise<void> {
 		const target = removing;
 		if (!target) return;
@@ -94,8 +89,6 @@
 					<Table.Row>
 						<Table.Head>{m.field_name()}</Table.Head>
 						<Table.Head>{m.projects_memberRole()}</Table.Head>
-						<Table.Head>{m.projects_memberAge()}</Table.Head>
-						<Table.Head>{m.projects_memberRelationship()}</Table.Head>
 						<Table.Head class="w-24 text-right">{m.field_actions()}</Table.Head>
 					</Table.Row>
 				</Table.Header>
@@ -107,12 +100,6 @@
 							</Table.Cell>
 							<Table.Cell>
 								<Badge variant="secondary">{projectMemberRoleLabel(member.role)}</Badge>
-							</Table.Cell>
-							<Table.Cell class="text-muted-foreground tabular-nums">
-								{attributeText(member.attributes.age) ?? '—'}
-							</Table.Cell>
-							<Table.Cell class="text-muted-foreground">
-								{attributeText(member.attributes.relationship) ?? '—'}
 							</Table.Cell>
 							<Table.Cell class="text-right">
 								<Can do="projects:write" campaignId={project.campaignId}>

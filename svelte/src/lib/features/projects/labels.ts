@@ -13,7 +13,13 @@ export const DOCUMENT_KINDS: DocumentKind[] = [
 	'other'
 ];
 
-export const PROJECT_MEMBER_ROLES: ProjectMemberRole[] = ['subject', 'head', 'member'];
+export const PROJECT_MEMBER_ROLES = [
+	'team_lead',
+	'leader',
+	'attendee',
+	'member',
+	'volunteer'
+] as const;
 
 // Paraglide has no dynamic key access, so the union is mapped explicitly.
 export function documentKindLabel(kind: DocumentKind): string {
@@ -33,13 +39,21 @@ export function documentKindLabel(kind: DocumentKind): string {
 	}
 }
 
-export function projectMemberRoleLabel(role: ProjectMemberRole): string {
+// The role column is open text, so an unrecognised value shows as stored
+// rather than disappearing.
+export function projectMemberRoleLabel(role: string): string {
 	switch (role) {
-		case 'subject':
-			return m.projects_memberRole_subject();
-		case 'head':
-			return m.projects_memberRole_head();
+		case 'team_lead':
+			return m.projectRole_team_lead();
+		case 'leader':
+			return m.projectRole_leader();
+		case 'attendee':
+			return m.projectRole_attendee();
 		case 'member':
-			return m.projects_memberRole_member();
+			return m.projectRole_member();
+		case 'volunteer':
+			return m.projectRole_volunteer();
+		default:
+			return role;
 	}
 }

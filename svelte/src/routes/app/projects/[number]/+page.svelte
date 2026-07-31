@@ -129,14 +129,7 @@
 					</Tabs.Content>
 
 					<Tabs.Content value="internal">
-						<ProjectInternalPanel
-							projectId={project._id}
-							siteRef={project.siteRef}
-							whatsappPhone={project.whatsappPhone}
-							managedMissionsLink={project.managedMissionsLink}
-							note={project.note}
-							{canWrite}
-						/>
+						<ProjectInternalPanel {project} {canWrite} />
 					</Tabs.Content>
 				</Tabs.Root>
 

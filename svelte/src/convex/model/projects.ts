@@ -15,10 +15,6 @@ export type CreateProjectInput = {
 	stage?: string;
 	story?: string;
 	attributes?: Record<string, ProjectAttributeValue>;
-	note?: string;
-	managedMissionsLink?: string;
-	whatsappPhone?: string;
-	siteRef?: string;
 	photoUrl?: string;
 	videoUrl?: string;
 	isPublished?: boolean;
@@ -112,10 +108,6 @@ export async function createProjectModel(
 		stage,
 		story: input.story,
 		attributes: input.attributes ?? {},
-		note: input.note,
-		managedMissionsLink: input.managedMissionsLink,
-		whatsappPhone: input.whatsappPhone,
-		siteRef: input.siteRef,
 		photoUrl: input.photoUrl,
 		videoUrl: input.videoUrl,
 		isPublished: input.isPublished ?? false,

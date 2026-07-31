@@ -1,7 +1,5 @@
 <script lang="ts">
 	import * as Card from '$lib/primitives/ui/card';
-	import { Badge } from '$lib/primitives/ui/badge';
-	import LockIcon from '@lucide/svelte/icons/lock';
 	import type { Doc } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
 	import ProjectFields from './ProjectFields.svelte';
@@ -12,22 +10,10 @@
 		[
 			{ key: 'publicName', label: m.projects_publicName(), value: project.publicName, href: null },
 			{
-				key: 'whatsappPhone',
-				label: m.projects_whatsappPhone(),
-				value: project.whatsappPhone,
-				href: null
-			},
-			{
 				key: 'videoUrl',
 				label: m.projects_videoUrl(),
 				value: project.videoUrl,
 				href: project.videoUrl
-			},
-			{
-				key: 'managedMissionsLink',
-				label: m.projects_managedMissionsLink(),
-				value: project.managedMissionsLink,
-				href: project.managedMissionsLink
 			}
 		].filter((detail) => Boolean(detail.value))
 	);
@@ -49,7 +35,7 @@
 		</Card.Content>
 	</Card.Root>
 
-	{#if details.length > 0 || project.note || project.siteRef}
+	{#if details.length > 0}
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>{m.projects_editDetails()}</Card.Title>
@@ -77,26 +63,6 @@
 							</div>
 						{/each}
 					</dl>
-				{/if}
-
-				{#if project.note}
-					<div class="flex flex-col gap-1">
-						<span class="text-muted-foreground text-xs">{m.field_notes()}</span>
-						<p class="text-sm leading-relaxed whitespace-pre-line">{project.note}</p>
-					</div>
-				{/if}
-
-				{#if project.siteRef}
-					<div class="flex flex-col gap-1">
-						<span class="text-muted-foreground flex items-center gap-2 text-xs">
-							{m.projects_siteRef()}
-							<Badge variant="warning" class="gap-1">
-								<LockIcon class="size-3" aria-hidden="true" />
-								{m.projects_internalOnly()}
-							</Badge>
-						</span>
-						<p class="font-mono text-sm">{project.siteRef}</p>
-					</div>
 				{/if}
 			</Card.Content>
 		</Card.Root>

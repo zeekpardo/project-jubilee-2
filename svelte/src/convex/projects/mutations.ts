@@ -33,10 +33,6 @@ export const createProject = mutation({
 		stage: v.optional(v.string()),
 		story: v.optional(v.string()),
 		attributes: v.optional(attributesValidator),
-		note: v.optional(v.string()),
-		managedMissionsLink: v.optional(v.string()),
-		whatsappPhone: v.optional(v.string()),
-		siteRef: v.optional(v.string()),
 		photoUrl: v.optional(v.string()),
 		videoUrl: v.optional(v.string())
 	},
@@ -58,10 +54,6 @@ export const updateProject = mutation({
 		number: v.optional(v.string()),
 		story: v.optional(v.string()),
 		attributes: v.optional(attributesValidator),
-		note: v.optional(v.string()),
-		managedMissionsLink: v.optional(v.string()),
-		whatsappPhone: v.optional(v.string()),
-		siteRef: v.optional(v.string()),
 		photoUrl: v.optional(v.string()),
 		videoUrl: v.optional(v.string())
 	},

@@ -9,11 +9,7 @@ export const householdRoleValidator = v.union(
 	v.literal('child')
 );
 
-export const projectMemberRoleValidator = v.union(
-	v.literal('subject'),
-	v.literal('member'),
-	v.literal('head')
-);
+export const projectMemberRoleValidator = v.string();
 
 export const memberAttributesValidator = v.record(
 	v.string(),

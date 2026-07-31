@@ -1,12 +1,10 @@
 <script lang="ts">
 	// Primitives
 	import * as Dialog from '$lib/primitives/ui/dialog';
-	import * as Alert from '$lib/primitives/ui/alert';
 	import { Button } from '$lib/primitives/ui/button';
 	import { Input } from '$lib/primitives/ui/input';
 	import { Label } from '$lib/primitives/ui/label';
 	import { Textarea } from '$lib/primitives/ui/textarea';
-	import LockIcon from '@lucide/svelte/icons/lock';
 	import { toast } from 'svelte-sonner';
 	import { ConvexError } from 'convex/values';
 
@@ -25,12 +23,8 @@
 	let name = $state('');
 	let publicName = $state('');
 	let story = $state('');
-	let note = $state('');
 	let photoUrl = $state('');
 	let videoUrl = $state('');
-	let whatsappPhone = $state('');
-	let siteRef = $state('');
-	let managedMissionsLink = $state('');
 	let isSaving = $state(false);
 
 	$effect(() => {
@@ -38,12 +32,8 @@
 		name = project.name;
 		publicName = project.publicName ?? '';
 		story = project.story ?? '';
-		note = project.note ?? '';
 		photoUrl = project.photoUrl ?? '';
 		videoUrl = project.videoUrl ?? '';
-		whatsappPhone = project.whatsappPhone ?? '';
-		siteRef = project.siteRef ?? '';
-		managedMissionsLink = project.managedMissionsLink ?? '';
 	});
 
 	const canSubmit = $derived(name.trim().length > 0);
@@ -61,12 +51,8 @@
 				// an empty string as unset everywhere they are displayed.
 				publicName: publicName.trim() === '' ? null : publicName.trim(),
 				story: story.trim(),
-				note: note.trim(),
 				photoUrl: photoUrl.trim(),
-				videoUrl: videoUrl.trim(),
-				whatsappPhone: whatsappPhone.trim(),
-				siteRef: siteRef.trim(),
-				managedMissionsLink: managedMissionsLink.trim()
+				videoUrl: videoUrl.trim()
 			});
 			toast.success(m.projects_saved());
 			open = false;
@@ -107,11 +93,6 @@
 				<Textarea id="project-story" bind:value={story} rows={5} />
 			</div>
 
-			<div class="flex flex-col gap-2">
-				<Label for="project-note">{m.field_notes()}</Label>
-				<Textarea id="project-note" bind:value={note} rows={3} />
-			</div>
-
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-2">
 					<Label for="project-photo">{m.projects_photo()}</Label>
@@ -123,25 +104,7 @@
 				</div>
 			</div>
 
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="flex flex-col gap-2">
-					<Label for="project-whatsapp">{m.projects_whatsappPhone()}</Label>
-					<Input id="project-whatsapp" type="tel" bind:value={whatsappPhone} />
-				</div>
-				<div class="flex flex-col gap-2">
-					<Label for="project-managed-missions">{m.projects_managedMissionsLink()}</Label>
-					<Input id="project-managed-missions" type="url" bind:value={managedMissionsLink} />
-				</div>
-			</div>
-
-			<div class="flex flex-col gap-2">
-				<Label for="project-site-ref">{m.projects_siteRef()}</Label>
-				<Input id="project-site-ref" bind:value={siteRef} autocomplete="off" />
-				<Alert.Root variant="warning" class="w-full">
-					<LockIcon class="size-4" />
-					<Alert.Description>{m.projects_internalOnly()}</Alert.Description>
-				</Alert.Root>
-			</div>
+			<div class="grid gap-4 sm:grid-cols-2"></div>
 
 			<Dialog.Footer class="w-full">
 				<Button type="button" variant="outline" onclick={() => (open = false)} disabled={isSaving}>

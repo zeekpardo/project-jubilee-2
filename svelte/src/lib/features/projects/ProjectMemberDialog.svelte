@@ -37,8 +37,6 @@
 	let search = $state('');
 	let contactId = $state('');
 	let role = $state<ProjectMemberRole>('member');
-	let age = $state('');
-	let relationship = $state('');
 	let isSaving = $state(false);
 
 	const isEdit = $derived(member !== null);
@@ -67,27 +65,9 @@
 		search = '';
 		contactId = source?.contactId ?? '';
 		role = source?.role ?? 'member';
-		const storedAge = source?.attributes.age;
-		age = typeof storedAge === 'number' ? String(storedAge) : '';
-		const storedRelationship = source?.attributes.relationship;
-		relationship = typeof storedRelationship === 'string' ? storedRelationship : '';
 	});
 
-	// Age is recorded on the link as age at intake, in whole years.
-	const parsedAge = $derived(age.trim() === '' ? null : Number(age.trim()));
-	const ageValid = $derived(
-		parsedAge === null || (Number.isInteger(parsedAge) && parsedAge >= 0 && parsedAge < 150)
-	);
-
-	const canSubmit = $derived(ageValid && (isEdit || contactId !== ''));
-
-	function buildAttributes(): Record<string, string | number | boolean | null> {
-		const attributes: Record<string, string | number | boolean | null> = {};
-		if (parsedAge !== null) attributes.age = parsedAge;
-		const trimmed = relationship.trim();
-		if (trimmed !== '') attributes.relationship = trimmed;
-		return attributes;
-	}
+	const canSubmit = $derived(isEdit || contactId !== '');
 
 	async function handleSubmit(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -98,15 +78,13 @@
 			if (member) {
 				await client.mutation(api.projectMembers.mutations.updateProjectMember, {
 					projectMemberId: member._id,
-					role,
-					attributes: buildAttributes()
+					role
 				});
 			} else {
 				await client.mutation(api.projectMembers.mutations.addProjectMember, {
 					projectId,
 					contactId: contactId as Id<'contacts'>,
-					role,
-					attributes: buildAttributes()
+					role
 				});
 			}
 			open = false;
@@ -191,23 +169,7 @@
 				</Select.Root>
 			</div>
 
-			<div class="grid gap-4 sm:grid-cols-2">
-				<div class="flex flex-col gap-2">
-					<Label for="member-age">{m.projects_memberAge()}</Label>
-					<Input
-						id="member-age"
-						type="number"
-						min="0"
-						step="1"
-						bind:value={age}
-						aria-invalid={ageValid ? undefined : true}
-					/>
-				</div>
-				<div class="flex flex-col gap-2">
-					<Label for="member-relationship">{m.projects_memberRelationship()}</Label>
-					<Input id="member-relationship" bind:value={relationship} autocomplete="off" />
-				</div>
-			</div>
+			<div class="grid gap-4 sm:grid-cols-2"></div>
 
 			<Dialog.Footer class="w-full">
 				<Button type="button" variant="outline" onclick={() => (open = false)} disabled={isSaving}>

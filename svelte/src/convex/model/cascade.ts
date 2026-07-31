@@ -19,6 +19,24 @@ export async function deleteProjectCascade(
 		await ctx.db.delete('budgets', budget._id);
 	}
 
+	const documents = await ctx.db
+		.query('documents')
+		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
+		.collect();
+	for (const document of documents) {
+		await ctx.db.delete('documents', document._id);
+	}
+
+	// Allocations are CLEARED, never deleted: the money still moved, so the
+	// ledger total must survive. The allocation just becomes campaign-level.
+	const allocations = await ctx.db
+		.query('allocations')
+		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
+		.collect();
+	for (const allocation of allocations) {
+		await ctx.db.patch('allocations', allocation._id, { projectId: undefined });
+	}
+
 	await ctx.db.delete('projects', projectId);
 }
 
@@ -26,6 +44,17 @@ export async function deleteCampaignCascade(
 	ctx: MutationCtx,
 	campaignId: Id<'campaigns'>
 ): Promise<void> {
+	// Allocations go first so the per-project clearing below finds nothing left
+	// to do. Transactions themselves are org-level and survive: the money still
+	// moved, it simply becomes unallocated.
+	const allocations = await ctx.db
+		.query('allocations')
+		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const allocation of allocations) {
+		await ctx.db.delete('allocations', allocation._id);
+	}
+
 	const projects = await ctx.db
 		.query('projects')
 		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))

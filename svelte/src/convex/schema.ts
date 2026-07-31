@@ -171,6 +171,77 @@ const budgets = defineTable({
 	.index('by_projectId', ['projectId'])
 	.index('by_orgId', ['orgId']);
 
+// Evidence attached to a project for a pipeline stage. Replaces the reference
+// app's milestone checklist: stage itself expresses done-ness, documents carry
+// the proof.
+const documents = defineTable({
+	orgId: v.string(),
+	projectId: v.id('projects'),
+	// The pipelineStages.key this document evidences.
+	stage: v.string(),
+	kind: v.union(
+		v.literal('debt_evidence'),
+		v.literal('receipt'),
+		v.literal('legal_certificate'),
+		v.literal('photo'),
+		v.literal('agreement'),
+		v.literal('other')
+	),
+	// Plain http(s) URL, or a Convex storage id resolved to a signed URL at
+	// read time.
+	url: v.optional(v.string()),
+	storageId: v.optional(v.id('_storage')),
+	notes: v.optional(v.string()),
+	confirmedBy: v.optional(v.string()),
+	// Receipt-grade metadata, all optional.
+	company: v.optional(v.string()),
+	amountCents: v.optional(v.number()),
+	occurredOn: v.optional(v.string()),
+	// A budget line-item key ('rent_cents'), 'debt', an extra's label, or unset.
+	budgetItem: v.optional(v.string())
+})
+	.index('by_projectId', ['projectId'])
+	.index('by_projectId_and_stage', ['projectId', 'stage'])
+	.index('by_orgId', ['orgId']);
+
+// The money ledger. Amounts are integer cents, always.
+const transactions = defineTable({
+	orgId: v.string(),
+	type: v.union(v.literal('donation'), v.literal('transfer'), v.literal('expenditure')),
+	amountCents: v.number(),
+	occurredOn: v.optional(v.string()),
+	method: v.optional(v.string()),
+	reference: v.optional(v.string()),
+	receiptUrl: v.optional(v.string()),
+	// Donor attribution lands in Tier 2 with `contacts`; deliberately absent.
+	note: v.optional(v.string())
+})
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_type', ['orgId', 'type'])
+	.index('by_orgId_and_occurredOn', ['orgId', 'occurredOn']);
+
+// Attributes part of a transaction to a campaign, and optionally to one
+// project. A project-less allocation is a campaign-level/overhead cost.
+// Invariant: sum(allocations) <= transaction.amountCents.
+const allocations = defineTable({
+	orgId: v.string(),
+	transactionId: v.id('transactions'),
+	campaignId: v.id('campaigns'),
+	// Cleared (not deleted) when a project is deleted, so ledger totals survive
+	// and the allocation simply becomes campaign-level.
+	projectId: v.optional(v.id('projects')),
+	amountCents: v.number(),
+	// A budget line-item key ('rent_cents'), 'debt', an extra's label, or unset.
+	// Lives on the allocation, not the transaction, because one expenditure can
+	// split across budget lines.
+	budgetItem: v.optional(v.string())
+})
+	.index('by_transactionId', ['transactionId'])
+	.index('by_transactionId_and_projectId', ['transactionId', 'projectId'])
+	.index('by_projectId', ['projectId'])
+	.index('by_campaignId', ['campaignId'])
+	.index('by_orgId', ['orgId']);
+
 export default defineSchema({
 	campaigns,
 	orgSettings,
@@ -178,5 +249,8 @@ export default defineSchema({
 	costTemplates,
 	taskTemplates,
 	projects,
-	budgets
+	budgets,
+	documents,
+	transactions,
+	allocations
 });

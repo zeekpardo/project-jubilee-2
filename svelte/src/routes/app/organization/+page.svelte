@@ -9,6 +9,7 @@
 	import { DIALOG_KEY } from '$lib/organizations/utils/organization.constants';
 	import * as m from '$lib/i18n/messages';
 
+	import OrgSettingsCard from '$lib/features/organization/OrgSettingsCard.svelte';
 	import * as Card from '$lib/primitives/ui/card';
 	import { Button } from '$lib/primitives/ui/button';
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
@@ -71,4 +72,6 @@
 			{/if}
 		</Card.Content>
 	</Card.Root>
+
+	<OrgSettingsCard canEdit={allowed} />
 </PageContainer>

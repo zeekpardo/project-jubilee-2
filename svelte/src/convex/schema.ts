@@ -145,6 +145,8 @@ const projects = defineTable({
 	// INTERNAL ONLY (factory/site reference) — must never reach public queries.
 	siteRef: v.optional(v.string()),
 	photoUrl: v.optional(v.string()),
+	// An uploaded photo, as an alternative to a pasted photoUrl.
+	photoStorageId: v.optional(v.id('_storage')),
 	// PUBLIC — the freedom video, intentionally exposed on the donor profile.
 	videoUrl: v.optional(v.string()),
 	// Public visibility, independent of pipeline stage.

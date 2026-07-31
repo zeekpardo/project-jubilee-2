@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 
+	import { Portal } from '@ark-ui/svelte';
 	import * as Menu from '$lib/primitives/ui/menu';
 	import { cn } from '$lib/primitives/utils';
 	import * as m from '$lib/i18n/messages';
@@ -62,28 +63,30 @@
 		<ChevronsUpDownIcon class="text-muted-foreground size-4 shrink-0" />
 	</Menu.Trigger>
 
-	<Menu.Content class="w-56">
-		{#if canSeeAdmin}
-			<Menu.ItemGroup>
-				<Menu.Item value="__admin" onclick={enterAdmin}>
-					<LockIcon class="size-4" />
-					<span>{m.nav_section_admin()}</span>
-				</Menu.Item>
-			</Menu.ItemGroup>
-			<Menu.Separator />
-		{/if}
-
-		<Menu.ItemGroup>
-			<Menu.ItemGroupLabel>{m.shell_campaign()}</Menu.ItemGroupLabel>
-			{#each active.campaigns as campaign (campaign._id)}
-				<Menu.Item value={campaign._id} onclick={() => selectCampaign(campaign._id)}>
-					<SparklesIcon class="size-4" />
-					<span class="truncate">{campaign.name}</span>
-				</Menu.Item>
-			{/each}
-			{#if active.campaigns.length === 0}
-				<p class="text-muted-foreground px-2 py-1.5 text-sm">{m.shell_noCampaigns()}</p>
+	<Portal>
+		<Menu.Content class="w-56">
+			{#if canSeeAdmin}
+				<Menu.ItemGroup>
+					<Menu.Item value="__admin" onclick={enterAdmin}>
+						<LockIcon class="size-4" />
+						<span>{m.nav_section_admin()}</span>
+					</Menu.Item>
+				</Menu.ItemGroup>
+				<Menu.Separator />
 			{/if}
-		</Menu.ItemGroup>
-	</Menu.Content>
+
+			<Menu.ItemGroup>
+				<Menu.ItemGroupLabel>{m.shell_campaign()}</Menu.ItemGroupLabel>
+				{#each active.campaigns as campaign (campaign._id)}
+					<Menu.Item value={campaign._id} onclick={() => selectCampaign(campaign._id)}>
+						<SparklesIcon class="size-4" />
+						<span class="truncate">{campaign.name}</span>
+					</Menu.Item>
+				{/each}
+				{#if active.campaigns.length === 0}
+					<p class="text-muted-foreground px-2 py-1.5 text-sm">{m.shell_noCampaigns()}</p>
+				{/if}
+			</Menu.ItemGroup>
+		</Menu.Content>
+	</Portal>
 </Menu.Root>

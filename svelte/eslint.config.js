@@ -14,6 +14,7 @@ export default defineConfig(
 		ignores: [
 			'src/convex/_generated/',
 			'src/convex/betterAuth/_generated',
+			'src/lib/i18n/paraglide/',
 			'.vercel',
 			'.svelte-kit'
 		]

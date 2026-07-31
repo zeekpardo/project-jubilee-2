@@ -1,0 +1,39 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+
+	"nav_dashboard": "Dashboard",
+	"nav_campaigns": "Campaigns",
+	"nav_projects": "Projects",
+	"nav_contacts": "Contacts",
+	"nav_money": "Money",
+	"nav_tasks": "Tasks",
+	"nav_settings": "Settings",
+	"nav_members": "Members",
+
+	"action_save": "Save",
+	"action_cancel": "Cancel",
+	"action_delete": "Delete",
+	"action_edit": "Edit",
+	"action_create": "Create",
+	"action_search": "Search",
+	"action_confirm": "Confirm",
+
+	"state_loading": "Loading…",
+	"state_empty": "Nothing here yet",
+	"state_error": "Something went wrong",
+	"state_noResults": "No results found",
+
+	"role_owner": "Owner",
+	"role_admin": "Admin",
+	"role_teamLeader": "Team leader",
+	"role_member": "Member",
+
+	"theme_label": "Theme",
+	"theme_selectPlaceholder": "Select a theme",
+	"theme_mode_light": "Light",
+	"theme_mode_dark": "Dark",
+	"theme_mode_system": "System",
+	"theme_modeLabel": "Colour mode",
+
+	"locale_label": "Language"
+}

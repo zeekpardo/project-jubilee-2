@@ -4,7 +4,14 @@
 
 @import '@skeletonlabs/skeleton';
 
-@import '../themes/auth.css';
+@import '../themes/skeleton-components.css';
+@import '../themes/jubilee.css';
+@import '../themes/sandstone.css';
+
+/* Dark mode is driven by a `.dark` class on <html> (rendered server-side from a
+   cookie, kept in sync by mode-watcher) rather than `prefers-color-scheme`, so
+   the user can override their OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
 	--animate-fade-in-out: fade-in-out 0.3s ease-in-out;

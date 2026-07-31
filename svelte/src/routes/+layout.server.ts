@@ -6,16 +6,30 @@ import type { LayoutServerLoad } from './$types';
 import { api } from '$convex/_generated/api';
 import { AUTH_CONSTANTS } from '$convex/auth.constants';
 import { building } from '$app/environment';
+import { MODE_COOKIE, THEME_COOKIE, resolveMode, resolveTheme } from '$lib/theme/config';
+import { getLocale } from '$lib/i18n';
 
-export const load = (async ({ locals }) => {
+export const load = (async ({ locals, cookies }) => {
 	// During build/prerender, skip auth state fetching (BETTER_AUTH_SECRET not available)
 	if (building) {
-		return { authState: { isAuthenticated: false }, initialData: undefined };
+		return {
+			authState: { isAuthenticated: false },
+			initialData: undefined,
+			theme: resolveTheme(undefined),
+			mode: resolveMode(undefined),
+			locale: getLocale()
+		};
 	}
+
+	// Mirrors the cookies read in `hooks.server.ts` so the client store starts on the
+	// same values the server already rendered into <html>.
+	const theme = resolveTheme(cookies.get(THEME_COOKIE));
+	const mode = resolveMode(cookies.get(MODE_COOKIE));
+	const locale = getLocale();
 
 	const authState = getAuthState();
 	const token = locals.token;
-	if (!token) return { authState, initialData: undefined };
+	if (!token) return { authState, initialData: undefined, theme, mode, locale };
 	const client = createConvexHttpClient({ token });
 
 	const orgs = AUTH_CONSTANTS.organizations;
@@ -51,6 +65,9 @@ export const load = (async ({ locals }) => {
 			organizationList,
 			invitationList,
 			role: roleResult ?? undefined
-		}
+		},
+		theme,
+		mode,
+		locale
 	};
 }) satisfies LayoutServerLoad;

@@ -5,6 +5,8 @@ import { getSessionCookie } from 'better-auth/cookies';
 import { createRouteMatcher } from '$lib/primitives/utils/routeMatcher';
 import { getToken } from '@mmailaender/convex-better-auth-svelte/sveltekit';
 import { withServerConvexToken } from '@mmailaender/convex-svelte/sveltekit/server';
+import { paraglideMiddleware } from '$lib/i18n/paraglide/server.js';
+import { MODE_COOKIE, THEME_COOKIE, modeClass, resolveMode, resolveTheme } from '$lib/theme/config';
 
 /* --------------------------------------------------------- */
 /* -------------------- route match helpers ---------------- */
@@ -76,8 +78,41 @@ export const setTokenFromCookies: Handle = async ({ event, resolve }) => {
 };
 
 /* --------------------------------------------------------- */
+/* ------------------ locale / theme shell ----------------- */
+/* --------------------------------------------------------- */
+
+/**
+ * Resolves the locale (Paraglide: cookie → Accept-Language → baseLocale) and the
+ * theme/mode cookies on the server, then stamps them onto <html> before the page
+ * is streamed. This is what prevents a flash of the wrong language or palette:
+ * the very first byte of HTML already carries the correct values.
+ *
+ * `system` mode renders no class — the OS preference is unknowable server-side,
+ * so mode-watcher's blocking head script resolves it before the first paint.
+ */
+const setLocaleAndTheme: Handle = ({ event, resolve }) =>
+	paraglideMiddleware(event.request, ({ request, locale }) => {
+		event.request = request;
+
+		const theme = resolveTheme(building ? undefined : event.cookies.get(THEME_COOKIE));
+		const mode = resolveMode(building ? undefined : event.cookies.get(MODE_COOKIE));
+
+		return resolve(event, {
+			transformPageChunk: ({ html }) =>
+				html
+					.replace('%paraglide.lang%', locale)
+					.replace('%app.theme%', theme)
+					.replace('%app.mode%', modeClass(mode))
+		});
+	});
+
+/* --------------------------------------------------------- */
 /* ---------------------- exported hook -------------------- */
 /* --------------------------------------------------------- */
 
-export const handle = sequence(/* 1 */ requireAuth, /* 2 */ setTokenFromCookies);
+export const handle = sequence(
+	/* 1 */ requireAuth,
+	/* 2 */ setTokenFromCookies,
+	/* 3 */ setLocaleAndTheme
+);
 export type { Handle };

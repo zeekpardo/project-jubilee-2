@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin, type UserConfig } from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
@@ -42,6 +43,11 @@ const resolveSharedConvexDepsPlugin: Plugin = {
 const config: VitestConfig = {
 	plugins: [
 		resolveSharedConvexDepsPlugin,
+		paraglideVitePlugin({
+			project: './project.inlang',
+			outdir: './src/lib/i18n/paraglide',
+			strategy: ['cookie', 'preferredLanguage', 'baseLocale']
+		}),
 		tailwindcss(),
 		sveltekit()
 	],

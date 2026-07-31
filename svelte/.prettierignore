@@ -7,3 +7,7 @@ _generated
 .svelte-kit
 src/themes
 registry.json
+src/lib/i18n/paraglide
+project.inlang/cache
+project.inlang/.meta.json
+project.inlang/README.md

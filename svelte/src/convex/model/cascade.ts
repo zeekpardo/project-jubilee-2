@@ -24,6 +24,10 @@ export async function deleteProjectCascade(
 		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
 		.collect();
 	for (const document of documents) {
+		// Drop the uploaded blob too, or deleting a project leaks storage.
+		if (document.storageId) {
+			await ctx.storage.delete(document.storageId);
+		}
 		await ctx.db.delete('documents', document._id);
 	}
 

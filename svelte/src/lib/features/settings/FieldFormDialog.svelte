@@ -60,12 +60,20 @@
 
 	const isEdit = $derived(field !== null);
 
-	const scopeCollection = createListCollection({
-		items: [
-			{ value: 'org', label: m.settings_scope_org() },
-			{ value: 'campaign', label: m.settings_scope_campaign() }
-		]
-	});
+	// A contact belongs to the org, not to a campaign, so a campaign-scope
+	// contact field could never hold a value — setRecordAttributes resolves
+	// contact fields with no campaign and would reject one as unknown.
+	const scopeCollection = $derived(
+		createListCollection({
+			items:
+				entity === 'contact'
+					? [{ value: 'org', label: m.settings_scope_org() }]
+					: [
+							{ value: 'org', label: m.settings_scope_org() },
+							{ value: 'campaign', label: m.settings_scope_campaign() }
+						]
+		})
+	);
 
 	const typeCollection = createListCollection({
 		items: FIELD_TYPES.map((value) => ({ value, label: fieldTypeLabel(value) }))

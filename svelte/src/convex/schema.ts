@@ -46,7 +46,9 @@ const campaigns = defineTable({
 })
 	// unique(orgId, slug)
 	.index('by_orgId_and_slug', ['orgId', 'slug'])
-	.index('by_orgId', ['orgId']);
+	.index('by_orgId', ['orgId'])
+	// Public lookup: an anonymous visitor has no org to scope by.
+	.index('by_slug', ['slug']);
 
 // Small singleton per org: cross-campaign config + public-site chrome.
 const orgSettings = defineTable({
@@ -155,7 +157,8 @@ const projects = defineTable({
 	.index('by_orgId_and_number', ['orgId', 'number'])
 	.index('by_campaignId', ['campaignId'])
 	.index('by_campaignId_and_stage', ['campaignId', 'stage'])
-	.index('by_campaignId_and_isPublished', ['campaignId', 'isPublished']);
+	.index('by_campaignId_and_isPublished', ['campaignId', 'isPublished'])
+	.index('by_campaignId_and_number', ['campaignId', 'number']);
 
 // One per project. Snapshots a costTemplates version so later rate-card
 // changes never retroactively alter an existing budget.

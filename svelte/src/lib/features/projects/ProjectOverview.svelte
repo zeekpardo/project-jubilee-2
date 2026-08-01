@@ -2,7 +2,6 @@
 	import * as Card from '$lib/primitives/ui/card';
 	import type { Doc } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
-	import ProjectFields from './ProjectFields.svelte';
 
 	let { project }: { project: Doc<'projects'> } = $props();
 
@@ -67,6 +66,4 @@
 			</Card.Content>
 		</Card.Root>
 	{/if}
-
-	<ProjectFields {project} />
 </div>

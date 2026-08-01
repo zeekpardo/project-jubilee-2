@@ -8,7 +8,7 @@
 	import * as Tabs from '$lib/primitives/ui/tabs';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import ProjectBudget from '$lib/features/projects/ProjectBudget.svelte';
-	import ProjectDetailsCard from '$lib/features/projects/ProjectDetailsCard.svelte';
+	import ProjectFields from '$lib/features/projects/ProjectFields.svelte';
 	import ProjectDocuments from '$lib/features/projects/ProjectDocuments.svelte';
 	import ProjectHero from '$lib/features/projects/ProjectHero.svelte';
 	import ProjectMembers from '$lib/features/projects/ProjectMembers.svelte';
@@ -71,6 +71,19 @@
 </script>
 
 <PageContainer access={project ? allowed : true} loading={projectResponse.isLoading}>
+	{#snippet action()}
+		{#if project && canWrite}
+			<div class="flex items-center gap-2">
+				<Button variant="outline" onclick={() => (editOpen = true)}>
+					{m.projects_editDetails()}
+				</Button>
+				<Button variant="ghost" onclick={() => (deleteOpen = true)}>
+					{m.projects_delete()}
+				</Button>
+			</div>
+		{/if}
+	{/snippet}
+
 	{#if !project || !campaignId}
 		<EmptyState title={m.projects_notFound()} />
 	{:else}
@@ -83,71 +96,59 @@
 				targetCents={money.targetCents}
 			/>
 
-			<div class="grid gap-6 lg:grid-cols-3">
-				<Tabs.Root value="overview" class="gap-6 lg:col-span-2">
-					<Tabs.List>
-						<Tabs.Trigger value="overview">{m.nav_section_overview()}</Tabs.Trigger>
-						<Tabs.Trigger value="people">{m.projects_members()}</Tabs.Trigger>
-						<Tabs.Trigger value="budget">{m.nav_budget()}</Tabs.Trigger>
-						<Tabs.Trigger value="documents">{m.projects_documents()}</Tabs.Trigger>
-						<Tabs.Trigger value="giving">{m.projectDetail_tab_giving()}</Tabs.Trigger>
-						<Tabs.Trigger value="public">{m.projectDetail_tab_public()}</Tabs.Trigger>
-						<Tabs.Trigger value="internal">{m.projectDetail_tab_internal()}</Tabs.Trigger>
-					</Tabs.List>
+			<Tabs.Root value="overview" class="gap-6">
+				<Tabs.List>
+					<Tabs.Trigger value="overview">{m.nav_section_overview()}</Tabs.Trigger>
+					<Tabs.Trigger value="details">{m.projectDetail_details()}</Tabs.Trigger>
+					<Tabs.Trigger value="people">{m.projects_members()}</Tabs.Trigger>
+					<Tabs.Trigger value="budget">{m.nav_budget()}</Tabs.Trigger>
+					<Tabs.Trigger value="documents">{m.projects_documents()}</Tabs.Trigger>
+					<Tabs.Trigger value="giving">{m.projectDetail_tab_giving()}</Tabs.Trigger>
+					<Tabs.Trigger value="public">{m.projectDetail_tab_public()}</Tabs.Trigger>
+					<Tabs.Trigger value="internal">{m.projectDetail_tab_internal()}</Tabs.Trigger>
+				</Tabs.List>
 
-					<Tabs.Content value="overview">
-						<ProjectOverview {project} />
-					</Tabs.Content>
+				<Tabs.Content value="overview">
+					<ProjectOverview {project} />
+				</Tabs.Content>
 
-					<Tabs.Content value="people">
-						<ProjectMembers {project} />
-					</Tabs.Content>
+				<Tabs.Content value="details">
+					<ProjectFields {project} />
+				</Tabs.Content>
 
-					<Tabs.Content value="budget">
-						<ProjectBudget {project} budget={money.budget} isLoading={money.isLoading} />
-					</Tabs.Content>
+				<Tabs.Content value="people">
+					<ProjectMembers {project} />
+				</Tabs.Content>
 
-					<Tabs.Content value="documents">
-						<ProjectDocuments {project} {stages} />
-					</Tabs.Content>
+				<Tabs.Content value="budget">
+					<ProjectBudget {project} budget={money.budget} isLoading={money.isLoading} />
+				</Tabs.Content>
 
-					<Tabs.Content value="giving">
-						<ProjectGiving projectId={project._id} canRead={canReadMoney} />
-					</Tabs.Content>
+				<Tabs.Content value="documents">
+					<ProjectDocuments {project} {stages} />
+				</Tabs.Content>
 
-					<Tabs.Content value="public">
-						<ProjectPublicPanel
-							projectId={project._id}
-							number={project.number}
-							campaignSlug={campaign?.slug ?? ''}
-							{orgSlug}
-							isPublished={project.isPublished}
-							publicName={project.publicName}
-							videoUrl={project.videoUrl}
-							{canWrite}
-						/>
-					</Tabs.Content>
+				<Tabs.Content value="giving">
+					<ProjectGiving projectId={project._id} canRead={canReadMoney} />
+				</Tabs.Content>
 
-					<Tabs.Content value="internal">
-						<ProjectInternalPanel {project} {canWrite} />
-					</Tabs.Content>
-				</Tabs.Root>
+				<Tabs.Content value="public">
+					<ProjectPublicPanel
+						projectId={project._id}
+						number={project.number}
+						campaignSlug={campaign?.slug ?? ''}
+						{orgSlug}
+						isPublished={project.isPublished}
+						publicName={project.publicName}
+						videoUrl={project.videoUrl}
+						{canWrite}
+					/>
+				</Tabs.Content>
 
-				<div class="flex flex-col gap-6">
-					<ProjectDetailsCard {project} />
-
-					{#if canWrite}
-						<div class="flex flex-col gap-2">
-							<Button variant="outline" onclick={() => (editOpen = true)}>
-								{m.projects_editDetails()}
-							</Button>
-							<Button variant="ghost" onclick={() => (deleteOpen = true)}>
-								{m.projects_delete()}
-							</Button>
-						</div>
-					{/if}
-				</div>
-			</div>
+				<Tabs.Content value="internal">
+					<ProjectInternalPanel {project} {canWrite} />
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	{/if}
 </PageContainer>

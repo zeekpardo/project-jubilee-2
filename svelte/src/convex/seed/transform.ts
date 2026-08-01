@@ -244,6 +244,21 @@ export interface SeedPlan {
 		fundedAllocations: number;
 		catchAllAllocations: number;
 		fundedShortfallCents: number;
+		/** How the source `link` column was routed. See `routeFamilyLink`. */
+		linkCounts: {
+			managedMissions: number;
+			payment: number;
+			/** Cells holding something other than a URL — never linked. */
+			nonUrl: number;
+			/** Looked like a URL but would not parse — never linked. */
+			unparsed: number;
+		};
+		/**
+		 * host → count for everything that landed in `payment_link`, so a host the
+		 * seed has not seen before shows up in the report instead of vanishing into
+		 * a field nobody looks at.
+		 */
+		paymentLinkHosts: Record<string, number>;
 	};
 }
 
@@ -406,6 +421,25 @@ export const JUBILEE_FIELD_DEFINITIONS: FieldDefinitionRow[] = [
 		order: 3,
 		isRequired: false,
 		isPublic: false
+	},
+	// The sheet's `link` column, split by host. Internal like Religion: these are
+	// operational back-office links, not something the donor site should show.
+	// Our field-type union has no `url`, so both are plain `text`.
+	{
+		key: 'managed_missions_link',
+		label: 'Managed Missions link',
+		type: 'text',
+		order: 4,
+		isRequired: false,
+		isPublic: false
+	},
+	{
+		key: 'payment_link',
+		label: 'Payment link',
+		type: 'text',
+		order: 5,
+		isRequired: false,
+		isPublic: false
 	}
 ];
 
@@ -496,6 +530,56 @@ export function resolveFamilyName(f: FamilyRow): string {
 	return f.family_name;
 }
 
+/**
+ * The Managed Missions host, matched as a DOMAIN SUFFIX (`x.managedmissions.com`
+ * and the bare apex both count, `notmanagedmissions.com` does not). A suffix
+ * test rather than an equality test because the org's tenant subdomain is not
+ * something this seed should be pinned to — and the leading dot is what keeps
+ * the suffix honest.
+ */
+const MANAGED_MISSIONS_HOST = 'managedmissions.com';
+
+export type LinkFieldKey = 'managed_missions_link' | 'payment_link';
+
+export interface FamilyLink {
+	field: LinkFieldKey;
+	url: string;
+	/** Lower-cased hostname, so the driver can surface an unrecognised host. */
+	host: string;
+}
+
+/**
+ * Route a family's `link` cell to one of the two link custom fields.
+ *
+ * The column is NOT clean: a handful of rows carry a name or a scrap of text
+ * instead of a URL, which `resolveFamilyName` consumes as the family's name.
+ * Those must never become links, so the SAME url test is used here — the two
+ * functions have to agree on what counts as a URL or a family would end up both
+ * named after its link and linked to its name.
+ *
+ * Returns null for an empty cell, a non-URL cell, or a URL-looking string that
+ * will not parse. Anything that parses but is not a Managed Missions host goes
+ * to `payment_link` rather than being dropped; the driver prints the hosts it
+ * routed there so an unseen one is visible.
+ */
+export function routeFamilyLink(link: string | null | undefined): FamilyLink | null {
+	const value = link ? link.trim() : '';
+	if (value === '' || !/^https?:\/\//i.test(value)) return null;
+	let host: string;
+	try {
+		host = new URL(value).hostname.toLowerCase();
+	} catch {
+		return null;
+	}
+	const isManagedMissions =
+		host === MANAGED_MISSIONS_HOST || host.endsWith(`.${MANAGED_MISSIONS_HOST}`);
+	return {
+		field: isManagedMissions ? 'managed_missions_link' : 'payment_link',
+		url: value,
+		host
+	};
+}
+
 /** Canonicalize religion strings (the doc has a truncated "Christia"). */
 export function normalizeReligion(value: string | null | undefined): string | null {
 	if (!value) return null;
@@ -557,7 +641,10 @@ export function householdRoleFor(relationship: string | null): MemberRow['househ
 }
 
 /** Build a family's custom-field values. Keys whose source is null are omitted. */
-export function buildAttributes(profile: ProfileRow | undefined): Record<string, AttributeValue> {
+export function buildAttributes(
+	profile: ProfileRow | undefined,
+	link?: string | null
+): Record<string, AttributeValue> {
 	const attrs: Record<string, AttributeValue> = {};
 	if (profile && profile.years_enslaved !== null && profile.years_enslaved !== undefined) {
 		attrs.years_enslaved = profile.years_enslaved;
@@ -567,6 +654,8 @@ export function buildAttributes(profile: ProfileRow | undefined): Record<string,
 	}
 	const religion = normalizeReligion(profile === undefined ? null : profile.religion);
 	if (religion !== null) attrs.religion = religion;
+	const routed = routeFamilyLink(link);
+	if (routed !== null) attrs[routed.field] = routed.url;
 	return attrs;
 }
 
@@ -639,6 +728,8 @@ export function buildSeedPlan(input: SeedInput): SeedPlan {
 
 	// -- Projects ------------------------------------------------------------
 	const stageCounts: Record<string, number> = {};
+	const linkCounts = { managedMissions: 0, payment: 0, nonUrl: 0, unparsed: 0 };
+	const paymentLinkHosts: Record<string, number> = {};
 	const projects: ProjectRow[] = families.map((f) => {
 		const stage = stageFor(f);
 		stageCounts[stage] = (stageCounts[stage] ?? 0) + 1;
@@ -653,13 +744,30 @@ export function buildSeedPlan(input: SeedInput): SeedPlan {
 			: noteParts.length > 0
 				? noteParts.join(' · ')
 				: undefined;
+		// Tally how the `link` cell was read, purely for the driver's report. The
+		// routing itself happens inside buildAttributes.
+		const linkValue = f.link ? f.link.trim() : '';
+		if (linkValue !== '') {
+			const routed = routeFamilyLink(linkValue);
+			if (routed === null) {
+				// Either a name or scrap of text (which resolveFamilyName may consume
+				// as the family name), or a url-looking string that will not parse.
+				if (/^https?:\/\//i.test(linkValue)) linkCounts.unparsed++;
+				else linkCounts.nonUrl++;
+			} else if (routed.field === 'managed_missions_link') {
+				linkCounts.managedMissions++;
+			} else {
+				linkCounts.payment++;
+				paymentLinkHosts[routed.host] = (paymentLinkHosts[routed.host] ?? 0) + 1;
+			}
+		}
 		const isPublished = PUBLIC_STAGES.has(stage);
 		const isGoalMet = seedFreed(f.number);
 		const row: ProjectRow = {
 			number: f.number,
 			name: resolveFamilyName(f),
 			stage,
-			attributes: buildAttributes(profile),
+			attributes: buildAttributes(profile, f.link),
 			isPublished,
 			isGoalMet
 		};
@@ -963,7 +1071,9 @@ export function buildSeedPlan(input: SeedInput): SeedPlan {
 			stageCounts,
 			fundedAllocations,
 			catchAllAllocations,
-			fundedShortfallCents
+			fundedShortfallCents,
+			linkCounts,
+			paymentLinkHosts
 		}
 	};
 }

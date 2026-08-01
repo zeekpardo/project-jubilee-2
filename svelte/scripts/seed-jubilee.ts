@@ -82,7 +82,7 @@ const EXPECTED_COUNTS: Record<string, number> = {
 	'projectMembers (member)': 79,
 	'projectMembers (sponsor)': 10,
 	customFieldCategories: 1,
-	customFieldDefinitions: 3,
+	customFieldDefinitions: 5,
 	pipelineStages: 6,
 	costTemplates: 3,
 	taskTemplates: 1,
@@ -91,7 +91,11 @@ const EXPECTED_COUNTS: Record<string, number> = {
 	'transactions (donation)': 22,
 	'transactions (transfer)': 87,
 	'transactions (expenditure)': 66,
-	photos: 48
+	photos: 48,
+	// The source `link` column, split by host — see routeFamilyLink. The
+	// remaining values in that column are not URLs at all and never get a link.
+	managedMissionsLinks: 14,
+	paymentLinks: 3
 };
 
 const EXPECTED_STAGES: Record<string, number> = {
@@ -497,6 +501,31 @@ async function main(): Promise<void> {
 		if (!(key in EXPECTED_STAGES)) {
 			console.log(reportRow(key, plan.notes.stageCounts[key], undefined) + '   UNEXPECTED STAGE');
 		}
+	}
+
+	// -- Family links ---------------------------------------------------------
+	// The sheet's `link` column is mixed: Managed Missions URLs, payment URLs and
+	// a few cells that are not URLs at all (those stay names — see
+	// resolveFamilyName — and never become a link field).
+	const links = plan.notes.linkCounts;
+	console.log('\nFamily links (source "link" column → project attributes):');
+	console.log(
+		reportRow('managed_missions_link', links.managedMissions, EXPECTED_COUNTS.managedMissionsLinks)
+	);
+	console.log(reportRow('payment_link', links.payment, EXPECTED_COUNTS.paymentLinks));
+	console.log(reportRow('not a URL (no link field)', links.nonUrl, undefined));
+	if (links.unparsed > 0) {
+		console.log(
+			`  ! ${links.unparsed} value(s) started with http(s) but would not parse — no link field set`
+		);
+	}
+	// Every non-Managed-Missions host lands in payment_link. Printing the hosts is
+	// what makes a host this seed has never seen before visible rather than lost.
+	for (const host of Object.keys(plan.notes.paymentLinkHosts)) {
+		console.log(
+			`  ! ${plan.notes.paymentLinkHosts[host]} link(s) on host "${host}" → payment_link ` +
+				'(not a Managed Missions host)'
+		);
 	}
 
 	if (plan.notes.fundedShortfallCents > 0) {

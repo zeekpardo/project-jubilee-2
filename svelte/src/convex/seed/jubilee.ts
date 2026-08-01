@@ -605,8 +605,9 @@ export const seedFoundation = internalMutation({
 			});
 		}
 
-		// The campaign's "Details" card: one category holding the three fields
-		// that used to be dedicated columns on `families`.
+		// The campaign's "Details" card: one category holding the three fields that
+		// used to be dedicated columns on `families`, plus the two link fields the
+		// sheet's `link` column is split into.
 		const categories = await ctx.db
 			.query('customFieldCategories')
 			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))

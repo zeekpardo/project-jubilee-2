@@ -25,6 +25,17 @@ const isPublic = createRouteMatcher([
 	'/privacy'
 ]);
 
+/**
+ * The public donor site (see src/routes/(site)). Its first segment is an
+ * arbitrary org slug, so it cannot be allowlisted by literal path the way the
+ * routes above are. Matching on the resolved route id rather than on the path
+ * keeps this exact and fail-CLOSED: membership of the `(site)` group is the
+ * whole test, so adding a public page needs no change here, and a new authed
+ * top-level route can never be waved through by forgetting to reserve its
+ * name. An unmatched path yields a null id and so still requires auth.
+ */
+const isPublicSite = (routeId: string | null): boolean => routeId?.startsWith('/(site)') ?? false;
+
 /* --------------------------------------------------------- */
 /* ---------------------- auth helpers --------------------- */
 /* --------------------------------------------------------- */
@@ -48,7 +59,7 @@ const requireAuth: Handle = async ({ event, resolve }) => {
 	const sessionCookie = getSessionCookie(event.request);
 
 	/* ---------- 1. Handle public routes first ---------- */
-	if (isPublic(pathname)) {
+	if (isPublic(pathname) || isPublicSite(event.route.id)) {
 		// Special case: redirect authenticated users away from signin
 		if (isLogin(pathname) && sessionCookie) {
 			throw redirect(307, '/');

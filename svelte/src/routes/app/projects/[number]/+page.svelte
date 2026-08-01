@@ -140,6 +140,7 @@
 						projectId={project._id}
 						number={project.number}
 						campaignSlug={campaign?.slug ?? ''}
+						objectSlug={campaign?.objectSlug ?? ''}
 						{orgSlug}
 						isPublished={project.isPublished}
 						publicName={project.publicName}

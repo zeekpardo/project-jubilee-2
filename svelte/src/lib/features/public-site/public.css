@@ -1,0 +1,72 @@
+/* Public site (donor-facing) helpers — scoped by ps- prefix.
+   The jubilee theme tokens (light + dark) come from ../../../../../shared/themes/jubilee.css. */
+
+/* Only the display face is imported here. Geist and Geist Mono, and the
+   --font-sans / --font-mono theme defaults that `font-sans` / `font-mono`
+   resolve through, already come from src/routes/layout.css — the root
+   layout's stylesheet, which every route including this one inherits.
+   Re-declaring them here would be a second copy to keep in sync, and
+   @theme is a global directive regardless of which file states it, so it
+   would not scope anything to the public site anyway. */
+@import '@fontsource-variable/playfair-display';
+
+:root {
+	/* `.ps-serif` below references this custom property directly (ported
+	   as-is from the reference, where it was set by next/font). Fontsource's
+	   variable packages publish the family under a "… Variable" name. */
+	--font-playfair-display:
+		'Playfair Display Variable', 'Playfair Display', Georgia, 'Times New Roman', serif;
+}
+
+.ps-serif {
+	font-family: var(--font-playfair-display), 'Playfair Display', Georgia, 'Times New Roman', serif;
+}
+
+/* Warm editorial glow behind the hero — amber dawn over teal ink. */
+.ps-hero-glow {
+	background:
+		radial-gradient(
+			60rem 32rem at 50% -12%,
+			color-mix(in oklab, var(--accent) 22%, transparent),
+			transparent 70%
+		),
+		radial-gradient(
+			44rem 26rem at 88% -4%,
+			color-mix(in oklab, var(--primary) 12%, transparent),
+			transparent 72%
+		);
+}
+
+/* Editorial double rule, like a chapter divider in a book. */
+.ps-rule {
+	border-top: 1px solid var(--border);
+	position: relative;
+}
+.ps-rule::after {
+	content: '';
+	position: absolute;
+	top: 3px;
+	left: 0;
+	right: 0;
+	border-top: 1px solid var(--border);
+}
+
+/* Photo placeholder weave — warm, dignified, never a gray box. */
+.ps-photo-placeholder {
+	background:
+		linear-gradient(
+			135deg,
+			color-mix(in oklab, var(--primary) 14%, var(--card)),
+			color-mix(in oklab, var(--accent) 22%, var(--card))
+		),
+		var(--card);
+}
+
+/* Honeypot — visually removed, still submittable by naive bots. */
+.ps-honeypot {
+	position: absolute;
+	left: -9999px;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+}

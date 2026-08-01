@@ -1,4 +1,6 @@
 <script lang="ts">
+	// Shell
+	import { resolve } from '$app/paths';
 	// Primitives
 	import * as Table from '$lib/primitives/ui/table';
 	import { Badge } from '$lib/primitives/ui/badge';
@@ -49,7 +51,14 @@
 		<Table.Body>
 			{#each campaigns as campaign (campaign._id)}
 				<Table.Row>
-					<Table.Cell class="font-medium">{campaign.name}</Table.Cell>
+					<Table.Cell class="font-medium">
+						<a
+							class="hover:underline"
+							href={resolve('/app/admin/campaigns/[id]', { id: campaign._id })}
+						>
+							{campaign.name}
+						</a>
+					</Table.Cell>
 					<Table.Cell class="text-muted-foreground">{campaign.slug}</Table.Cell>
 					<Table.Cell>
 						<div class="flex flex-wrap items-center gap-1.5">

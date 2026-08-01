@@ -11,6 +11,7 @@ import Megaphone from '@lucide/svelte/icons/megaphone';
 import UserCog from '@lucide/svelte/icons/user-cog';
 import Settings from '@lucide/svelte/icons/settings';
 import Building2 from '@lucide/svelte/icons/building-2';
+import Globe from '@lucide/svelte/icons/globe';
 
 export type NavItem = {
 	key: string;
@@ -59,6 +60,12 @@ export const ADMIN_NAV: NavItem[] = [
 		key: 'organization',
 		href: '/app/admin/organization',
 		icon: Building2,
+		capability: 'org:manage'
+	},
+	{
+		key: 'publicSite',
+		href: '/app/admin/public-site',
+		icon: Globe,
 		capability: 'org:manage'
 	}
 ];

@@ -21,6 +21,7 @@
 		projectId,
 		number,
 		campaignSlug,
+		objectSlug,
 		orgSlug,
 		isPublished,
 		publicName,
@@ -30,6 +31,7 @@
 		projectId: Id<'projects'>;
 		number: string;
 		campaignSlug: string;
+		objectSlug: string;
 		orgSlug: string | null;
 		isPublished: boolean;
 		publicName?: string;
@@ -43,10 +45,13 @@
 	let working = $state(false);
 
 	// The public site resolves an org by its own slug, so without one there is
-	// no address to show rather than a broken guess.
+	// no address to show rather than a broken guess. objectSlug is part of the
+	// public path (/org/campaign/families/P-001) and is frozen at campaign
+	// creation, so it must be included rather than assumed away — omitting it
+	// yields a URL that 404s.
 	const publicLink = $derived(
-		orgSlug
-			? `${typeof window === 'undefined' ? '' : window.location.origin}/${orgSlug}/${campaignSlug}/${number}`
+		orgSlug && objectSlug
+			? `${typeof window === 'undefined' ? '' : window.location.origin}/${orgSlug}/${campaignSlug}/${objectSlug}/${number}`
 			: ''
 	);
 

@@ -195,15 +195,21 @@
 									}}
 								/>
 							{:else if def.type === 'select'}
+								<!--
+									Via `ids`, never as an `id` on Select.Trigger: zag looks its
+									positioning anchor up by that exact id, so overwriting it
+									leaves the menu unpositioned at the page's top-left.
+								-->
 								<Select.Root
 									collection={optionCollection(def)}
+									ids={{ trigger: `project-field-${def.key}` }}
 									value={draft[def.key] ? [draft[def.key]] : []}
 									disabled={!canWrite}
 									onValueChange={(details: { value: string[] }): void => {
 										draft[def.key] = details.value[0] ?? '';
 									}}
 								>
-									<Select.Trigger id={`project-field-${def.key}`} class="w-full" placeholder="" />
+									<Select.Trigger class="w-full" placeholder="" />
 									<Select.Content>
 										{#each optionCollection(def).items as option (option.value)}
 											<Select.Item item={option}>

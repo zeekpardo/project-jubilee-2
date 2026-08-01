@@ -16,23 +16,50 @@
 //   - `publicName`, if an admin set one. Never derived from the real name:
 //     no rule separates given name from surname across cultures. Null
 //     otherwise, leaving `number` as the only identifier.
-//   - story, photoUrl, videoUrl, stage key and label
+//   - story, photoUrl, videoUrl, stage key and label. An uploaded photo is
+//     resolved from its storage id into a signed URL here, so that URL is
+//     handed to anonymous visitors by design — only ever for a project whose
+//     isPublished is true
 //   - memberCount (a COUNT, never the member rows)
 //   - memberFirstNames — only members given an explicit public first name;
 //     the rest are counted but unnamed
-//   - custom attributes whose field definition is explicitly isPublic
+//   - custom attributes whose field definition is explicitly isPublic, each
+//     carrying its admin-authored label and type so a reader never has to
+//     invent either from the key
 //   - isGoalMet and the campaign's goalLabel (the "Freed" badge)
 //   - raised / target / progress, derived from the ledger. targetCents is
 //     derived from the bonded debt owed for this family, so it quantifies
 //     their bondage; it is exposed because it IS the fundraising ask.
+//   - org chrome: orgSettings.publicName/publicTagline/theme/slug — never
+//     the org's internal name or any other orgSettings field
+//   - campaign summary cards: slug, name, summary, coverImageUrl,
+//     objectSlug, objectLabelPlural — a subset of toPublicCampaign, for list
+//     views that don't need the full detail shape
+//   - campaign stat counts (projects_freed / people_reached /
+//     children_reached) — whole-number aggregates only, see
+//     publicCampaignStats below for why counting across unpublished
+//     projects is still safe
 //
 //   NEVER EXPOSED. Do not add without a privacy review:
-//   - siteRef — the internal factory/site reference. This app serves people
-//     escaping forced labour; leaking where they were held can endanger them.
-//   - whatsappPhone, managedMissionsLink, note — internal operations data
 //   - member surnames, ages, relationships, or contact records of any kind
 //   - donor/contact PII, donation amounts, or donor-to-project links
 //   - Convex document ids — projects are addressed by `number` only
+//   - a PROTECTED custom-field key — site/factory references, phone numbers,
+//     addresses, locations, and internal ops notes. This app serves people
+//     escaping forced labour; leaking where they were held can endanger
+//     them. These used to be fixed columns this wall simply never copied,
+//     but they are now entries in `projects.attributes` like any other
+//     custom field, so "never copied" is no longer a guarantee by itself.
+//     The guarantee now lives in `lib/domain/field-definitions.ts`:
+//     `isProtectedFieldKey` denylists these keys (exact match, plus a
+//     pattern for `*_ref`/phone/address/location), enforced twice —
+//     once at write time (customFields/mutations.ts refuses to let a
+//     protected key be marked `isPublic`) and again at read time
+//     (`publicAttributeList`, which drops a protected key even if some
+//     future path marked it public anyway). Adding a field here is still a
+//     privacy decision: an admin ticking `isPublic` on a NEW field is a
+//     deliberate per-field choice, not something this wall can veto beyond
+//     the denylist above.
 //
 // Only projects with isPublished true are visible. Publishing is an
 // independent toggle, decoupled from pipeline stage: an unpublished project
@@ -43,10 +70,19 @@ import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
 	resolveFieldDefinitions,
-	publicAttributes,
-	type FieldDefinition
+	publicAttributeList,
+	type FieldDefinition,
+	type PublicAttribute
 } from '../../lib/domain/field-definitions';
 import { raisedForProject } from '../../lib/domain/reconciliation';
+import {
+	isPersonReachedRole,
+	resolveStatLabel,
+	STAT_METRIC_KEYS,
+	STAT_METRICS,
+	type StatFormat,
+	type StatMetricKey
+} from '../../lib/domain/campaign-stats';
 
 /**
  * Public names are ADMIN-ENTERED, never derived. Taking the first token of a
@@ -73,7 +109,7 @@ export type PublicProject = {
 	goalLabel: string;
 	memberCount: number;
 	memberFirstNames: string[];
-	attributes: Record<string, unknown>;
+	attributes: PublicAttribute[];
 	raisedCents: number;
 	targetCents: number | null;
 	progress: number | null;
@@ -166,10 +202,15 @@ export async function toPublicProject(
 		)
 		.first();
 
-	const memberLinks = await ctx.db
-		.query('projectMembers')
-		.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
-		.collect();
+	// Donors attached to this record are excluded: memberCount is published as
+	// the household's size, so counting sponsors would both overstate it and
+	// hint at how many donors a given family has.
+	const memberLinks = (
+		await ctx.db
+			.query('projectMembers')
+			.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
+			.collect()
+	).filter((link) => isPersonReachedRole(link.role));
 
 	// Only members with an explicit public first name are listed. A member
 	// without one is counted, never named.
@@ -190,11 +231,20 @@ export async function toPublicProject(
 
 	const defs = presolvedDefs ?? (await publicFieldDefs(ctx, project.orgId, project.campaignId));
 
+	// An uploaded photo lives in Convex storage and has to be resolved to a
+	// signed URL at read time; a pasted photoUrl is the fallback. Same order as
+	// the admin queries, so the public page shows the picture an admin sees
+	// rather than the placeholder. Publishing is still gated by isPublished —
+	// this resolves the address of a photo, it does not decide to show one.
+	const photoUrl = project.photoStorageId
+		? ((await ctx.storage.getUrl(project.photoStorageId)) ?? project.photoUrl ?? null)
+		: (project.photoUrl ?? null);
+
 	return {
 		number: project.number,
 		name: publicNameOf(project.publicName),
 		story: project.story ?? null,
-		photoUrl: project.photoUrl ?? null,
+		photoUrl,
 		videoUrl: project.videoUrl ?? null,
 		stage: project.stage,
 		stageLabel: stage?.label ?? project.stage,
@@ -202,7 +252,7 @@ export async function toPublicProject(
 		goalLabel: campaign.goalLabel,
 		memberCount: memberLinks.length,
 		memberFirstNames,
-		attributes: publicAttributes(defs, project.attributes),
+		attributes: publicAttributeList(defs, project.attributes),
 		raisedCents,
 		targetCents,
 		progress: targetCents && targetCents > 0 ? Math.min(1, raisedCents / targetCents) : null
@@ -244,4 +294,115 @@ export function toPublicCampaign(campaign: Doc<'campaigns'>): PublicCampaign {
 		goalLabel: campaign.goalLabel,
 		goalVerb: campaign.goalVerb
 	};
+}
+
+export type PublicCampaignSummary = {
+	slug: string;
+	name: string;
+	summary: string | null;
+	coverImageUrl: string | null;
+	objectSlug: string;
+	objectLabelPlural: string;
+};
+
+/** The list-view shape for a campaign card. Built field by field, same rule as projects. */
+export function toPublicCampaignSummary(campaign: Doc<'campaigns'>): PublicCampaignSummary {
+	return {
+		slug: campaign.slug,
+		name: campaign.name,
+		summary: campaign.summary ?? null,
+		coverImageUrl: campaign.coverImageUrl ?? null,
+		objectSlug: campaign.objectSlug,
+		objectLabelPlural: campaign.objectLabelPlural
+	};
+}
+
+export type PublicOrgProfile = {
+	name: string;
+	tagline: string | null;
+	theme: string | null;
+	slug: string;
+};
+
+/**
+ * Public site chrome for an org. `name` is admin-entered
+ * (`orgSettings.publicName`) so it never has to guess at a display name;
+ * when unset it falls back to the caller-supplied name of the org's first
+ * published campaign, so a brand-new org with no chrome configured yet still
+ * has something to show in the header.
+ */
+export function toPublicOrgProfile(
+	settings: Doc<'orgSettings'>,
+	orgSlug: string,
+	fallbackName: string
+): PublicOrgProfile {
+	const explicit = settings.publicName?.trim();
+	return {
+		name: explicit ? explicit : fallbackName,
+		tagline: settings.publicTagline ?? null,
+		theme: settings.theme ?? null,
+		// settings was resolved BY slug, so this is always the same string as
+		// orgSlug; the fallback only guards the optional-field type.
+		slug: settings.slug ?? orgSlug
+	};
+}
+
+export type PublicStat = {
+	key: StatMetricKey;
+	label: string;
+	value: number;
+	format: StatFormat;
+};
+
+/**
+ * The public impact numbers for a campaign, via the campaign-stats registry.
+ *
+ * Computed across ALL of the campaign's projects, published or not — same as
+ * the reference app's getImpactStats. These are whole-number aggregate
+ * counts with no per-project or per-donor detail, so the wall still holds:
+ * an unpublished project cannot be identified from a count. It does mean the
+ * headline number can be larger than the number of project cards a visitor
+ * actually sees, since those are filtered to isPublished.
+ */
+export async function publicCampaignStats(
+	ctx: QueryCtx,
+	campaign: Doc<'campaigns'>
+): Promise<PublicStat[]> {
+	const projects = await ctx.db
+		.query('projects')
+		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
+		.collect();
+	const freedProjects = projects.filter((project) => project.isGoalMet);
+
+	let memberCount = 0;
+	let childCount = 0;
+	for (const project of freedProjects) {
+		const rows = await ctx.db
+			.query('projectMembers')
+			.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
+			.collect();
+		const members = rows.filter((row) => isPersonReachedRole(row.role));
+		memberCount += members.length;
+		for (const member of members) {
+			const contact = await ctx.db.get('contacts', member.contactId);
+			if (contact?.child === true) childCount++;
+		}
+	}
+
+	const labelCtx = { objectLabelPlural: campaign.objectLabelPlural, goalLabel: campaign.goalLabel };
+	const valuesByKey: Record<StatMetricKey, number> = {
+		projects_freed: freedProjects.length,
+		people_reached: memberCount,
+		children_reached: childCount
+	};
+
+	return STAT_METRIC_KEYS.map((key) => {
+		const metric = STAT_METRICS[key];
+		return {
+			key,
+			label: resolveStatLabel(metric, labelCtx),
+			value: valuesByKey[key],
+			format: metric.format
+		};
+	});
 }

@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	coerceFieldValue,
 	formatFieldValue,
+	isProtectedFieldKey,
 	missingRequiredFields,
 	publicAttributes,
+	PROTECTED_FIELD_KEYS,
 	resolveFieldDefinitions,
 	type FieldDefinition
 } from './field-definitions';
@@ -156,6 +158,52 @@ describe('publicAttributes', () => {
 	it('omits empty and unset values', () => {
 		const got = publicAttributes([publicDef], { story_note: '' });
 		expect(got).toEqual({});
+	});
+
+	it('drops a protected key even when its definition is (incorrectly) marked public', () => {
+		// Belt-and-braces: this must never leak regardless of how a stale or
+		// future write path set isPublic on a protected key.
+		const leaky = def({ key: 'site_ref', isPublic: true });
+		const got = publicAttributes([publicDef, leaky], {
+			story_note: 'freed in June',
+			site_ref: 'KILN-42'
+		});
+		expect(got).toEqual({ story_note: 'freed in June' });
+	});
+
+	it('drops a protected key reached via a pattern match, not just the exact list', () => {
+		const leaky = def({ key: 'contact_phone', isPublic: true });
+		const got = publicAttributes([leaky], { contact_phone: '555-0100' });
+		expect(got).toEqual({});
+	});
+});
+
+describe('isProtectedFieldKey', () => {
+	it('matches every key in PROTECTED_FIELD_KEYS', () => {
+		for (const key of PROTECTED_FIELD_KEYS) {
+			expect(isProtectedFieldKey(key)).toBe(true);
+		}
+	});
+
+	it('matches case-insensitively and trims whitespace', () => {
+		expect(isProtectedFieldKey('  SITE_REF  ')).toBe(true);
+		expect(isProtectedFieldKey('Whatsapp_Phone')).toBe(true);
+	});
+
+	it('matches keys ending in _ref beyond the explicit list', () => {
+		expect(isProtectedFieldKey('factory_ref')).toBe(true);
+		expect(isProtectedFieldKey('kiln_ref')).toBe(true);
+	});
+
+	it('matches keys containing phone, address, or location', () => {
+		expect(isProtectedFieldKey('donor_phone_number')).toBe(true);
+		expect(isProtectedFieldKey('home_address')).toBe(true);
+		expect(isProtectedFieldKey('site_location')).toBe(true);
+	});
+
+	it('does not flag an unrelated key', () => {
+		expect(isProtectedFieldKey('story_note')).toBe(false);
+		expect(isProtectedFieldKey('religion')).toBe(false);
 	});
 });
 

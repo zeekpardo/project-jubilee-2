@@ -4,6 +4,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { FieldDefinition, FieldEntity, FieldScope } from '../../lib/domain/field-definitions';
 import {
 	coerceFieldValue,
+	isProtectedFieldKey,
 	missingRequiredFields,
 	resolveFieldDefinitions
 } from '../../lib/domain/field-definitions';
@@ -118,6 +119,17 @@ export async function assertKeyAvailable(
 		.collect();
 	if (siblings.some((row) => row.scope === 'org' && row._id !== excludeId)) {
 		throw new ConvexError(`Field key already in use for this organization: ${key}`);
+	}
+}
+
+// The isPublic checkbox is admin-settable and this app serves people
+// escaping forced labour, so a protected key (site references, phone
+// numbers, addresses, locations, ops notes) can never be marked public —
+// checked on both create and update, independent of the read-time filter in
+// publicAttributes.
+export function assertKeyNotProtectedIfPublic(key: string, isPublic: boolean | undefined): void {
+	if (isPublic && isProtectedFieldKey(key)) {
+		throw new ConvexError(`Field key cannot be made public: ${key}`);
 	}
 }
 

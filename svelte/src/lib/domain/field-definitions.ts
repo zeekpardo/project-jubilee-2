@@ -158,16 +158,78 @@ export function publicFieldDefinitions(defs: FieldDefinition[]): FieldDefinition
 	return defs.filter((def) => def.isPublic);
 }
 
+// ------------------------------------------------------------------
+// Protected keys — a denylist independent of the `isPublic` checkbox
+// ------------------------------------------------------------------
+// `isPublic` is an admin-settable flag on a definition, so it can be ticked
+// by mistake, or on a row written before this list existed. These keys can
+// out someone still escaping forced labour, so they are withheld regardless
+// of that flag: `isProtectedFieldKey` is enforced both where a definition is
+// written (customFields/mutations.ts, so the flag can never even be set)
+// and again where attributes are read for the public site
+// (publicAttributes below), so no past or future write path can leak one.
+
+/** Exact keys that are always withheld, whatever the field is labelled. */
+export const PROTECTED_FIELD_KEYS = ['site_ref', 'whatsapp_phone', 'managed_missions_link', 'note'];
+
+// Beyond the exact keys above, anything shaped like a site reference or a way
+// to reach/find someone is withheld too, so a differently-named field can't
+// route around the list (e.g. `factory_ref`, `contact_phone`, `home_address`).
+const PROTECTED_KEY_PATTERNS = [/_ref$/, /phone/, /address/, /location/];
+
+function normalizeFieldKey(key: string): string {
+	return key.trim().toLowerCase();
+}
+
+export function isProtectedFieldKey(key: string): boolean {
+	const normalized = normalizeFieldKey(key);
+	if (PROTECTED_FIELD_KEYS.includes(normalized)) return true;
+	return PROTECTED_KEY_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 /**
  * Strip an attributes bag down to only the values whose definition is marked
  * public. The privacy wall uses this — an unknown key is dropped, so removing
- * a definition can never leak a stale value.
+ * a definition can never leak a stale value. A protected key is dropped even
+ * if its definition is (incorrectly) marked public — see isProtectedFieldKey.
  */
 export function publicAttributes(defs: FieldDefinition[], attributes: Attributes): Attributes {
 	const out: Attributes = {};
+	for (const attribute of publicAttributeList(defs, attributes)) {
+		out[attribute.key] = attribute.value;
+	}
+	return out;
+}
+
+/** One publishable attribute, carrying what a reader needs to render it. */
+export interface PublicAttribute {
+	key: string;
+	label: string;
+	type: FieldType;
+	value: unknown;
+}
+
+/**
+ * The same exposure decision as publicAttributes, but keeping each value's
+ * definition alongside it. A bare key/value bag forces every reader to invent
+ * a label from the key ("years_enslaved" → "Years Enslaved"), which throws
+ * away the wording an admin chose, and to guess at formatting, which renders
+ * a money field as raw cents. Order follows the definitions, so a campaign's
+ * field order carries through to the page.
+ *
+ * This is the single gate: publicAttributes delegates here, so the protected
+ * key check cannot be enforced in one path and forgotten in the other.
+ */
+export function publicAttributeList(
+	defs: FieldDefinition[],
+	attributes: Attributes
+): PublicAttribute[] {
+	const out: PublicAttribute[] = [];
 	for (const def of publicFieldDefinitions(defs)) {
+		if (isProtectedFieldKey(def.key)) continue;
 		const value = attributes[def.key];
-		if (value !== undefined && value !== null && value !== '') out[def.key] = value;
+		if (value === undefined || value === null || value === '') continue;
+		out.push({ key: def.key, label: def.label, type: def.type, value });
 	}
 	return out;
 }

@@ -5,6 +5,7 @@ import { requireOrgId } from '../model/auth';
 import {
 	assertCategoryUsable,
 	assertKeyAvailable,
+	assertKeyNotProtectedIfPublic,
 	assertOptionsShape,
 	assertScopeShape,
 	attributeValueValidator,
@@ -123,6 +124,7 @@ export const createFieldDefinition = mutation({
 			throw new ConvexError('Field key is required');
 		}
 		assertOptionsShape(args.type, args.options);
+		assertKeyNotProtectedIfPublic(key, args.isPublic);
 		await assertKeyAvailable(ctx, orgId, args.entity, args.scope, args.campaignId, key);
 
 		return await ctx.db.insert('customFieldDefinitions', {
@@ -160,6 +162,10 @@ export const updateFieldDefinition = mutation({
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
 		const field = await requireFieldDefinition(ctx, orgId, args.fieldId);
+
+		if (args.isPublic !== undefined) {
+			assertKeyNotProtectedIfPublic(field.key, args.isPublic);
+		}
 
 		const patch: Record<string, unknown> = {};
 		if (args.label !== undefined) {

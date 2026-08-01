@@ -82,7 +82,7 @@
 			{#if emails.length === 0}
 				<EmptyState variant="plain" size="sm" title={m.contactDetail_noEmails()} />
 			{:else}
-				<ul class="divide-border divide-y">
+				<ul>
 					{#each emails as row (row._id)}
 						<li class="flex items-center gap-2 py-2">
 							{#if canWrite}

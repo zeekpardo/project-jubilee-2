@@ -1,6 +1,25 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
+import type { QueryCtx } from '../_generated/server';
+import type { Doc } from '../_generated/dataModel';
 import { activeOrgId } from '../model/auth';
+
+/**
+ * An uploaded photo is reachable only through a signed URL, and a list consumer
+ * (the gallery card) receives plain rows — it has no way to turn a storage id
+ * into something an <img> can load. So the id is resolved here. A pasted
+ * `photoUrl` is already a URL and passes through untouched; it is also the
+ * fallback if signing ever fails.
+ */
+async function withPhotoUrls(ctx: QueryCtx, rows: Doc<'projects'>[]): Promise<Doc<'projects'>[]> {
+	return await Promise.all(
+		rows.map(async (row) =>
+			row.photoStorageId
+				? { ...row, photoUrl: (await ctx.storage.getUrl(row.photoStorageId)) ?? row.photoUrl }
+				: row
+		)
+	);
+}
 
 export const listProjects = query({
 	args: {
@@ -27,7 +46,7 @@ export const listProjects = query({
 			if (args.isPublished !== undefined) {
 				rows = rows.filter((row) => row.isPublished === args.isPublished);
 			}
-			return rows;
+			return await withPhotoUrls(ctx, rows);
 		}
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
@@ -44,25 +63,34 @@ export const listProjects = query({
 					q.eq('campaignId', campaignId).eq('stage', stage)
 				)
 				.collect();
-			return args.isPublished === undefined
-				? rows
-				: rows.filter((row) => row.isPublished === args.isPublished);
+			return await withPhotoUrls(
+				ctx,
+				args.isPublished === undefined
+					? rows
+					: rows.filter((row) => row.isPublished === args.isPublished)
+			);
 		}
 
 		if (args.isPublished !== undefined) {
 			const isPublished = args.isPublished;
-			return await ctx.db
-				.query('projects')
-				.withIndex('by_campaignId_and_isPublished', (q) =>
-					q.eq('campaignId', campaignId).eq('isPublished', isPublished)
-				)
-				.collect();
+			return await withPhotoUrls(
+				ctx,
+				await ctx.db
+					.query('projects')
+					.withIndex('by_campaignId_and_isPublished', (q) =>
+						q.eq('campaignId', campaignId).eq('isPublished', isPublished)
+					)
+					.collect()
+			);
 		}
 
-		return await ctx.db
-			.query('projects')
-			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
-			.collect();
+		return await withPhotoUrls(
+			ctx,
+			await ctx.db
+				.query('projects')
+				.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+				.collect()
+		);
 	}
 });
 

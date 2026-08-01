@@ -71,7 +71,7 @@
 			{#if checks.length === 0}
 				<EmptyState variant="plain" size="sm" title={m.contactDetail_noBackgroundChecks()} />
 			{:else}
-				<ul class="divide-border divide-y">
+				<ul>
 					{#each checks as row (row._id)}
 						<li class="flex items-start gap-2 py-2">
 							<div class="min-w-0 flex-1">

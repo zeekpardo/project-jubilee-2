@@ -99,7 +99,7 @@
 			{#if addresses.length === 0}
 				<EmptyState variant="plain" size="sm" title={m.contactDetail_noAddresses()} />
 			{:else}
-				<ul class="divide-border divide-y">
+				<ul>
 					{#each addresses as row (row._id)}
 						<li class="flex items-start gap-2 py-2">
 							{#if canWrite}

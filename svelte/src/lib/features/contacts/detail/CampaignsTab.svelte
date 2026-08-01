@@ -57,7 +57,7 @@
 			{:else if campaigns.length === 0}
 				<EmptyState title={m.contactDetail_noCampaigns()} />
 			{:else}
-				<ul class="divide-border divide-y">
+				<ul>
 					{#each campaigns as membership (membership._id)}
 						<li class="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
 							<span class="min-w-0 truncate font-medium">{membership.campaign?.name ?? '—'}</span>
@@ -82,7 +82,7 @@
 			{:else if projects.length === 0}
 				<EmptyState title={m.contactDetail_noProjects()} />
 			{:else}
-				<ul class="divide-border divide-y">
+				<ul>
 					{#each projects as link (link._id)}
 						{@const attributes = attributeLine(link.attributes)}
 						<li class="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">

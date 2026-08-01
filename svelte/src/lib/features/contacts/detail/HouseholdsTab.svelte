@@ -140,7 +140,7 @@
 					{#if block.members.length === 0}
 						<EmptyState variant="plain" size="sm" title={m.households_noMembers()} />
 					{:else}
-						<ul class="divide-border divide-y">
+						<ul>
 							{#each block.members as member (member._id)}
 								{@const isPrimary = block.household.primaryContactId === member.contactId}
 								<li class="flex items-center gap-2 py-2">

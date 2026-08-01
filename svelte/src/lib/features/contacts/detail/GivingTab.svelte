@@ -47,7 +47,7 @@
 		{:else if donations.length === 0}
 			<EmptyState title={m.contactDetail_noDonations()} />
 		{:else}
-			<ul class="divide-border divide-y">
+			<ul>
 				{#each donations as donation (donation._id)}
 					<li class="flex flex-wrap items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
 						<div class="min-w-0">

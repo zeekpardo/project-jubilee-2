@@ -28,6 +28,13 @@ const campaigns = defineTable({
 	story: v.optional(v.string()),
 	coverImageUrl: v.optional(v.string()),
 	iconUrl: v.optional(v.string()),
+	// Uploaded cover/icon blobs, the storage-backed counterparts to the two
+	// URLs above — same pairing as projects.photoStorageId. Only one of each
+	// pair is ever set, so a pasted URL and an upload cannot both claim the
+	// slot. These ids are the only handle to the blob, so deleting a campaign
+	// must delete them first or the storage leaks.
+	coverImageStorageId: v.optional(v.id('_storage')),
+	iconStorageId: v.optional(v.id('_storage')),
 	promoVideoUrl: v.optional(v.string()),
 	accent: v.optional(v.string()),
 

@@ -152,6 +152,17 @@ export async function deleteCampaignCascade(
 	ctx: MutationCtx,
 	campaignId: Id<'campaigns'>
 ): Promise<void> {
+	// Storage ids are the only handle to these blobs, so they must go before
+	// the campaign row does or the upload leaks. Mirrors the document cleanup
+	// in deleteProjectCascade below.
+	const campaign = await ctx.db.get('campaigns', campaignId);
+	if (campaign?.coverImageStorageId) {
+		await ctx.storage.delete(campaign.coverImageStorageId);
+	}
+	if (campaign?.iconStorageId) {
+		await ctx.storage.delete(campaign.iconStorageId);
+	}
+
 	// Allocations go first so the per-project clearing below finds nothing left
 	// to do. Transactions themselves are org-level and survive: the money still
 	// moved, it simply becomes unallocated.

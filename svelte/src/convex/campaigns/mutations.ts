@@ -88,6 +88,18 @@ export const updateCampaign = mutation({
 			}
 		}
 
+		// A pasted URL supersedes an uploaded blob — the same invariant
+		// setCampaignImage enforces in the other direction. Delete the blob it
+		// displaces here too, or the upload leaks.
+		if (patch.coverImageUrl !== undefined && campaign.coverImageStorageId) {
+			await ctx.storage.delete(campaign.coverImageStorageId);
+			patch.coverImageStorageId = undefined;
+		}
+		if (patch.iconUrl !== undefined && campaign.iconStorageId) {
+			await ctx.storage.delete(campaign.iconStorageId);
+			patch.iconStorageId = undefined;
+		}
+
 		await ctx.db.patch('campaigns', campaignId, patch as Partial<Doc<'campaigns'>>);
 		return campaignId;
 	}

@@ -4,7 +4,6 @@
 	import { Button } from '$lib/primitives/ui/button';
 	import { Input } from '$lib/primitives/ui/input';
 	import { Label } from '$lib/primitives/ui/label';
-	import ImageIcon from '@lucide/svelte/icons/image';
 	import { toast } from 'svelte-sonner';
 	import { ConvexError } from 'convex/values';
 
@@ -13,6 +12,7 @@
 	import { getAuthContext } from '$lib/auth/context.svelte';
 
 	import type { Campaign } from './types';
+	import CampaignImageUploader from './CampaignImageUploader.svelte';
 	import * as m from '$lib/i18n/messages';
 
 	let { campaign, canWrite }: { campaign: Campaign; canWrite: boolean } = $props();
@@ -25,17 +25,35 @@
 	let promoVideoUrl = $state('');
 	let isSaving = $state(false);
 
-	// This app stores media as plain URL strings (no upload/storage id), so the
-	// form only needs a one-time seed rather than the upload/preview machinery
-	// the reference app uses for its file inputs.
+	// campaign.coverImageUrl/iconUrl are resolved at read time, preferring an
+	// uploaded blob — when a blob is set, that field is a signed, temporary
+	// URL for preview only. Seeding the pasted-URL input with it would let an
+	// unrelated "Save changes" (e.g. just the promo video) silently persist a
+	// signed URL as a permanent one and drop the upload, so a storage-backed
+	// slot starts its text input blank instead.
 	let loaded = $state(false);
 	$effect(() => {
 		if (loaded) return;
-		coverImageUrl = campaign.coverImageUrl ?? '';
-		iconUrl = campaign.iconUrl ?? '';
+		coverImageUrl = campaign.coverImageStorageId ? '' : (campaign.coverImageUrl ?? '');
+		iconUrl = campaign.iconStorageId ? '' : (campaign.iconUrl ?? '');
 		promoVideoUrl = campaign.promoVideoUrl ?? '';
 		loaded = true;
 	});
+
+	// What the preview should show: unsaved typed text first, then whatever
+	// the server resolved (a signed upload URL, or a previously saved one).
+	const coverPreviewUrl = $derived(coverImageUrl.trim() || campaign.coverImageUrl || null);
+	const iconPreviewUrl = $derived(iconUrl.trim() || campaign.iconUrl || null);
+
+	/** After an upload/removal, the paired field the server just cleared may
+	 *  still be reflected in stale local text — drop it so the preview falls
+	 *  back to the (now up to date) resolved URL instead of re-persisting it. */
+	function clearCoverText(): void {
+		coverImageUrl = '';
+	}
+	function clearIconText(): void {
+		iconUrl = '';
+	}
 
 	async function save(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -73,39 +91,38 @@
 					placeholder="https://…"
 					disabled={!canWrite}
 				/>
-				<div
-					class="bg-muted flex aspect-video w-full max-w-md items-center justify-center overflow-hidden rounded-lg border"
-				>
-					{#if coverImageUrl}
-						<img src={coverImageUrl} alt="" class="h-full w-full object-cover" />
-					{:else}
-						<ImageIcon class="text-muted-foreground size-8" aria-hidden="true" />
-					{/if}
-				</div>
+				<CampaignImageUploader
+					campaignId={campaign._id}
+					kind="cover"
+					url={coverPreviewUrl}
+					label={m.campaignDetail_coverImage()}
+					{canWrite}
+					frameClass="aspect-video w-full max-w-md"
+					onchange={clearCoverText}
+				/>
 			</div>
 
 			<div class="flex flex-col gap-2">
 				<Label for="campaign-icon">{m.campaignDetail_icon()}</Label>
-				<div class="flex items-center gap-3">
-					<Input
-						id="campaign-icon"
-						class="flex-1"
-						bind:value={iconUrl}
-						type="url"
-						placeholder="https://…"
-						disabled={!canWrite}
-					/>
-					<div
-						class="bg-muted flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border"
-					>
-						{#if iconUrl}
-							<img src={iconUrl} alt="" class="h-full w-full object-cover" />
-						{:else}
-							<ImageIcon class="text-muted-foreground size-5" aria-hidden="true" />
-						{/if}
-					</div>
-				</div>
+				<Input
+					id="campaign-icon"
+					bind:value={iconUrl}
+					type="url"
+					placeholder="https://…"
+					disabled={!canWrite}
+				/>
+				<CampaignImageUploader
+					campaignId={campaign._id}
+					kind="icon"
+					url={iconPreviewUrl}
+					label={m.campaignDetail_icon()}
+					{canWrite}
+					frameClass="size-16"
+					onchange={clearIconText}
+				/>
 			</div>
+
+			<p class="text-muted-foreground text-xs">{m.campaignDetail_imageUrlHelp()}</p>
 
 			<div class="flex flex-col gap-2">
 				<Label for="campaign-promo-video">{m.campaignDetail_promoVideo()}</Label>

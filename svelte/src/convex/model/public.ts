@@ -20,6 +20,10 @@
 //     resolved from its storage id into a signed URL here, so that URL is
 //     handed to anonymous visitors by design — only ever for a project whose
 //     isPublished is true
+//   - a campaign's coverImageUrl/iconUrl: same resolution as a project photo
+//     — an uploaded cover/icon is resolved from its storage id into a signed
+//     URL here, with the pasted URL as fallback, for a campaign whose
+//     isPublished is true
 //   - memberCount (a COUNT, never the member rows)
 //   - memberFirstNames — only members given an explicit public first name;
 //     the rest are counted but unnamed
@@ -276,15 +280,36 @@ export type PublicCampaign = {
 	goalVerb: string;
 };
 
+/**
+ * Resolves a campaign's cover/icon to the URL a visitor should see: the
+ * uploaded blob when one is set, the pasted URL otherwise. Same order and
+ * fallback as `toPublicProject`'s photoUrl resolution.
+ */
+async function resolveCampaignImage(
+	ctx: QueryCtx,
+	storageId: Id<'_storage'> | undefined,
+	pastedUrl: string | undefined
+): Promise<string | null> {
+	if (!storageId) return pastedUrl ?? null;
+	return (await ctx.storage.getUrl(storageId)) ?? pastedUrl ?? null;
+}
+
 /** Public view of a campaign. Built field by field, same rule as projects. */
-export function toPublicCampaign(campaign: Doc<'campaigns'>): PublicCampaign {
+export async function toPublicCampaign(
+	ctx: QueryCtx,
+	campaign: Doc<'campaigns'>
+): Promise<PublicCampaign> {
 	return {
 		slug: campaign.slug,
 		name: campaign.name,
 		summary: campaign.summary ?? null,
 		story: campaign.story ?? null,
-		coverImageUrl: campaign.coverImageUrl ?? null,
-		iconUrl: campaign.iconUrl ?? null,
+		coverImageUrl: await resolveCampaignImage(
+			ctx,
+			campaign.coverImageStorageId,
+			campaign.coverImageUrl
+		),
+		iconUrl: await resolveCampaignImage(ctx, campaign.iconStorageId, campaign.iconUrl),
 		promoVideoUrl: campaign.promoVideoUrl ?? null,
 		accent: campaign.accent ?? null,
 		theme: campaign.theme ?? null,
@@ -306,12 +331,19 @@ export type PublicCampaignSummary = {
 };
 
 /** The list-view shape for a campaign card. Built field by field, same rule as projects. */
-export function toPublicCampaignSummary(campaign: Doc<'campaigns'>): PublicCampaignSummary {
+export async function toPublicCampaignSummary(
+	ctx: QueryCtx,
+	campaign: Doc<'campaigns'>
+): Promise<PublicCampaignSummary> {
 	return {
 		slug: campaign.slug,
 		name: campaign.name,
 		summary: campaign.summary ?? null,
-		coverImageUrl: campaign.coverImageUrl ?? null,
+		coverImageUrl: await resolveCampaignImage(
+			ctx,
+			campaign.coverImageStorageId,
+			campaign.coverImageUrl
+		),
 		objectSlug: campaign.objectSlug,
 		objectLabelPlural: campaign.objectLabelPlural
 	};

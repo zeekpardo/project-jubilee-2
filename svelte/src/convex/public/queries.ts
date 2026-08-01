@@ -53,7 +53,7 @@ export const getCampaign = query({
 	args: { orgSlug: v.string(), slug: v.string() },
 	handler: async (ctx, args) => {
 		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.slug);
-		return campaign ? toPublicCampaign(campaign) : null;
+		return campaign ? await toPublicCampaign(ctx, campaign) : null;
 	}
 });
 
@@ -163,6 +163,6 @@ export const listCampaigns = query({
 			.filter((q) => q.eq(q.field('isPublished'), true))
 			.collect();
 
-		return campaigns.map(toPublicCampaignSummary);
+		return await Promise.all(campaigns.map((campaign) => toPublicCampaignSummary(ctx, campaign)));
 	}
 });

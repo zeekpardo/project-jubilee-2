@@ -315,6 +315,7 @@
 	"projects_addDocument": "Add document",
 	"projects_documentKind": "Kind",
 	"projects_documentStage": "Stage",
+	"projects_openLink": "Open {label} in a new tab",
 	"projects_documentUrl": "Link",
 	"projects_documentFile": "File",
 	"projects_documentCompany": "Company",
@@ -628,5 +629,7 @@
 	"projects_donationReceiptHelp": "Optional — stored privately as proof of this gift.",
 	"projects_donationReceiptTooLarge": "That receipt is larger than 10 MB",
 	"projects_donationAmountInvalid": "Enter a positive dollar amount, for example 150.00",
-	"projects_donationSaved": "Donation recorded"
+	"projects_donationSaved": "Donation recorded",
+	"projects_documentFromLedger": "From the ledger",
+	"projects_documentLedgerHint": "Recorded with a donation or an expenditure. Manage it from the money ledger."
 }

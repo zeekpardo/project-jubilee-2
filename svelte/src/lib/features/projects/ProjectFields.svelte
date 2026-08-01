@@ -10,6 +10,7 @@
 	import { Textarea } from '$lib/primitives/ui/textarea';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import { createListCollection } from '@ark-ui/svelte/select';
 	import type { SwitchCheckedChangeDetails } from '$lib/primitives/ui/switch';
 	import EyeIcon from '@lucide/svelte/icons/eye';
@@ -53,6 +54,20 @@
 		}
 		if (def.type === 'boolean') return value ? 'true' : 'false';
 		return String(value);
+	}
+
+	/**
+	 * The schema has no `url` field type, so a link lives in a plain text field.
+	 * Rather than hard-code which keys hold links, any text value that is an
+	 * http(s) URL gets an open affordance — the same `^https?://` rule the seed
+	 * uses to decide whether the source `link` column held a URL at all.
+	 *
+	 * The input stays editable; the link sits beside it. Replacing the input with
+	 * an anchor would make the value unfixable once it is wrong.
+	 */
+	function asHttpUrl(value: string | undefined): string | null {
+		const trimmed = (value ?? '').trim();
+		return /^https?:\/\//i.test(trimmed) ? trimmed : null;
 	}
 
 	// Reseeding only when the record or the field set changes keeps a live query
@@ -226,12 +241,30 @@
 										: undefined}
 								/>
 							{:else}
-								<Input
-									id={`project-field-${def.key}`}
-									bind:value={draft[def.key]}
-									disabled={!canWrite}
-									required={def.isRequired}
-								/>
+								{@const href = asHttpUrl(draft[def.key])}
+								<div class="flex items-center gap-2">
+									<Input
+										id={`project-field-${def.key}`}
+										class="flex-1"
+										bind:value={draft[def.key]}
+										disabled={!canWrite}
+										required={def.isRequired}
+									/>
+									{#if href}
+										<!-- The value is an admin-entered external URL, not an app route. -->
+										<!-- eslint-disable svelte/no-navigation-without-resolve -->
+										<a
+											class="text-primary hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/50 inline-flex size-9 shrink-0 items-center justify-center rounded-md outline-none focus-visible:ring-[3px]"
+											{href}
+											target="_blank"
+											rel="noopener noreferrer"
+											aria-label={m.projects_openLink({ label: def.label })}
+											title={m.projects_openLink({ label: def.label })}
+										>
+											<ExternalLinkIcon class="size-4" aria-hidden="true" />
+										</a>
+									{/if}
+								</div>
 							{/if}
 						</div>
 					{/each}

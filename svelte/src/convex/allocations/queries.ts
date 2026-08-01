@@ -165,6 +165,90 @@ export const getExpendituresForProject = query({
 });
 
 /**
+ * Every receipt that reached this project through the money ledger — the files
+ * attached by Record spend and Record donation — as rows the Documents tab can
+ * show alongside real `documents`.
+ *
+ * The receipt is not copied into `documents`. Its one owner stays the
+ * transaction that carries it (`transactions.receiptStorageId`), whose delete
+ * and update paths already take the blob with them; a second row pointing at
+ * the same bytes would outlive them and read as a file that is merely out of
+ * reach. This query is a read-through view, which is why nothing here writes.
+ *
+ * One row per TRANSACTION, not per allocation: a receipt proves the whole
+ * expenditure, so `amountCents` is the transaction's amount even when a split
+ * sent only part of it to this project. Resolving once per transaction also
+ * keeps a split from minting the same signed URL several times.
+ *
+ * Signed URLs are minted per read and never persisted — the same rule as
+ * `getExpendituresForProject` above, and the same org gate.
+ */
+export const getLedgerReceiptsForProject = query({
+	args: {
+		projectId: v.id('projects')
+	},
+	handler: async (ctx, args) => {
+		const orgId = await activeOrgId(ctx);
+		if (!orgId) {
+			return [];
+		}
+
+		const project = await ctx.db.get('projects', args.projectId);
+		if (!project || project.orgId !== orgId) {
+			return [];
+		}
+
+		const allocations = await ctx.db
+			.query('allocations')
+			.withIndex('by_projectId', (q) => q.eq('projectId', args.projectId))
+			.collect();
+
+		const transactions = new Map<string, Doc<'transactions'>>();
+		for (const allocation of allocations) {
+			if (transactions.has(allocation.transactionId)) {
+				continue;
+			}
+			const transaction = await ctx.db.get('transactions', allocation.transactionId);
+			if (transaction && transaction.orgId === orgId) {
+				transactions.set(allocation.transactionId, transaction);
+			}
+		}
+
+		const rows = [];
+		for (const transaction of transactions.values()) {
+			if (!transaction.receiptStorageId) {
+				continue;
+			}
+			// Transfers move money to the field rather than into or out of this
+			// project's fund, and no flow attaches a receipt to one; leaving them
+			// out keeps the row's origin unambiguous where it is shown.
+			if (transaction.type !== 'donation' && transaction.type !== 'expenditure') {
+				continue;
+			}
+			const receiptUrl = await resolveReceiptUrl(ctx, transaction.receiptStorageId);
+			// A receipt whose blob no longer resolves is not a document. Showing
+			// the row anyway would put a file in the list that cannot be opened —
+			// exactly the ghost this design exists to avoid.
+			if (!receiptUrl) {
+				continue;
+			}
+			rows.push({
+				transactionId: transaction._id,
+				type: transaction.type,
+				// The ordering tiebreak for receipts recorded without a date.
+				createdAt: transaction._creationTime,
+				amountCents: transaction.amountCents,
+				occurredOn: transaction.occurredOn ?? null,
+				method: transaction.method ?? null,
+				reference: transaction.reference ?? null,
+				receiptUrl
+			});
+		}
+		return rows;
+	}
+});
+
+/**
  * A receipt blob as a link the browser can open, or null. A receipt that has
  * been deleted out from under its transaction is a missing proof, not a broken
  * page, so a failure to resolve degrades to "no receipt" rather than throwing

@@ -9,6 +9,10 @@ export type ProjectDocumentRow = FunctionReturnType<
 	typeof api.documents.queries.listDocumentsForProject
 >[number];
 
+export type ProjectLedgerReceiptRow = FunctionReturnType<
+	typeof api.allocations.queries.getLedgerReceiptsForProject
+>[number];
+
 export type CostTemplateRow = FunctionReturnType<
 	typeof api.costTemplates.queries.listCostTemplates
 >[number];

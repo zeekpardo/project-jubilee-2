@@ -20,6 +20,12 @@ export const load = (async ({ locals, cookies }) => {
 
 	const client = createConvexHttpClient({ token: locals.token });
 
+	// Deliberately unguarded, unlike the root layout. There the prefetch is only a
+	// hydration hint the client re-fetches; here `campaigns` has no client-side
+	// query behind it, so degrading to the empty state would strand the user in a
+	// campaign-less "access denied" shell that never heals. Letting this throw is
+	// the better failure: the root layout has already resolved by now, so the
+	// error page renders inside a working shell with the real cause on it.
 	const [access, campaigns] = await Promise.all([
 		client.query(api.access.queries.getMyAccess, {}),
 		client.query(api.access.queries.listMyCampaigns, {})

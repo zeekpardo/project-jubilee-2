@@ -70,6 +70,7 @@ import type * as seed_transform from "../seed/transform.js";
 import type * as storage from "../storage.js";
 import type * as taskTemplates_mutations from "../taskTemplates/mutations.js";
 import type * as taskTemplates_queries from "../taskTemplates/queries.js";
+import type * as transactions_donation from "../transactions/donation.js";
 import type * as transactions_mutations from "../transactions/mutations.js";
 import type * as transactions_queries from "../transactions/queries.js";
 import type * as transactions_spend from "../transactions/spend.js";
@@ -147,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   storage: typeof storage;
   "taskTemplates/mutations": typeof taskTemplates_mutations;
   "taskTemplates/queries": typeof taskTemplates_queries;
+  "transactions/donation": typeof transactions_donation;
   "transactions/mutations": typeof transactions_mutations;
   "transactions/queries": typeof transactions_queries;
   "transactions/spend": typeof transactions_spend;

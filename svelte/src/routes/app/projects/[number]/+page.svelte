@@ -132,7 +132,7 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="giving">
-					<ProjectGiving projectId={project._id} canRead={canReadMoney} />
+					<ProjectGiving projectId={project._id} {campaignId} canRead={canReadMoney} />
 				</Tabs.Content>
 
 				<Tabs.Content value="public">

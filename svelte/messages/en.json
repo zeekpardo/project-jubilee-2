@@ -621,5 +621,12 @@
 	"projects_proofTitle": "Expenditures",
 	"projects_proofNoDate": "No date",
 	"projects_proofNoSource": "No method / reference",
-	"projects_proofReceipt": "Receipt"
+	"projects_proofReceipt": "Receipt",
+	"projects_donationIntro": "Records money received for this record. It counts toward Raised on this record and appears in Giving alongside every other gift.",
+	"projects_donationDonorHelp": "Optional — leave it on \"No donor recorded\" for an anonymous gift.",
+	"projects_donationReceipt": "Receipt (image or PDF, max 10 MB)",
+	"projects_donationReceiptHelp": "Optional — stored privately as proof of this gift.",
+	"projects_donationReceiptTooLarge": "That receipt is larger than 10 MB",
+	"projects_donationAmountInvalid": "Enter a positive dollar amount, for example 150.00",
+	"projects_donationSaved": "Donation recorded"
 }

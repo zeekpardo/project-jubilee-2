@@ -27,6 +27,7 @@
 	import type { Id } from '$convex/_generated/dataModel';
 
 	import { dollarsToCents, centsToDollarInput } from '$lib/features/settings/amount';
+	import { humanizeBudgetKey } from '$lib/domain/budget-actuals';
 	import type { CampaignSummary } from '$lib/campaigns/active.svelte';
 	import { formatCents } from './format';
 	import { remainingCents } from './remaining';
@@ -39,6 +40,8 @@
 	const client = useConvexClient();
 
 	const CAMPAIGN_ONLY = '__none__';
+	// Sentinel for "no budget line", since a Select cannot hold an empty value.
+	const BUDGET_ITEM_NONE = '__unset__';
 
 	let {
 		open = $bindable(false),
@@ -143,6 +146,40 @@
 			.map((project) => ({ value: project._id as string, label: project.name }))
 	]);
 	const projectCollection = $derived(createListCollection({ items: projectItems }));
+
+	// A budget line only means something against a project that has a budget, so
+	// the picker is driven by that project's own snapshot keys, its debt line and
+	// its extras' labels. Anything else silently lands in the budget's
+	// Unassigned row, which is what the freeform input used to allow.
+	const budgetResponse = useQuery(api.budgets.queries.getBudgetForProject, () =>
+		auth.isAuthenticated && projectId !== CAMPAIGN_ONLY
+			? { projectId: projectId as Id<'projects'> }
+			: 'skip'
+	);
+	const projectBudget = $derived(budgetResponse.data ?? null);
+
+	const budgetItemOptions = $derived(
+		projectBudget
+			? [
+					{ value: BUDGET_ITEM_NONE, label: m.money_budgetItemNone() },
+					...Object.keys(projectBudget.templateSnapshot).map((key) => ({
+						value: key,
+						label: humanizeBudgetKey(key)
+					})),
+					{ value: 'debt', label: m.projects_debt() },
+					...projectBudget.extras.map((extra) => ({ value: extra.label, label: extra.label }))
+				]
+			: []
+	);
+
+	// A value stored before this picker existed (or against a since-edited
+	// budget) stays selectable rather than being silently rewritten.
+	const budgetItemItems = $derived(
+		budgetItem !== '' && !budgetItemOptions.some((option) => option.value === budgetItem)
+			? [...budgetItemOptions, { value: budgetItem, label: budgetItem }]
+			: budgetItemOptions
+	);
+	const budgetItemCollection = $derived(createListCollection({ items: budgetItemItems }));
 
 	function campaignName(id: string): string {
 		return campaigns.find((campaign) => campaign._id === id)?.name ?? '—';
@@ -378,7 +415,12 @@
 							value={[projectId]}
 							onValueChange={(details: { value: string[] }): void => {
 								const next = details.value[0];
-								if (next) projectId = next;
+								if (!next || next === projectId) return;
+								projectId = next;
+								// Budget lines belong to one project's budget; carrying the old
+								// project's line over would tag spend against a line that does
+								// not exist there.
+								budgetItem = '';
 							}}
 						>
 							<Select.Trigger class="w-full" placeholder={m.money_allocationNone()} />
@@ -403,7 +445,29 @@
 					/>
 					<div class="flex flex-col gap-1.5">
 						<Label for="allocation-budget">{m.money_budgetItem()}</Label>
-						<Input id="allocation-budget" bind:value={budgetItem} />
+						{#if projectBudget}
+							<Select.Root
+								collection={budgetItemCollection}
+								value={[budgetItem === '' ? BUDGET_ITEM_NONE : budgetItem]}
+								onValueChange={(details: { value: string[] }): void => {
+									const next = details.value[0];
+									if (!next) return;
+									budgetItem = next === BUDGET_ITEM_NONE ? '' : next;
+								}}
+							>
+								<Select.Trigger class="w-full" placeholder={m.money_budgetItemNone()} />
+								<Select.Content>
+									{#each budgetItemCollection.items as option (option.value)}
+										<Select.Item item={option}>
+											<Select.ItemText>{option.label}</Select.ItemText>
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{:else}
+							<Input id="allocation-budget" bind:value={budgetItem} />
+						{/if}
+						<p class="text-muted-foreground text-xs">{m.money_budgetItemHelp()}</p>
 					</div>
 				</div>
 

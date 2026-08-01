@@ -588,5 +588,17 @@
 	"projectDetail_noInternalFieldsBody": "Add custom fields in Settings and leave them not public. They will appear here and never reach the public site.",
 	"projectDetail_internalFieldsHelp": "These are this campaign's own fields, marked not public. Nothing here reaches the public site.",
 	"shell_createOrganization": "Create organization",
-	"shell_organizationSettings": "Organization settings"
+	"shell_organizationSettings": "Organization settings",
+	"projects_budgetBudgeted": "Budgeted",
+	"projects_budgetActual": "Actual",
+	"projects_budgetDelta": "Δ / % of budget",
+	"projects_budgetPercentOfBudget": "{percent}% of budget",
+	"projects_budgetNoBudget": "no budget",
+	"projects_budgetUnassigned": "Unassigned",
+	"projects_budgetUntagged": "Untagged spend",
+	"projects_budgetExtraBadge": "Extra",
+	"projects_budgetTotal": "Total",
+	"projects_budgetUnspent": "Unspent budget",
+	"money_budgetItemNone": "No budget line",
+	"money_budgetItemHelp": "Untagged spend lands in the budget's Unassigned row"
 }

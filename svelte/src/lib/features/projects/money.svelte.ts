@@ -35,3 +35,27 @@ export function useProjectMoney(getProjectId: () => Id<'projects'> | null) {
 		}
 	};
 }
+
+/**
+ * Expenditure allocations into one project's fund — the "actual" side of the
+ * budget ledger. A sibling rune rather than part of `useProjectMoney` so the
+ * project list views, which only need raised vs target, do not subscribe to
+ * every expenditure as well.
+ */
+export function useProjectExpenditures(getProjectId: () => Id<'projects'> | null) {
+	const { api } = getAuthContext();
+
+	const response = useQuery(api.allocations.queries.getExpendituresForProject, () => {
+		const projectId = getProjectId();
+		return projectId ? { projectId } : 'skip';
+	});
+
+	return {
+		get isLoading() {
+			return response.isLoading;
+		},
+		get expenditures() {
+			return response.data ?? [];
+		}
+	};
+}

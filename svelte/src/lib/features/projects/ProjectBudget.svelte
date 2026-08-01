@@ -1,13 +1,17 @@
 <script lang="ts">
 	import * as Card from '$lib/primitives/ui/card';
+	import * as Popover from '$lib/primitives/ui/popover';
 	import * as Table from '$lib/primitives/ui/table';
 	import { Badge } from '$lib/primitives/ui/badge';
-	import { Button } from '$lib/primitives/ui/button';
+	import { Button, buttonVariants } from '$lib/primitives/ui/button';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
 	import { cn } from '$lib/primitives/utils';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
+	import PaperclipIcon from '@lucide/svelte/icons/paperclip';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import ReceiptTextIcon from '@lucide/svelte/icons/receipt-text';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
 	import { useConvexClient } from '@mmailaender/convex-svelte';
@@ -26,7 +30,9 @@
 	} from '$lib/domain/budget-actuals';
 	import { formatCents } from './format';
 	import { useProjectExpenditures } from './money.svelte';
+	import { expendituresForRow, proofSource } from './proof';
 	import ProjectBudgetDialog from './ProjectBudgetDialog.svelte';
+	import RecordSpendDialog from './RecordSpendDialog.svelte';
 
 	let {
 		project,
@@ -43,6 +49,13 @@
 
 	let dialogOpen = $state(false);
 	let deleteOpen = $state(false);
+	let spendOpen = $state(false);
+	let spendBudgetItem = $state('');
+
+	function recordSpend(key: string): void {
+		spendBudgetItem = key;
+		spendOpen = true;
+	}
 
 	// Actual comes from real expenditures allocated to this project's fund —
 	// never from donations (that is Raised) and never from transfers.
@@ -79,6 +92,15 @@
 		ledger.rows.filter((row) => row.budgetedCents > 0 || row.actualCents > 0 || row.proofCount > 0)
 	);
 
+	// Every real line is offered in the dialog's picker, including the ones the
+	// table hides for having nothing budgeted and nothing spent. "Unassigned" is
+	// not a line — you cannot deliberately record spend against untagged.
+	const spendLines = $derived(
+		ledger.rows
+			.filter((row) => row.group !== 'unassigned')
+			.map((row) => ({ key: row.key, label: row.label }))
+	);
+
 	async function deleteBudget(): Promise<void> {
 		if (!budget) return;
 		await client.mutation(api.budgets.mutations.deleteBudget, { budgetId: budget._id });
@@ -108,6 +130,57 @@
 				{/if}
 			</span>
 		</div>
+	{/if}
+{/snippet}
+
+<!-- The receipt link leaves the app: a signed storage URL, not a route. -->
+<!-- eslint-disable svelte/no-navigation-without-resolve -->
+{#snippet proof(row: LedgerRow)}
+	{#if row.proofCount > 0}
+		<Popover.Root positioning={{ placement: 'bottom-end' }}>
+			<Popover.Trigger
+				class={cn(
+					buttonVariants({ variant: 'ghost', size: 'sm' }),
+					'text-muted-foreground h-7 gap-1 px-2 text-xs tabular-nums'
+				)}
+				aria-label={row.proofCount === 1
+					? m.projects_proofCountOne()
+					: m.projects_proofCount({ count: row.proofCount })}
+			>
+				<PaperclipIcon class="size-3" aria-hidden="true" />
+				{row.proofCount}
+			</Popover.Trigger>
+			<Popover.Content class="flex flex-col gap-2 p-3 text-left">
+				<p class="text-xs font-medium">{m.projects_proofTitle()}</p>
+				{#each expendituresForRow(row, spend.expenditures) as item (item.allocationId)}
+					{@const source = proofSource(item.method, item.reference)}
+					<div class="flex flex-col gap-0.5 rounded-md border p-2 text-xs">
+						<div class="flex items-center justify-between gap-2">
+							<span class="text-muted-foreground">
+								{item.occurredOn || m.projects_proofNoDate()}
+							</span>
+							<span class="font-medium tabular-nums">{formatCents(item.amountCents)}</span>
+						</div>
+						<span class="text-muted-foreground">{source ?? m.projects_proofNoSource()}</span>
+						<!-- No receipt means no link at all — a dead placeholder would
+						read as proof that is merely out of reach. -->
+						{#if item.receiptUrl}
+							<a
+								href={item.receiptUrl}
+								target="_blank"
+								rel="noreferrer"
+								class="text-primary inline-flex w-fit items-center gap-1 hover:underline"
+							>
+								<ExternalLinkIcon class="size-3" aria-hidden="true" />
+								{m.projects_proofReceipt()}
+							</a>
+						{/if}
+					</div>
+				{/each}
+			</Popover.Content>
+		</Popover.Root>
+	{:else}
+		<span class="text-muted-foreground/50 text-xs">{m.projects_proofNone()}</span>
 	{/if}
 {/snippet}
 
@@ -164,6 +237,10 @@
 							<Table.Head class="text-right">{m.projects_budgetBudgeted()}</Table.Head>
 							<Table.Head class="text-right">{m.projects_budgetActual()}</Table.Head>
 							<Table.Head class="text-right">{m.projects_budgetDelta()}</Table.Head>
+							<Table.Head class="text-center">{m.projects_budgetProof()}</Table.Head>
+							<Table.Head class="w-0">
+								<span class="sr-only">{m.projects_spendRecord()}</span>
+							</Table.Head>
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
@@ -194,6 +271,25 @@
 								<Table.Cell class="text-right">
 									{@render delta(row)}
 								</Table.Cell>
+								<Table.Cell class="text-center">
+									{@render proof(row)}
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									{#if row.group !== 'unassigned'}
+										<Can do="money:write" campaignId={project.campaignId}>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="size-7"
+												aria-label={m.projects_spendFor({ line: row.label })}
+												title={m.projects_spendFor({ line: row.label })}
+												onclick={() => recordSpend(row.key)}
+											>
+												<ReceiptTextIcon class="size-4" aria-hidden="true" />
+											</Button>
+										</Can>
+									{/if}
+								</Table.Cell>
 							</Table.Row>
 						{/each}
 					</Table.Body>
@@ -221,6 +317,8 @@
 									</span>
 								</div>
 							</Table.Cell>
+							<Table.Cell></Table.Cell>
+							<Table.Cell></Table.Cell>
 						</Table.Row>
 					</Table.Footer>
 				</Table.Root>
@@ -234,6 +332,14 @@
 	projectId={project._id}
 	campaignId={project.campaignId}
 	{budget}
+/>
+
+<RecordSpendDialog
+	bind:open={spendOpen}
+	projectId={project._id}
+	campaignId={project.campaignId}
+	lines={spendLines}
+	budgetItem={spendBudgetItem}
 />
 
 <ConfirmDialog

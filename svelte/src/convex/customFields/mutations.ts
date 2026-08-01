@@ -218,7 +218,11 @@ export const setRecordAttributes = mutation({
 	args: {
 		entity: fieldEntityValidator,
 		recordId: v.union(v.id('projects'), v.id('contacts'), v.id('campaigns')),
-		attributes: v.record(v.string(), attributeValueValidator)
+		attributes: v.record(v.string(), attributeValueValidator),
+		// Only meaningful for entity 'contact': which campaign's fields the
+		// caller was editing, so a campaign-scope value can be saved at all.
+		// Projects and campaigns already know their own campaignId.
+		campaignId: v.optional(v.id('campaigns'))
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
@@ -259,9 +263,20 @@ export const setRecordAttributes = mutation({
 		if (!contact || contact.orgId !== orgId) {
 			throw new ConvexError('Contact not found');
 		}
-		// A contact belongs to the org, not to any one campaign, so only org-scope
-		// contact fields ever apply to it.
-		const customFields = await validateAttributes(ctx, orgId, 'contact', null, args.attributes);
+		// A contact belongs to the org, not to any one campaign, so its fields are
+		// always org-scope UNLESS the caller is editing it from inside a campaign
+		// (campaignId set), in which case that campaign's own fields apply too —
+		// same inheritance resolveForRecord already gives projects and campaigns.
+		if (args.campaignId !== undefined) {
+			await requireCampaign(ctx, orgId, args.campaignId);
+		}
+		const customFields = await validateAttributes(
+			ctx,
+			orgId,
+			'contact',
+			args.campaignId ?? null,
+			args.attributes
+		);
 		await ctx.db.patch('contacts', contactId, { customFields });
 		return contactId;
 	}

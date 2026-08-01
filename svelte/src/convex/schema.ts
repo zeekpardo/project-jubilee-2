@@ -221,6 +221,10 @@ const transactions = defineTable({
 	method: v.optional(v.string()),
 	reference: v.optional(v.string()),
 	receiptUrl: v.optional(v.string()),
+	// An uploaded receipt blob, the storage-backed counterpart to receiptUrl —
+	// mirrors how `projects` pairs photoStorageId with photoUrl. This id is the
+	// only handle to the blob, so deleting the row must delete the blob first.
+	receiptStorageId: v.optional(v.id('_storage')),
 	// Donor attribution (donations). Cleared, not cascaded, if the contact is
 	// deleted — the money still moved.
 	contactId: v.optional(v.id('contacts')),

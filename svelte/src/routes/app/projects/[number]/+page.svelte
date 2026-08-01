@@ -4,6 +4,7 @@
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	import PageContainer from '$lib/shell/PageContainer.svelte';
+	import { useCrumbTitle } from '$lib/shell/crumb-title.svelte';
 	import { getAccessContext } from '$lib/access';
 	import * as Tabs from '$lib/primitives/ui/tabs';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
@@ -47,6 +48,8 @@
 		campaignId ? { campaignId } : 'skip'
 	);
 	const stages = $derived(toStages(stagesResponse.data));
+
+	useCrumbTitle(() => (project ? `${project.number} ${project.name}` : null));
 
 	const money = useProjectMoney(() => project?._id ?? null);
 

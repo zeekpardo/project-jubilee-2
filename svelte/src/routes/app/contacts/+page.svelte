@@ -118,7 +118,7 @@
 							<Table.Cell class="font-medium">
 								{#if member.contact}
 									<a
-										href={resolve('/app/admin/contacts/[id]', { id: member.contact._id })}
+										href={resolve('/app/contacts/[id]', { id: member.contact._id })}
 										class="hover:underline"
 									>
 										{contactDisplayName(member.contact)}

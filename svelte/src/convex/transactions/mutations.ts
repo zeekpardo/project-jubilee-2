@@ -56,6 +56,7 @@ export const updateTransaction = mutation({
 		method: v.optional(v.string()),
 		reference: v.optional(v.string()),
 		receiptUrl: v.optional(v.string()),
+		receiptStorageId: v.optional(v.id('_storage')),
 		contactId: v.optional(v.id('contacts')),
 		clearContact: v.optional(v.boolean()),
 		note: v.optional(v.string())
@@ -91,6 +92,15 @@ export const updateTransaction = mutation({
 		if (args.receiptUrl !== undefined) {
 			patch.receiptUrl = args.receiptUrl;
 		}
+		// Replacing an uploaded receipt drops the blob it displaces, exactly as
+		// `setProjectPhoto` does — otherwise the old bytes are unreachable but
+		// still billed.
+		if (args.receiptStorageId !== undefined) {
+			if (transaction.receiptStorageId && transaction.receiptStorageId !== args.receiptStorageId) {
+				await ctx.storage.delete(transaction.receiptStorageId);
+			}
+			patch.receiptStorageId = args.receiptStorageId;
+		}
 		if (args.contactId !== undefined) {
 			await requireContact(ctx, orgId, args.contactId);
 			patch.contactId = args.contactId;
@@ -122,6 +132,13 @@ export const deleteTransaction = mutation({
 		const allocations = await allocationsForTransaction(ctx, transaction._id);
 		for (const allocation of allocations) {
 			await ctx.db.delete('allocations', allocation._id);
+		}
+
+		// The receipt blob goes first. Once the row is gone `receiptStorageId` is
+		// the only handle to it, so a blob dropped after the delete is stranded
+		// in storage forever, invisibly.
+		if (transaction.receiptStorageId) {
+			await ctx.storage.delete(transaction.receiptStorageId);
 		}
 
 		await ctx.db.delete('transactions', transaction._id);

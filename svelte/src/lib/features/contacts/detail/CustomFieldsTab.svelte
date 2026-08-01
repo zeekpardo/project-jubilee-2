@@ -31,28 +31,38 @@
 
 	import type { Id } from '$convex/_generated/dataModel';
 
-	let { contactId }: { contactId: Id<'contacts'> } = $props();
+	let {
+		contactId,
+		campaignId = null
+	}: { contactId: Id<'contacts'>; campaignId?: Id<'campaigns'> | null } = $props();
 
 	const { api } = getAuthContext();
 	const auth = useAuth();
 	const client = useConvexClient();
 	const access = getAccessContext();
 
-	const canWrite = $derived(access.can('contacts:write'));
+	const canWrite = $derived(access.can('contacts:write', campaignId));
 
 	const contactResponse = useQuery(api.contacts.queries.getContact, () =>
 		auth.isAuthenticated ? { contactId } : 'skip'
 	);
 	const contact = $derived(contactResponse.data ?? null);
 
-	// A contact belongs to the org, not to a campaign, so no campaignId is passed.
+	// A contact belongs to the org, not to any one campaign, so with no
+	// campaignId (the admin record) only org-scope contact fields apply. Pass
+	// one from a campaign-scoped page and that campaign's own fields join in —
+	// see resolveFieldDefinitions, which those get resolved from.
 	const fieldsResponse = useQuery(api.customFields.queries.resolveFields, () =>
-		auth.isAuthenticated ? { entity: 'contact' as const } : 'skip'
+		auth.isAuthenticated
+			? { entity: 'contact' as const, campaignId: campaignId ?? undefined }
+			: 'skip'
 	);
 	const fields = $derived(fieldsResponse.data ?? []);
 
 	const categoriesResponse = useQuery(api.customFields.queries.listCategories, () =>
-		auth.isAuthenticated ? { entity: 'contact' as const } : 'skip'
+		auth.isAuthenticated
+			? { entity: 'contact' as const, campaignId: campaignId ?? undefined }
+			: 'skip'
 	);
 	const categories = $derived(categoriesResponse.data ?? []);
 
@@ -158,7 +168,8 @@
 			await client.mutation(api.customFields.mutations.setRecordAttributes, {
 				entity: 'contact',
 				recordId: contactId,
-				attributes
+				attributes,
+				campaignId: campaignId ?? undefined
 			});
 			toast.success(m.contactDetail_customSaved());
 		} catch (error: unknown) {

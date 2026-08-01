@@ -6,6 +6,7 @@
 		type CampaignSummary
 	} from '$lib/campaigns/active.svelte';
 	import { createSidebarState, setSidebarContext } from '$lib/shell/sidebar.svelte';
+	import { createCrumbTitle, setCrumbTitleContext } from '$lib/shell/crumb-title.svelte';
 	import AppSidebar from '$lib/shell/AppSidebar.svelte';
 	import AppBreadcrumbs from '$lib/shell/AppBreadcrumbs.svelte';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
@@ -31,6 +32,8 @@
 	// width when the first paint happens.
 	const sidebar = createSidebarState(() => data.sidebarOpen ?? true);
 	setSidebarContext(sidebar);
+
+	setCrumbTitleContext(createCrumbTitle());
 
 	// The sidebar is a fixed column on desktop and a slide-over on mobile; the
 	// same nav renders in both.

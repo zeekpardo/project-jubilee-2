@@ -1,5 +1,6 @@
 <script lang="ts">
 	// Primitives
+	import { resolve } from '$app/paths';
 	import * as Card from '$lib/primitives/ui/card';
 	import * as Table from '$lib/primitives/ui/table';
 	import { Badge } from '$lib/primitives/ui/badge';
@@ -96,7 +97,16 @@
 					{#each members as member (member._id)}
 						<Table.Row>
 							<Table.Cell class="font-medium">
-								{member.contact ? contactDisplayName(member.contact) : '—'}
+								{#if member.contact}
+									<a
+										href={resolve('/app/admin/contacts/[id]', { id: member.contact._id })}
+										class="hover:underline"
+									>
+										{contactDisplayName(member.contact)}
+									</a>
+								{:else}
+									—
+								{/if}
 							</Table.Cell>
 							<Table.Cell>
 								<Badge variant="secondary">{projectMemberRoleLabel(member.role)}</Badge>

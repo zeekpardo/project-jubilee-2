@@ -14,16 +14,19 @@
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import type { Id } from '$convex/_generated/dataModel';
 
-	let { contactId }: { contactId: Id<'contacts'> } = $props();
+	let {
+		contactId,
+		campaignId = null
+	}: { contactId: Id<'contacts'>; campaignId?: Id<'campaigns'> | null } = $props();
 
 	const { api } = getAuthContext();
 	const auth = useAuth();
 	const access = getAccessContext();
 
-	const canRead = $derived(access.can('money:read'));
+	const canRead = $derived(access.can('money:read', campaignId));
 
 	const givingResponse = useQuery(api.contacts.detail.listDonationsForContact, () =>
-		auth.isAuthenticated && canRead ? { contactId } : 'skip'
+		auth.isAuthenticated && canRead ? { contactId, campaignId: campaignId ?? undefined } : 'skip'
 	);
 	const donations = $derived(givingResponse?.data?.donations ?? []);
 	const totalCents = $derived(givingResponse?.data?.totalCents ?? 0);

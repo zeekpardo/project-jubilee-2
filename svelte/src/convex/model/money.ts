@@ -24,6 +24,14 @@ export function assertNonNegativeCents(label: string, cents: number): void {
 	}
 }
 
+/** A real charge: zero is not an expenditure, so it is rejected too. */
+export function assertPositiveCents(label: string, cents: number): void {
+	assertCents(label, cents);
+	if (cents <= 0) {
+		throw new ConvexError(`${label} must be greater than zero`);
+	}
+}
+
 export function toTransactionLike(transaction: Doc<'transactions'>): TransactionLike {
 	return {
 		id: transaction._id,
@@ -50,6 +58,34 @@ export async function requireTransaction(
 		throw new ConvexError('Transaction not found');
 	}
 	return transaction;
+}
+
+export async function requireCampaign(
+	ctx: QueryCtx,
+	orgId: string,
+	campaignId: Id<'campaigns'>
+): Promise<Doc<'campaigns'>> {
+	const campaign = await ctx.db.get('campaigns', campaignId);
+	if (!campaign || campaign.orgId !== orgId) {
+		throw new ConvexError('Campaign not found');
+	}
+	return campaign;
+}
+
+export async function requireProjectInCampaign(
+	ctx: QueryCtx,
+	orgId: string,
+	projectId: Id<'projects'>,
+	campaignId: Id<'campaigns'>
+): Promise<Doc<'projects'>> {
+	const project = await ctx.db.get('projects', projectId);
+	if (!project || project.orgId !== orgId) {
+		throw new ConvexError('Project not found');
+	}
+	if (project.campaignId !== campaignId) {
+		throw new ConvexError("Project does not belong to the allocation's campaign");
+	}
+	return project;
 }
 
 export async function requireAllocation(

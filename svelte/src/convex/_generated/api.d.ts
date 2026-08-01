@@ -72,6 +72,7 @@ import type * as taskTemplates_mutations from "../taskTemplates/mutations.js";
 import type * as taskTemplates_queries from "../taskTemplates/queries.js";
 import type * as transactions_mutations from "../transactions/mutations.js";
 import type * as transactions_queries from "../transactions/queries.js";
+import type * as transactions_spend from "../transactions/spend.js";
 import type * as url from "../url.js";
 import type * as users_actions from "../users/actions.js";
 import type * as users_mutations from "../users/mutations.js";
@@ -148,6 +149,7 @@ declare const fullApi: ApiFromModules<{
   "taskTemplates/queries": typeof taskTemplates_queries;
   "transactions/mutations": typeof transactions_mutations;
   "transactions/queries": typeof transactions_queries;
+  "transactions/spend": typeof transactions_spend;
   url: typeof url;
   "users/actions": typeof users_actions;
   "users/mutations": typeof users_mutations;

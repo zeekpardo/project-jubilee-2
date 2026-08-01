@@ -1,42 +1,15 @@
-import { ConvexError, v } from 'convex/values';
+import { v } from 'convex/values';
 import { mutation } from '../_generated/server';
-import type { MutationCtx } from '../_generated/server';
-import type { Doc, Id } from '../_generated/dataModel';
+import type { Doc } from '../_generated/dataModel';
 import { requireOrgId } from '../model/auth';
 import {
 	assertAllocatable,
 	assertNonNegativeCents,
 	assertProjectNotAlreadyAllocated,
-	requireAllocation
+	requireAllocation,
+	requireCampaign,
+	requireProjectInCampaign
 } from '../model/money';
-
-async function requireCampaign(
-	ctx: MutationCtx,
-	orgId: string,
-	campaignId: Id<'campaigns'>
-): Promise<Doc<'campaigns'>> {
-	const campaign = await ctx.db.get('campaigns', campaignId);
-	if (!campaign || campaign.orgId !== orgId) {
-		throw new ConvexError('Campaign not found');
-	}
-	return campaign;
-}
-
-async function requireProjectInCampaign(
-	ctx: MutationCtx,
-	orgId: string,
-	projectId: Id<'projects'>,
-	campaignId: Id<'campaigns'>
-): Promise<Doc<'projects'>> {
-	const project = await ctx.db.get('projects', projectId);
-	if (!project || project.orgId !== orgId) {
-		throw new ConvexError('Project not found');
-	}
-	if (project.campaignId !== campaignId) {
-		throw new ConvexError("Project does not belong to the allocation's campaign");
-	}
-	return project;
-}
 
 export const createAllocation = mutation({
 	args: {

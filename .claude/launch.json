@@ -4,6 +4,13 @@
 		{
 			"name": "jubilee-dev",
 			"url": "http://localhost:5173"
+		},
+		{
+			"name": "jubilee-vite",
+			"cwd": "svelte",
+			"runtimeExecutable": "pnpm",
+			"runtimeArgs": ["dev:frontend"],
+			"port": 5173
 		}
 	]
 }

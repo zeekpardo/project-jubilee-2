@@ -22,6 +22,17 @@ export function dollarsToCents(input: string): number | null {
 	return sign === '-' ? -cents : cents;
 }
 
+/**
+ * Dollars to cents for an amount that has to be a real charge: a recorded
+ * expenditure of zero (or of a negative amount) is not spend, it is a typo, so
+ * both are rejected at the boundary rather than reaching the ledger.
+ */
+export function positiveDollarsToCents(input: string): number | null {
+	const cents = dollarsToCents(input);
+	if (cents === null || cents <= 0) return null;
+	return cents;
+}
+
 /** The stored cents back in the shape the dollar input expects. */
 export function centsToDollarInput(cents: number): string {
 	return (cents / 100).toFixed(2);

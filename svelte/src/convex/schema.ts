@@ -49,7 +49,66 @@ const campaigns = defineTable({
 
 	isPublished: v.boolean(),
 	// Custom field values, keyed by customFieldDefinitions.key.
-	attributes: v.record(v.string(), attributeValue)
+	attributes: v.record(v.string(), attributeValue),
+
+	// Which impact numbers this campaign publishes, in what order, under what
+	// label, on which surface. Inline for the same reason taskTemplates.items
+	// is: bounded (a handful of tiles) and always read together.
+	//
+	// UNSET means "fall back to the registry defaults", which is what lets this
+	// ship without a migration — see defaultStatConfigs in
+	// lib/domain/campaign-stats.ts. An EMPTY array is a different thing: a
+	// deliberate "publish nothing".
+	publicStats: v.optional(
+		v.array(
+			v.object({
+				// Derived from the source (statConfigId), so the same number can
+				// never appear twice under two ids.
+				id: v.string(),
+				// Override; unset = the source's own default wording.
+				label: v.optional(v.string()),
+				order: v.number(),
+				showOnPublic: v.boolean(),
+				showOnDashboard: v.boolean(),
+				source: v.union(
+					v.object({ kind: v.literal('builtin'), metric: v.string() }),
+					v.object({
+						kind: v.literal('field'),
+						fieldKey: v.string(),
+						aggregate: v.union(v.literal('sum'), v.literal('count'), v.literal('countWhere')),
+						// countWhere only.
+						matchValue: v.optional(v.string())
+					}),
+					v.object({ kind: v.literal('task'), impactTag: v.string() }),
+					// Counts PEOPLE, not records: "children enrolled in school" is
+					// a number one record can contribute several to. Three choices —
+					// which records, which people on them, and whether the answer is
+					// people or records-with-at-least-one.
+					v.object({
+						kind: v.literal('member'),
+						among: v.union(
+							v.object({ kind: v.literal('all') }),
+							v.object({ kind: v.literal('goalMet') }),
+							v.object({ kind: v.literal('task'), impactTag: v.string() })
+						),
+						// Unset counts everyone on the records, donors excluded.
+						filter: v.optional(
+							v.union(
+								v.object({ dimension: v.literal('householdRole'), value: v.string() }),
+								v.object({ dimension: v.literal('relationship'), value: v.string() }),
+								v.object({
+									dimension: v.literal('contactField'),
+									fieldKey: v.string(),
+									matchValue: v.optional(v.string())
+								})
+							)
+						),
+						count: v.union(v.literal('people'), v.literal('records'))
+					})
+				)
+			})
+		)
+	)
 })
 	// unique(orgId, slug)
 	.index('by_orgId_and_slug', ['orgId', 'slug'])
@@ -64,7 +123,24 @@ const orgSettings = defineTable({
 	slug: v.optional(v.string()),
 	theme: v.optional(v.string()),
 	publicName: v.optional(v.string()),
-	publicTagline: v.optional(v.string())
+	publicTagline: v.optional(v.string()),
+
+	// The org page does NOT sum across campaigns: adding "families freed" to
+	// "attendees reached" produces a number that means nothing. Instead the
+	// admin picks which campaigns to surface, and each renders as its own
+	// section reusing that campaign's own publicStats — so a stat cannot say
+	// one thing on a campaign page and another here. Unset or empty means no
+	// stats section at all.
+	publicStatSections: v.optional(
+		v.array(
+			v.object({
+				campaignId: v.id('campaigns'),
+				// Unset = the campaign's own name.
+				heading: v.optional(v.string()),
+				order: v.number()
+			})
+		)
+	)
 })
 	// unique(orgId), unique(slug)
 	.index('by_orgId', ['orgId'])
@@ -86,7 +162,13 @@ const pipelineStages = defineTable({
 	// Triggers the fully-funded auto-task + public label. Exactly one per campaign.
 	isFundedGate: v.boolean(),
 	// Protected: relabel/recolor/reorder allowed, no delete, key immutable.
-	isSystem: v.boolean()
+	isSystem: v.boolean(),
+	// Whether records sitting in this stage count toward impact stats.
+	// A freed family and a record entered in error can BOTH sit in a terminal
+	// stage, and only one of them is impact — `kind` alone cannot tell them
+	// apart. Absent means true: a stage counts unless someone says otherwise,
+	// so existing campaigns keep the numbers they had.
+	countsTowardImpact: v.optional(v.boolean())
 })
 	// unique(campaignId, key)
 	.index('by_campaignId_and_key', ['campaignId', 'key'])
@@ -121,13 +203,67 @@ const taskTemplates = defineTable({
 			key: v.string(),
 			label: v.string(),
 			order: v.number(),
-			impactTag: v.union(v.literal('business'), v.literal('school'), v.null())
+			// Free text, not a union: a campaign should be able to tag "Well
+			// drilled" or "Bicycle given" without a schema change. Absent means
+			// the item feeds no stat — it is purely an operational task.
+			//
+			// The tag IS the stat: several items can carry the same one, and the
+			// count is over distinct records, so a family with two `business`
+			// milestones counts once. Where that stat appears — public site,
+			// dashboard, neither — lives on the campaign's matching
+			// `publicStats` row, not here, because it is a property of the stat
+			// rather than of any one checklist item.
+			//
+			// MIGRATION NOTE: this was `v.union(v.literal('business'),
+			// v.literal('school'), v.null())`. Widening to an optional string is
+			// backward-compatible for the strings, but a stored `null` is not a
+			// string — normaliseTaskTemplateItems in migrations.ts drops it. A
+			// sibling `isPublic` flag also lived here and was collapsed into the
+			// stat's own showOnPublic — see dropChecklistIsPublic.
+			impactTag: v.optional(v.string())
 		})
 	)
 })
 	// unique(campaignId, version)
 	.index('by_campaignId_and_version', ['campaignId', 'version'])
 	.index('by_campaignId_and_isActive', ['campaignId', 'isActive']);
+
+// A checklist item instantiated against one project. This is what makes a
+// task-sourced stat truthful: the number moves because work got ticked off.
+//
+// label and impactTag are SNAPSHOTTED off the template item, for the same
+// reason `budgets` snapshot a costTemplates version — rewording a checklist
+// item must not silently rewrite what a completed task meant when it was
+// ticked. It also means the stat query never joins back to the template.
+//
+// Whether the resulting count is PUBLISHED is deliberately not snapshotted.
+// That is a present-tense decision about a number, made on the campaign's
+// `publicStats` row, so turning a stat public includes ticks recorded before
+// the switch was flipped — which is what an admin flipping it expects.
+const tasks = defineTable({
+	orgId: v.string(),
+	projectId: v.id('projects'),
+	// Carried directly, never reached by traversal, so a stat query can never
+	// pick up a task belonging to another campaign.
+	campaignId: v.id('campaigns'),
+	// The taskTemplates version this was created against — templates are
+	// append-only, so a task must remember whose wording it agreed to.
+	templateVersion: v.string(),
+	key: v.string(),
+	label: v.string(),
+	order: v.number(),
+	impactTag: v.optional(v.string()),
+	status: v.union(v.literal('todo'), v.literal('done')),
+	completedAt: v.optional(v.number()),
+	// Better Auth user id.
+	completedBy: v.optional(v.string()),
+	note: v.optional(v.string())
+})
+	// unique(projectId, key)
+	.index('by_projectId', ['projectId'])
+	.index('by_projectId_and_key', ['projectId', 'key'])
+	.index('by_campaignId_and_status', ['campaignId', 'status'])
+	.index('by_campaignId_and_impactTag', ['campaignId', 'impactTag']);
 
 // The sponsored case record. Called "projects" generically; a campaign renames
 // it for display via objectLabel (Jubilee: "Family").
@@ -590,6 +726,7 @@ export default defineSchema({
 	pipelineStages,
 	costTemplates,
 	taskTemplates,
+	tasks,
 	projects,
 	budgets,
 	documents,

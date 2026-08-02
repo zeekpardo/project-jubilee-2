@@ -40,6 +40,9 @@
 	let accent = $state('');
 	let isDefault = $state(false);
 	let isFundedGate = $state(false);
+	// Absent means true — a stage counts toward impact unless someone says
+	// otherwise, so existing campaigns keep the numbers they had.
+	let countsTowardImpact = $state(true);
 	let isSaving = $state(false);
 
 	const isEdit = $derived(stage !== null);
@@ -60,6 +63,7 @@
 		accent = source?.accent ?? '';
 		isDefault = source?.isDefault ?? false;
 		isFundedGate = source?.isFundedGate ?? false;
+		countsTowardImpact = source?.countsTowardImpact ?? true;
 	});
 
 	const canSubmit = $derived(label.trim().length > 0 && (isEdit || key.trim().length > 0));
@@ -77,7 +81,8 @@
 					kind,
 					accent: accent.trim() || undefined,
 					isDefault,
-					isFundedGate
+					isFundedGate,
+					countsTowardImpact
 				});
 			} else {
 				await client.mutation(api.pipelineStages.mutations.createStage, {
@@ -88,7 +93,8 @@
 					kind,
 					accent: accent.trim() || undefined,
 					isDefault,
-					isFundedGate
+					isFundedGate,
+					countsTowardImpact
 				});
 			}
 			toast.success(m.settings_stageSaved());
@@ -171,6 +177,13 @@
 			<div class="flex flex-col gap-2">
 				<Switch bind:checked={isFundedGate}>{m.settings_stageFundedGate()}</Switch>
 				<p class="text-muted-foreground text-xs">{m.settings_stageFundedGateHelp()}</p>
+			</div>
+
+			<div class="flex flex-col gap-2">
+				<Switch bind:checked={countsTowardImpact}>{m.settings_stageCountsTowardImpact()}</Switch>
+				<p class="text-muted-foreground text-xs">
+					{m.settings_stageCountsTowardImpactHelp()}
+				</p>
 			</div>
 
 			<Dialog.Footer class="w-full">

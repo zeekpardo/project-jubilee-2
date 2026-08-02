@@ -12,6 +12,7 @@
 	import type { Id } from '$convex/_generated/dataModel';
 	import { formatCents } from '$lib/features/projects/format';
 	import { toStages } from '$lib/features/projects/stages';
+	import DashboardStatStrip from '$lib/features/campaigns/DashboardStatStrip.svelte';
 	import * as m from '$lib/i18n/messages';
 
 	const { api } = getAuthContext();
@@ -112,6 +113,10 @@
 				</Card.Root>
 			{/each}
 		</div>
+
+		<!-- The campaign's own configured stats, filtered to showOnDashboard. The
+		     first surface where an internal-only stat is visible. -->
+		<DashboardStatStrip {campaignId} />
 
 		<Card.Root>
 			<Card.Header>

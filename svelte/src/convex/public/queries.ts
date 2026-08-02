@@ -18,6 +18,7 @@ import {
 	type PublicProject,
 	type PublicStat
 } from '../model/public';
+import { publicStatSections, type PublicStatSection } from '../model/stats';
 
 /**
  * Campaign slugs are unique per ORG, not globally, so the public surface must
@@ -114,6 +115,24 @@ export const getCampaignStats = query({
 		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
 		if (!campaign) return [];
 		return publicCampaignStats(ctx, campaign);
+	}
+});
+
+/**
+ * The org page's impact sections: one per campaign the admin selected, each
+ * reusing that campaign's own public stat selection. Never a sum across
+ * campaigns — see orgSettings.publicStatSections for why. Empty when the org
+ * has selected none, or when every selection resolved to nothing publishable.
+ */
+export const getOrgStatSections = query({
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args): Promise<PublicStatSection[]> => {
+		const settings = await ctx.db
+			.query('orgSettings')
+			.withIndex('by_slug', (q) => q.eq('slug', args.orgSlug))
+			.first();
+		if (!settings) return [];
+		return publicStatSections(ctx, settings);
 	}
 });
 

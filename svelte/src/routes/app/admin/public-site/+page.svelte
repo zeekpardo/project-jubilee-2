@@ -13,6 +13,7 @@
 	import PublicIdentityCard from '$lib/features/public-site-admin/PublicIdentityCard.svelte';
 	import SiteAddressCard from '$lib/features/public-site-admin/SiteAddressCard.svelte';
 	import ThemeCard from '$lib/features/public-site-admin/ThemeCard.svelte';
+	import StatSectionsCard from '$lib/features/public-site-admin/StatSectionsCard.svelte';
 	import CustomDomainsCard from '$lib/features/public-site-admin/CustomDomainsCard.svelte';
 	import * as m from '$lib/i18n/messages';
 
@@ -39,5 +40,6 @@
 	<PublicIdentityCard {settings} canWrite={allowed} />
 	<SiteAddressCard {settings} canWrite={allowed} />
 	<ThemeCard {settings} canWrite={allowed} />
+	<StatSectionsCard {settings} canWrite={allowed} />
 	<CustomDomainsCard />
 </PageContainer>

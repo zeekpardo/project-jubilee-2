@@ -54,3 +54,67 @@ export const upsertOrgSettings = mutation({
 		return existing._id;
 	}
 });
+
+/**
+ * Which campaigns' stats the org's own public page surfaces, and in what
+ * order. Each becomes its own section reusing that campaign's `publicStats` —
+ * nothing is summed across campaigns, because adding "families freed" to
+ * "attendees reached" produces a number that means nothing.
+ *
+ * Replaces the whole list, same reasoning as setPublicStats: reordering is the
+ * common edit.
+ */
+export const setPublicStatSections = mutation({
+	args: {
+		sections: v.array(
+			v.object({
+				campaignId: v.id('campaigns'),
+				heading: v.optional(v.string()),
+				order: v.number()
+			})
+		)
+	},
+	handler: async (ctx, args) => {
+		const orgId = await requireOrgId(ctx);
+
+		const seen = new Set<string>();
+		for (const section of args.sections) {
+			// Ownership is checked at write time as well as at read time: a
+			// section naming another org's campaign must never be storable, not
+			// merely unrenderable.
+			const campaign = await ctx.db.get('campaigns', section.campaignId);
+			if (!campaign || campaign.orgId !== orgId) {
+				throw new ConvexError('Campaign not found');
+			}
+			if (seen.has(section.campaignId)) {
+				throw new ConvexError('That campaign is already a section');
+			}
+			seen.add(section.campaignId);
+		}
+
+		const existing = await ctx.db
+			.query('orgSettings')
+			.withIndex('by_orgId', (q) => q.eq('orgId', orgId))
+			.unique();
+
+		const ordered = [...args.sections]
+			.sort((a, b) => a.order - b.order)
+			.map((section, index) => ({
+				campaignId: section.campaignId,
+				heading: section.heading?.trim() || undefined,
+				order: index
+			}));
+
+		if (!existing) {
+			return await ctx.db.insert('orgSettings', {
+				orgId,
+				campaignLabel: 'Campaign',
+				campaignLabelPlural: 'Campaigns',
+				publicStatSections: ordered
+			});
+		}
+
+		await ctx.db.patch('orgSettings', existing._id, { publicStatSections: ordered });
+		return existing._id;
+	}
+});

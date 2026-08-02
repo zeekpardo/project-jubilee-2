@@ -39,10 +39,12 @@
 //   - campaign summary cards: slug, name, summary, coverImageUrl,
 //     objectSlug, objectLabelPlural — a subset of toPublicCampaign, for list
 //     views that don't need the full detail shape
-//   - campaign stat counts (projects_freed / people_reached /
-//     children_reached) — whole-number aggregates only, see
-//     publicCampaignStats below for why counting across unpublished
-//     projects is still safe
+//   - campaign stat counts — whole-number aggregates only, and only the
+//     stats a campaign has configured for its public surface. Which
+//     aggregates may go out is decided by the engine in model/stats.ts
+//     (a private field or checklist item is skipped, a protected key is
+//     dropped, a small count is withheld); see publicCampaignStats below
+//     for why counting across unpublished projects is still safe
 //
 //   NEVER EXPOSED. Do not add without a privacy review:
 //   - member surnames, ages, relationships, or contact records of any kind
@@ -73,20 +75,14 @@
 import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
-	resolveFieldDefinitions,
 	publicAttributeList,
 	type FieldDefinition,
 	type PublicAttribute
 } from '../../lib/domain/field-definitions';
 import { raisedForProject } from '../../lib/domain/reconciliation';
-import {
-	isPersonReachedRole,
-	resolveStatLabel,
-	STAT_METRIC_KEYS,
-	STAT_METRICS,
-	type StatFormat,
-	type StatMetricKey
-} from '../../lib/domain/campaign-stats';
+import { isPersonReachedRole } from '../../lib/domain/campaign-stats';
+import { resolveProjectFieldDefs } from './fields';
+import { computeStats, type ResolvedStat } from './stats';
 
 /**
  * Public names are ADMIN-ENTERED, never derived. Taking the first token of a
@@ -119,39 +115,17 @@ export type PublicProject = {
 	progress: number | null;
 };
 
+/**
+ * The field definitions that apply to a project in this campaign. Lives in
+ * model/fields.ts now, because the stat engine needs the same set; kept
+ * exported from the wall so the public queries keep one import.
+ */
 export async function publicFieldDefs(
 	ctx: QueryCtx,
 	orgId: string,
 	campaignId: Id<'campaigns'>
 ): Promise<FieldDefinition[]> {
-	const rows = await ctx.db
-		.query('customFieldDefinitions')
-		.withIndex('by_orgId_and_entity', (q) => q.eq('orgId', orgId).eq('entity', 'project'))
-		.collect();
-
-	// Fail closed on a malformed row rather than trusting the write path: an
-	// org-scope row must carry no campaignId, a campaign-scope row must carry
-	// one. A mislabelled row would otherwise apply to every campaign.
-	const wellFormed = rows.filter((row) =>
-		row.scope === 'org' ? row.campaignId === undefined : row.campaignId !== undefined
-	);
-
-	const defs: FieldDefinition[] = wellFormed.map((row) => ({
-		id: row._id,
-		entity: row.entity,
-		scope: row.scope,
-		campaignId: row.campaignId ?? null,
-		categoryId: row.categoryId ?? null,
-		key: row.key,
-		label: row.label,
-		type: row.type,
-		options: row.options ?? null,
-		order: row.order,
-		isPublic: row.isPublic,
-		isRequired: row.isRequired
-	}));
-
-	return resolveFieldDefinitions(defs, 'project', campaignId);
+	return resolveProjectFieldDefs(ctx, orgId, campaignId);
 }
 
 /** Donation cents attributed to this project, via the ported ledger math. */
@@ -379,20 +353,20 @@ export function toPublicOrgProfile(
 	};
 }
 
-export type PublicStat = {
-	key: StatMetricKey;
-	label: string;
-	value: number;
-	format: StatFormat;
-};
+export type PublicStat = ResolvedStat;
 
 /**
- * The public impact numbers for a campaign, via the campaign-stats registry.
+ * The public impact numbers for a campaign: whichever stats the campaign has
+ * configured for its public surface, computed by the engine in model/stats.ts
+ * and subject to every gate documented there (a private field or checklist
+ * item is skipped, a protected key is dropped, a small count is withheld).
+ * A campaign that has configured nothing gets the three counts this app
+ * shipped with — see defaultStatConfigs.
  *
- * Computed across ALL of the campaign's projects, published or not — same as
- * the reference app's getImpactStats. These are whole-number aggregate
- * counts with no per-project or per-donor detail, so the wall still holds:
- * an unpublished project cannot be identified from a count. It does mean the
+ * Counts still run across ALL of the campaign's projects, published or not —
+ * same as the reference app's getImpactStats. These are whole-number
+ * aggregates with no per-project or per-donor detail, so the wall holds: an
+ * unpublished project cannot be identified from a count. It does mean the
  * headline number can be larger than the number of project cards a visitor
  * actually sees, since those are filtered to isPublished.
  */
@@ -400,41 +374,5 @@ export async function publicCampaignStats(
 	ctx: QueryCtx,
 	campaign: Doc<'campaigns'>
 ): Promise<PublicStat[]> {
-	const projects = await ctx.db
-		.query('projects')
-		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
-		.collect();
-	const freedProjects = projects.filter((project) => project.isGoalMet);
-
-	let memberCount = 0;
-	let childCount = 0;
-	for (const project of freedProjects) {
-		const rows = await ctx.db
-			.query('projectMembers')
-			.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
-			.collect();
-		const members = rows.filter((row) => isPersonReachedRole(row.role));
-		memberCount += members.length;
-		for (const member of members) {
-			const contact = await ctx.db.get('contacts', member.contactId);
-			if (contact?.child === true) childCount++;
-		}
-	}
-
-	const labelCtx = { objectLabelPlural: campaign.objectLabelPlural, goalLabel: campaign.goalLabel };
-	const valuesByKey: Record<StatMetricKey, number> = {
-		projects_freed: freedProjects.length,
-		people_reached: memberCount,
-		children_reached: childCount
-	};
-
-	return STAT_METRIC_KEYS.map((key) => {
-		const metric = STAT_METRICS[key];
-		return {
-			key,
-			label: resolveStatLabel(metric, labelCtx),
-			value: valuesByKey[key],
-			format: metric.format
-		};
-	});
+	return computeStats(ctx, campaign, { surface: 'public' });
 }

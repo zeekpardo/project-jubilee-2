@@ -51,7 +51,8 @@ export const createStage = mutation({
 		kind: kindValidator,
 		accent: v.optional(v.string()),
 		isDefault: v.optional(v.boolean()),
-		isFundedGate: v.optional(v.boolean())
+		isFundedGate: v.optional(v.boolean()),
+		countsTowardImpact: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
@@ -80,6 +81,7 @@ export const createStage = mutation({
 			accent: args.accent,
 			isDefault,
 			isFundedGate,
+			countsTowardImpact: args.countsTowardImpact,
 			// Only campaign seeding creates protected stages.
 			isSystem: false
 		});
@@ -104,7 +106,8 @@ export const updateStage = mutation({
 		kind: v.optional(kindValidator),
 		accent: v.optional(v.string()),
 		isDefault: v.optional(v.boolean()),
-		isFundedGate: v.optional(v.boolean())
+		isFundedGate: v.optional(v.boolean()),
+		countsTowardImpact: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);

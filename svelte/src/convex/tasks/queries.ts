@@ -73,16 +73,16 @@ const EMPTY_CHECKLIST: {
 export const listProjectChecklist = query({
 	args: { projectId: v.id('projects') },
 	handler: async (ctx, args) => {
-		// Gated twice: the project's campaign is only known once it is loaded, so
-		// the first check is org-wide and the second is scoped to that campaign.
-		const orgId = await readableOrgId(ctx, 'projects:read');
-		if (!orgId) return EMPTY_CHECKLIST;
+		// Gated twice off ONE `getAccess`: the project's campaign is only known
+		// once it is loaded, so the first check is org-wide and the second is
+		// scoped to that campaign.
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'projects:read')) return EMPTY_CHECKLIST;
+		const orgId = access.orgId;
 
 		const project = await ctx.db.get('projects', args.projectId);
 		if (!project || project.orgId !== orgId) return EMPTY_CHECKLIST;
-
-		const scopedOrgId = await readableOrgId(ctx, 'projects:read', project.campaignId);
-		if (!scopedOrgId) return EMPTY_CHECKLIST;
+		if (!can(access, 'projects:read', project.campaignId)) return EMPTY_CHECKLIST;
 
 		const tasks = await listProjectTasks(ctx, args.projectId);
 		const template = await activeTaskTemplate(ctx, project.campaignId);

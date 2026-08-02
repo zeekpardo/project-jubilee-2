@@ -2,7 +2,8 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { readableOrgId } from '../model/access';
+import { getAccess, readableOrgId } from '../model/access';
+import { can } from '../../lib/domain/permissions';
 import { computeStats, evaluateStats, type EvaluatedStat, type ResolvedStat } from '../model/stats';
 import { resolveContactFieldDefs } from '../model/fields';
 import { loadPublicPolicy } from '../model/policy';
@@ -52,22 +53,20 @@ export const getCampaign = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		// Gated twice: once org-wide so a caller with no read access anywhere is
-		// turned away before the row is even loaded, then again scoped to the
-		// loaded campaign's own id, since args.campaignId cannot be trusted to
-		// name a campaign in the caller's org until it is loaded and checked.
-		const orgId = await readableOrgId(ctx, 'projects:read');
-		if (!orgId) {
+		// Gated twice, off ONE `getAccess`: once org-wide so a caller with no read
+		// access anywhere is turned away before the row is loaded, then again
+		// scoped to the campaign the id actually resolved to. Resolving access a
+		// second time would mean a second round of auth lookups per read.
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'projects:read')) {
 			return null;
 		}
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
-		if (!campaign || campaign.orgId !== orgId) {
+		if (!campaign || campaign.orgId !== access.orgId) {
 			return null;
 		}
-
-		const scopedOrgId = await readableOrgId(ctx, 'projects:read', campaign._id);
-		if (!scopedOrgId) {
+		if (!can(access, 'projects:read', campaign._id)) {
 			return null;
 		}
 
@@ -209,14 +208,14 @@ export const getCampaignBySlug = query({
 		slug: v.string()
 	},
 	handler: async (ctx, args) => {
-		// Same double gate as getCampaign: the slug names no campaign until the
-		// row is loaded, so the first check is org-wide and the second is scoped
-		// to the campaign the slug actually resolved to.
-		const orgId = await readableOrgId(ctx, 'projects:read');
-		if (!orgId) {
+		// Same double gate as getCampaign, and off the same single `getAccess`:
+		// the slug names no campaign until the row is loaded.
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'projects:read')) {
 			return null;
 		}
 
+		const orgId = access.orgId;
 		const campaign = await ctx.db
 			.query('campaigns')
 			.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', orgId).eq('slug', args.slug))
@@ -224,9 +223,7 @@ export const getCampaignBySlug = query({
 		if (!campaign) {
 			return null;
 		}
-
-		const scopedOrgId = await readableOrgId(ctx, 'projects:read', campaign._id);
-		if (!scopedOrgId) {
+		if (!can(access, 'projects:read', campaign._id)) {
 			return null;
 		}
 

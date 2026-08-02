@@ -19,6 +19,7 @@
 // ============================================================
 
 import {
+	TASK_PAGE_SIZES,
 	TASK_PRIORITIES,
 	TASK_SORT_KEYS,
 	type SortDir,
@@ -26,6 +27,8 @@ import {
 	type TaskAssigneeFilter,
 	type TaskFilters,
 	type TaskLike,
+	type TaskPageSize,
+	type TaskPaging,
 	type TaskPriority,
 	type TaskSortKey,
 	type TaskStatus,
@@ -44,8 +47,21 @@ export const DEFAULT_TASK_FILTERS: TaskFilters = Object.freeze({
 	dir: 'asc' as const
 });
 
+/**
+ * Page one, twenty-five rows. Frozen for the same reason the filters are: it is
+ * shared, and a caller that mutated it would repaginate every other list in the
+ * tab.
+ */
+export const DEFAULT_TASK_PAGING: TaskPaging = Object.freeze({
+	page: 1,
+	size: TASK_PAGE_SIZES[0]
+});
+
 /** Matching `dueOn` in the schema: a calendar day, zero-padded, never an instant. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A page number is digits and nothing else — not '2.5', not '2e3', not ' 2 '. */
+const PAGE_NUMBER = /^\d+$/;
 
 // The `assignee` param is prefixed rather than bare because a user id and a
 // contact id are both opaque strings — nothing in the id itself says which
@@ -90,6 +106,45 @@ export function parseTaskQuery(search: URLSearchParams | string): TaskFilters {
 	if (dueBefore) filters.dueBefore = dueBefore;
 
 	return filters;
+}
+
+/**
+ * Where in the list the URL says we are.
+ *
+ * A SECOND parser rather than two more fields on `parseTaskQuery`, because the
+ * two answers have different lifetimes: the filters describe a list and get
+ * saved as a view, where the page describes a position in one and must not be.
+ * Keeping them apart is what lets the saved-view code go on calling
+ * `serializeTaskFilters(filters)` and get the same clean string it always did.
+ *
+ * Tolerant like every other parser here: `?page=banana`, `?page=0` and
+ * `?page=-3` all mean page one rather than an error, and a size the list does
+ * not offer falls back to the default rather than rendering a page length
+ * nothing in the UI can undo.
+ */
+export function parseTaskPaging(search: URLSearchParams | string): TaskPaging {
+	const params = typeof search === 'string' ? new URLSearchParams(search) : search;
+	return {
+		page: parsePageNumber(params.get('page')),
+		size: parsePageSize(params.get('size'))
+	};
+}
+
+function parsePageNumber(value: string | null): number {
+	const trimmed = cleanString(value);
+	if (!trimmed || !PAGE_NUMBER.test(trimmed)) return DEFAULT_TASK_PAGING.page;
+	const parsed = Number.parseInt(trimmed, 10);
+	// Past the safe-integer range the arithmetic downstream stops being exact,
+	// and no list has that many pages anyway. A page beyond the last one is NOT
+	// rejected here though — it is clamped where the row count is known.
+	if (!Number.isSafeInteger(parsed) || parsed < 1) return DEFAULT_TASK_PAGING.page;
+	return parsed;
+}
+
+function parsePageSize(value: string | null): TaskPageSize {
+	const trimmed = cleanString(value);
+	const parsed = trimmed && PAGE_NUMBER.test(trimmed) ? Number.parseInt(trimmed, 10) : NaN;
+	return TASK_PAGE_SIZES.find((size) => size === parsed) ?? DEFAULT_TASK_PAGING.size;
 }
 
 function cleanString(value: string | null): string | undefined {
@@ -157,15 +212,21 @@ function parseAssignee(value: string | null): TaskAssigneeFilter | undefined {
 // ------------------------------------------------------------------
 
 /**
- * The inverse of `parseTaskQuery`, without a leading '?'.
+ * The inverse of `parseTaskQuery` (and, with `paging`, of `parseTaskPaging`),
+ * without a leading '?'.
  *
  * Defaults are OMITTED so an unfiltered list has a clean URL — otherwise every
  * page load would rewrite the address bar with `?status=todo&sort=dueOn&dir=asc`
- * and every saved view would store noise. Params are written in a fixed order
- * so the same filters always produce byte-identical output; a saved view's
- * stored query is compared as a string when deciding which view is active.
+ * and every saved view would store noise. Page one omits `page` for exactly the
+ * same reason. Params are written in a fixed order so the same filters always
+ * produce byte-identical output; a saved view's stored query is compared as a
+ * string when deciding which view is active.
+ *
+ * `paging` is OPTIONAL and written last. A caller that omits it — the saved-view
+ * code does — gets the filters alone, byte for byte what this function returned
+ * before paging existed, so views written by earlier builds still match.
  */
-export function serializeTaskFilters(filters: TaskFilters): string {
+export function serializeTaskFilters(filters: TaskFilters, paging?: TaskPaging): string {
 	const params = new URLSearchParams();
 
 	if (filters.assignee) params.set('assignee', serializeAssignee(filters.assignee));
@@ -185,7 +246,33 @@ export function serializeTaskFilters(filters: TaskFilters): string {
 	if (filters.sort !== DEFAULT_TASK_FILTERS.sort) params.set('sort', filters.sort);
 	if (filters.dir !== DEFAULT_TASK_FILTERS.dir) params.set('dir', filters.dir);
 
+	if (paging) {
+		if (paging.page > DEFAULT_TASK_PAGING.page) params.set('page', String(paging.page));
+		if (paging.size !== DEFAULT_TASK_PAGING.size) params.set('size', String(paging.size));
+	}
+
 	return params.toString();
+}
+
+/**
+ * Where paging lands when the filters or the sort change: back at page one,
+ * keeping the page size.
+ *
+ * This is THE pagination bug, written down so it cannot be forgotten at a call
+ * site. Narrowing to three results while sitting on page five shows an empty
+ * table under a filter bar that says rows exist, and it reads as broken data
+ * rather than as a stale page number. Every navigation that changes what the
+ * list contains goes through here.
+ *
+ * The SIZE survives, because it is a preference about how much of the list to
+ * read at once — the same reasoning that keeps the sort when filters are
+ * cleared — and because resetting it would silently undo a choice the reader
+ * made on purpose.
+ */
+export function resetTaskPaging(paging: TaskPaging): TaskPaging {
+	// Returned unchanged when it is already page one, so an unchanged value is
+	// referentially unchanged and a `$derived` reading it does not churn.
+	return paging.page === DEFAULT_TASK_PAGING.page ? paging : { ...paging, page: 1 };
 }
 
 function serializeAssignee(assignee: TaskAssigneeFilter): string {

@@ -112,6 +112,35 @@ export interface TaskLike {
 }
 
 /**
+ * Rows per page the list offers, ascending. The FIRST is the default, so the
+ * two facts live in one place rather than in a constant that can disagree with
+ * the list it is meant to head.
+ *
+ * The largest is 100 because that is also the largest selection the bulk bar
+ * will ever hold — selection is per page (see TaskListView) — and it stays
+ * comfortably under the server's own `BULK_TASK_MAX`.
+ */
+export const TASK_PAGE_SIZES = [25, 50, 100] as const;
+
+export type TaskPageSize = (typeof TASK_PAGE_SIZES)[number];
+
+/**
+ * Where in the list the reader is.
+ *
+ * SEPARATE from `TaskFilters` on purpose. A saved view stores the serialised
+ * filters verbatim, and a view that remembered "page 3" would drop whoever
+ * applied it into the middle of a list they have not seen the top of. Keeping
+ * paging out of the filter type makes that impossible rather than merely
+ * discouraged: `serializeTaskFilters` only writes `page`/`size` when a caller
+ * hands it paging, and the saved-view path never does.
+ */
+export interface TaskPaging {
+	/** 1-based, the way it reads in the URL and on the buttons. */
+	page: number;
+	size: TaskPageSize;
+}
+
+/**
  * Who is looking, for resolving `assignee=me`.
  *
  * Two ids because one person is reachable two ways: tasks assigned to their org

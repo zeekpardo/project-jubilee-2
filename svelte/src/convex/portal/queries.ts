@@ -1,11 +1,17 @@
 // ============================================================
 // Reading the portal
 // ============================================================
-// Every handler here starts with `resolvePortalViewer`, which takes no
-// arguments and resolves the viewer from the session. Nothing in this file
-// accepts an identity, and nothing may be added that does: the one rule the
-// reference app's portal got right, and stated in the same words, is that a
-// function must never take an id the caller could have chosen.
+// Every handler that RETURNS PORTAL DATA starts with `resolvePortalViewer`,
+// which takes no arguments and resolves the viewer from the session. Nothing
+// in this file accepts an identity, and nothing may be added that does: the
+// one rule the reference app's portal got right, and stated in the same words,
+// is that a function must never take an id the caller could have chosen.
+//
+// `getPortalSituation` is the single handler that resolves no viewer, because
+// its whole job is to explain why there isn't one. It returns no portal data —
+// only a state, the caller's own email, and the org's public name — and it is
+// keyed on the caller's own account throughout. Its docstring carries the
+// enumeration argument in full; read it before adding a second exception.
 //
 // A missing viewer is an EMPTY result, never an error. Access can be withdrawn
 // while a subscription is live, and the surface emptying out is the correct
@@ -20,6 +26,9 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
+import { authComponent } from '../auth';
+import { getAccess } from '../model/access';
+import { normalizeEmail } from '../model/contacts';
 import { resolvePortalViewer, type PortalViewer } from '../model/identity';
 import {
 	PORTAL_RECORD_MAX,
@@ -116,6 +125,95 @@ export const getPortalOverview = query({
 			giving: await portalGiving(ctx, viewer),
 			recordCount: connections.size
 		};
+	}
+});
+
+/**
+ * Why this account has no portal, for the page that has to say so.
+ *
+ * `resolvePortalViewer` answers one bit — viewer or not — which is right for
+ * every read but leaves the refusal page with four different situations and
+ * one sentence to cover them: signed in as the wrong person, invited but not
+ * yet claimed, access withdrawn, or never invited at all. They want different
+ * words and different actions, so this names which one it is.
+ *
+ * THE ENUMERATION LINE. Every branch below is keyed on the caller's OWN
+ * account — their user id, or the verified email their session already
+ * carries. Telling someone "your address matches a record here" discloses
+ * them to themselves and nobody else. Nothing here may ever take an address
+ * as an argument: that would turn this into a "does this person give to you"
+ * oracle for anyone who can sign up. The email lookup is the same one
+ * `claimPortalContact` already performs on every load, so this adds no
+ * surface that was not already reachable.
+ *
+ * Returned rather than thrown, and total rather than partial — `active` is
+ * unreachable through the layout that calls this, but a query that answers
+ * "you are fine" for a viewer is easier to reason about than one with a hole
+ * in it.
+ */
+export const getPortalSituation = query({
+	args: {},
+	handler: async (ctx) => {
+		const access = await getAccess(ctx);
+		const user = await authComponent.safeGetAuthUser(ctx);
+		const email = user?.email ?? null;
+
+		if (!access.orgId || !access.userId) {
+			return { state: 'unknown' as const, email, orgName: null };
+		}
+
+		const settings = await ctx.db
+			.query('orgSettings')
+			.withIndex('by_orgId', (q) => q.eq('orgId', access.orgId!))
+			.unique();
+		const orgName = settings?.publicName?.trim() || null;
+
+		const linked = await ctx.db
+			.query('contacts')
+			.withIndex('by_orgId_and_authUserId', (q) =>
+				q.eq('orgId', access.orgId!).eq('authUserId', access.userId!)
+			)
+			.unique();
+		if (linked) {
+			return {
+				state: linked.portalAccess === 'revoked' ? ('revoked' as const) : ('active' as const),
+				email,
+				orgName
+			};
+		}
+
+		// Revocation cuts the account link, so a revoked person is found by
+		// address rather than by id — and only by their own.
+		//
+		// Which means `revoked` is only reachable when the contact's address
+		// still matches the address they sign in with. For anyone who arrived
+		// through an invitation that is the same address by construction. For a
+		// contact linked some other way — a seed, a hand-run mutation — it is
+		// not, and they fall through to `unknown`. That degrades to a vaguer
+		// message and never to a wrong one, which is the right way round; the
+		// alternative is keeping `authUserId` through a revocation, and cutting
+		// that link is the entire point of revoking.
+		const emailLower = normalizeEmail(email ?? undefined);
+		if (emailLower) {
+			const byEmail = await ctx.db
+				.query('contacts')
+				.withIndex('by_orgId_and_emailLower', (q) =>
+					q.eq('orgId', access.orgId!).eq('emailLower', emailLower)
+				)
+				.unique();
+			// A contact already linked to a DIFFERENT account is not this caller's
+			// to hear about, so it falls through to `unknown` with everyone else.
+			if (byEmail && byEmail.authUserId === undefined) {
+				if (byEmail.portalAccess === 'revoked') {
+					return { state: 'revoked' as const, email, orgName };
+				}
+				if (byEmail.portalAccess === 'invited') {
+					return { state: 'invited' as const, email, orgName };
+				}
+			}
+		}
+
+		return { state: 'unknown' as const, email, orgName };
 	}
 });
 

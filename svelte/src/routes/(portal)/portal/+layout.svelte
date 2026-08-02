@@ -7,9 +7,9 @@
 
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import { cn } from '$lib/primitives/utils';
 	import * as m from '$lib/i18n/messages';
+	import PortalNoAccess from './PortalNoAccess.svelte';
 
 	let { data, children } = $props();
 
@@ -30,13 +30,11 @@
 	{#if !data.overview}
 		<!--
 			Reached only by a signed-in person with no portal identity who is also
-			not staff — staff are redirected to /app in the load. There is nothing
-			to gate further and nothing to show, so this says so plainly rather
-			than rendering an empty portal.
+			not staff — staff are redirected to /app in the load. Nothing to gate
+			further and nothing to show, but plenty to SAY: which account they are
+			using, what we can tell about it, and how to try again as someone else.
 		-->
-		<main class="flex flex-1 items-center justify-center p-8">
-			<EmptyState title={m.portal_noAccessTitle()} description={m.portal_noAccessBody()} />
-		</main>
+		<PortalNoAccess situation={data.situation} />
 	{:else}
 		<header class="border-border/70 bg-background/85 sticky top-0 z-40 border-b backdrop-blur-md">
 			<div class="mx-auto flex max-w-4xl flex-col gap-2 px-4 py-3 sm:px-6">

@@ -26,7 +26,7 @@ import type { LayoutServerLoad } from './$types';
  * every load after the first finds the work already done.
  */
 export const load = (async ({ locals }) => {
-	if (building || !locals.token) return { overview: null };
+	if (building || !locals.token) return { overview: null, situation: null };
 
 	const client = createConvexHttpClient({ token: locals.token });
 
@@ -40,7 +40,12 @@ export const load = (async ({ locals }) => {
 	if (!overview) {
 		const access = await client.query(api.access.queries.getMyAccess, {});
 		if (canAccessAdmin(access)) redirect(307, '/app');
+
+		// Fetched only on the way to the refusal page, so the ordinary load stays
+		// two round trips. What it costs is paid by the person who is stuck.
+		const situation = await client.query(api.portal.queries.getPortalSituation, {});
+		return { overview: null, situation };
 	}
 
-	return { overview };
+	return { overview, situation: null };
 }) satisfies LayoutServerLoad;

@@ -56,9 +56,9 @@
 		return EM_DASH;
 	}
 
-	function transparencyLabel(value: string | undefined): string {
-		if (value === 'summary') return m.contactDetail_transparency_summary();
-		if (value === 'full') return m.contactDetail_transparency_full();
+	function updateDetailLabel(value: string | undefined): string {
+		if (value === 'summary') return m.contactDetail_updateDetail_summary();
+		if (value === 'full') return m.contactDetail_updateDetail_full();
 		return EM_DASH;
 	}
 
@@ -111,9 +111,9 @@
 						value: preferredContactLabel(contact.preferredContact)
 					},
 					{
-						key: 'transparency',
-						label: m.contactDetail_transparency(),
-						value: transparencyLabel(contact.transparency)
+						key: 'updateDetail',
+						label: m.contactDetail_updateDetail(),
+						value: updateDetailLabel(contact.updateDetail)
 					}
 				]
 			: []

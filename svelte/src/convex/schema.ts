@@ -588,10 +588,29 @@ const contacts = defineTable({
 	source: v.optional(v.string()),
 	// Custom field values, keyed by customFieldDefinitions.key.
 	customFields: v.record(v.string(), attributeValue),
-	// Donor-only preferences, carried over from the retired sponsors table.
-	transparency: v.optional(v.union(v.literal('summary'), v.literal('full'))),
-	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone'))),
-	invitedAt: v.optional(v.number())
+
+	// --- Portal access ------------------------------------------------------
+	// Where this person is in the invitation lifecycle. Absent means nobody has
+	// ever offered them a login, which is not the same as having taken it away:
+	// `revoked` is a STATE and not a deletion, because withdrawing access must
+	// not erase the person or their giving. Checked on every portal read rather
+	// than at sign-in, so a revocation takes effect at once.
+	portalAccess: v.optional(
+		v.union(v.literal('invited'), v.literal('active'), v.literal('revoked'))
+	),
+	// When the invitation was sent. Stamped by the shared invite helper, never
+	// by a route — the reference app stamped it on one of its two invite paths
+	// and not the other, so a contact invited by the second showed no badge.
+	invitedAt: v.optional(v.number()),
+
+	// --- Donor preferences --------------------------------------------------
+	// How much detail this person wants in what we SEND them: "just outcomes"
+	// or "every detail". Carried over from the retired sponsors table, where it
+	// was called `transparency` — a name that reads like a permission and is
+	// not one. Nothing about what a portal shows branches on it, and nothing
+	// should; it is a mailing preference.
+	updateDetail: v.optional(v.union(v.literal('summary'), v.literal('full'))),
+	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone')))
 })
 	// unique(orgId, emailLower) when email present; unique(orgId, authUserId);
 	// unique(orgId, remoteId) when remoteId present

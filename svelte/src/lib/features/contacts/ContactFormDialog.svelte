@@ -32,7 +32,7 @@
 	const isEdit = $derived(contact !== null);
 
 	type PreferredContact = NonNullable<ContactRow['preferredContact']>;
-	type Transparency = NonNullable<ContactRow['transparency']>;
+	type UpdateDetail = NonNullable<ContactRow['updateDetail']>;
 	type ContactStatus = NonNullable<ContactRow['status']>;
 
 	// The schema types these as closed unions with no "cleared" member, so an
@@ -48,11 +48,11 @@
 		]
 	});
 
-	const transparencyCollection = createListCollection({
+	const updateDetailCollection = createListCollection({
 		items: [
 			{ value: UNSET, label: m.settings_impactTag_none() },
-			{ value: 'summary', label: m.contactDetail_transparency_summary() },
-			{ value: 'full', label: m.contactDetail_transparency_full() }
+			{ value: 'summary', label: m.contactDetail_updateDetail_summary() },
+			{ value: 'full', label: m.contactDetail_updateDetail_full() }
 		]
 	});
 
@@ -89,7 +89,7 @@
 	let postalCode = $state('');
 	let country = $state('');
 	let preferredContact = $state<string>(UNSET);
-	let transparency = $state<string>(UNSET);
+	let updateDetail = $state<string>(UNSET);
 	let birthdate = $state('');
 	let anniversary = $state('');
 	let gender = $state('');
@@ -132,7 +132,7 @@
 		postalCode = contact?.postalCode ?? '';
 		country = contact?.country ?? '';
 		preferredContact = contact?.preferredContact ?? UNSET;
-		transparency = contact?.transparency ?? UNSET;
+		updateDetail = contact?.updateDetail ?? UNSET;
 		birthdate = contact?.birthdate ?? '';
 		anniversary = contact?.anniversary ?? '';
 		gender = contact?.gender ?? '';
@@ -208,7 +208,7 @@
 			};
 			const chosenPreferred =
 				preferredContact === UNSET ? null : (preferredContact as PreferredContact);
-			const chosenTransparency = transparency === UNSET ? null : (transparency as Transparency);
+			const chosenUpdateDetail = updateDetail === UNSET ? null : (updateDetail as UpdateDetail);
 			const chosenStatus = status === UNSET ? null : (status as ContactStatus);
 
 			if (isEdit && contact) {
@@ -217,7 +217,7 @@
 					...fields,
 					// null clears; undefined would leave a previously-set value alone.
 					preferredContact: chosenPreferred,
-					transparency: chosenTransparency,
+					updateDetail: chosenUpdateDetail,
 					status: chosenStatus
 				});
 			} else {
@@ -354,17 +354,17 @@
 					</Select.Root>
 				</div>
 				<div class="flex flex-col gap-1.5">
-					<Label>{m.contactDetail_transparency()}</Label>
+					<Label>{m.contactDetail_updateDetail()}</Label>
 					<Select.Root
-						collection={transparencyCollection}
-						value={[transparency]}
+						collection={updateDetailCollection}
+						value={[updateDetail]}
 						onValueChange={(details: { value: string[] }): void => {
-							transparency = details.value[0] ?? UNSET;
+							updateDetail = details.value[0] ?? UNSET;
 						}}
 					>
 						<Select.Trigger class="w-full" placeholder={m.settings_impactTag_none()} />
 						<Select.Content>
-							{#each transparencyCollection.items as option (option.value)}
+							{#each updateDetailCollection.items as option (option.value)}
 								<Select.Item item={option}>
 									<Select.ItemText>{option.label}</Select.ItemText>
 								</Select.Item>

@@ -20,6 +20,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { authComponent, createAuth } from '../auth';
 import { getAccess, readableOrgId } from '../model/access';
 import { activeTaskTemplate, listProjectTasks } from '../model/tasks';
+import { resolvePersonIdentity } from '../model/identity';
 import {
 	BULK_TASK_MAX,
 	TASK_FACET_MAX,
@@ -28,7 +29,6 @@ import {
 	matchesResolvedAssignee,
 	publicTaskStatLabel,
 	resolveAssigneeFilter,
-	resolvePersonIdentity,
 	taskAssigneeFilterValidator,
 	taskPriorityValidator,
 	taskSortDirValidator,

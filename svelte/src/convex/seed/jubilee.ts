@@ -1162,7 +1162,7 @@ export const seedSponsors = internalMutation({
 					city: sponsor.city,
 					state: sponsor.state,
 					source: 'sponsor',
-					transparency: 'summary',
+					updateDetail: 'summary',
 					remoteId: sponsor.remoteId
 				});
 			}

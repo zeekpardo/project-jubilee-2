@@ -12,7 +12,7 @@ export const phoneLocationValidator = v.union(contactLocationValidator, v.litera
 
 export const contactStatusValidator = v.union(v.literal('active'), v.literal('inactive'));
 
-export const transparencyValidator = v.union(v.literal('summary'), v.literal('full'));
+export const updateDetailValidator = v.union(v.literal('summary'), v.literal('full'));
 
 export const preferredContactValidator = v.union(
 	v.literal('email'),
@@ -60,7 +60,7 @@ export type CreateContactInput = {
 	remoteId?: string;
 	authUserId?: string;
 	source?: string;
-	transparency?: 'summary' | 'full';
+	updateDetail?: 'summary' | 'full';
 	preferredContact?: 'email' | 'mail' | 'phone';
 };
 
@@ -209,7 +209,7 @@ export async function createContactModel(
 		authUserId: input.authUserId,
 		source: input.source,
 		customFields: {},
-		transparency: input.transparency,
+		updateDetail: input.updateDetail,
 		preferredContact: input.preferredContact
 	});
 

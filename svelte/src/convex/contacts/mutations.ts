@@ -23,11 +23,11 @@ import {
 	setPrimaryContactAddressModel,
 	setPrimaryContactEmailModel,
 	setPrimaryContactPhoneModel,
-	transparencyValidator,
 	updateBackgroundCheckModel,
 	updateContactAddressModel,
 	updateContactEmailModel,
 	updateContactPhoneModel,
+	updateDetailValidator,
 	upsertPrimaryAddressModel,
 	upsertPrimaryEmailModel,
 	upsertPrimaryPhoneModel
@@ -71,7 +71,7 @@ const contactFields = {
 	barcodes: v.optional(v.array(v.string())),
 	remoteId: v.optional(v.string()),
 	source: v.optional(v.string()),
-	transparency: v.optional(transparencyValidator),
+	updateDetail: v.optional(updateDetailValidator),
 	preferredContact: v.optional(preferredContactValidator)
 };
 
@@ -94,7 +94,7 @@ export const updateContact = mutation({
 		// null clears these three, which a plain optional cannot express: the
 		// patch loop below turns it into an unset field.
 		status: v.optional(v.union(contactStatusValidator, v.null())),
-		transparency: v.optional(v.union(transparencyValidator, v.null())),
+		updateDetail: v.optional(v.union(updateDetailValidator, v.null())),
 		preferredContact: v.optional(v.union(preferredContactValidator, v.null()))
 	},
 	handler: async (ctx, args) => {

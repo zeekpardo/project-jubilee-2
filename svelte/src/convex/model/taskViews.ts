@@ -6,13 +6,14 @@
 // record: `contacts.authUserId` is a database row, and that module is pure by
 // design so both pages and their tests can run it.
 //
-// So the lookup lives here, once, and feeds the pure rule. Every assignee
+// That lookup is `resolvePersonIdentity`, and it now lives in `model/identity.ts`
+// because the portal needs the same link for a different reason. Every assignee
 // question the server answers — "assigned to me", `assignee=user:<id>`,
-// `assignee=contact:<id>` — goes through `resolveAssigneeFilter` and comes out
-// as a `TaskViewer`, which `isAssignedToViewer` then judges. Nothing else in
+// `assignee=contact:<id>` — goes through `resolveAssigneeFilter` below and comes
+// out as a `TaskViewer`, which `isAssignedToViewer` then judges. Nothing else in
 // this codebase may compare an assignee to a person; that comparison drifting
-// per call site is the spec's second risk, and this is the single place it is
-// written down.
+// per call site is the spec's second risk, and there is one place it is written
+// down.
 //
 // The saved views share this file because the only server-side judgement a view
 // needs is who may write one. Its `query` is stored verbatim, so there is no
@@ -24,6 +25,7 @@ import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
 import { isAssignedToViewer } from '../../lib/features/tasks/filters';
 import type { TaskAssignee, TaskViewer } from '../../lib/features/tasks/types';
+import { resolvePersonIdentity } from './identity';
 import {
 	humanizeToken,
 	resolveStatConfigs,
@@ -118,47 +120,6 @@ export const taskSortDirValidator = v.union(v.literal('asc'), v.literal('desc'))
 // ------------------------------------------------------------------
 // One person, two ids
 // ------------------------------------------------------------------
-
-/**
- * Both halves of one person: their org member account, and the contact record
- * linked to it via `contacts.authUserId`. Given either, this finds the other.
- *
- * Seeding from a CONTACT is resolved as well as seeding from a user, even
- * though only the user direction is strictly required. They are the same
- * person; a filter that matched one direction and not the other would be a
- * coin-flip about which id the assigner happened to pick.
- *
- * A contact id that names nothing, or a row in another org, resolves to just
- * the id it was given — never to a person. Widening on bad input is the one
- * failure mode that shows someone else's work.
- */
-export async function resolvePersonIdentity(
-	ctx: QueryCtx,
-	orgId: string,
-	seed: TaskViewer
-): Promise<TaskViewer> {
-	if (seed.userId && !seed.contactId) {
-		const contact = await ctx.db
-			.query('contacts')
-			.withIndex('by_orgId_and_authUserId', (q) =>
-				q.eq('orgId', orgId).eq('authUserId', seed.userId)
-			)
-			.first();
-		return contact ? { userId: seed.userId, contactId: contact._id } : seed;
-	}
-
-	if (seed.contactId && !seed.userId) {
-		// The id came off a URL, so it may not be an id at all. normalizeId is
-		// how you ask that question without ctx.db.get throwing.
-		const contactId = ctx.db.normalizeId('contacts', seed.contactId);
-		if (!contactId) return seed;
-		const contact = await ctx.db.get('contacts', contactId);
-		if (!contact || contact.orgId !== orgId || !contact.authUserId) return seed;
-		return { userId: contact.authUserId, contactId: seed.contactId };
-	}
-
-	return seed;
-}
 
 /** An assignee filter with both halves of its person already looked up. */
 export type ResolvedAssigneeFilter =

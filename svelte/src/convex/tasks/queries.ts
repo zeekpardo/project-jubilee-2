@@ -18,7 +18,7 @@ import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { authComponent, createAuth } from '../auth';
-import { getAccess, readableOrgId } from '../model/access';
+import { getAccess } from '../model/access';
 import { activeTaskTemplate, listProjectTasks } from '../model/tasks';
 import { resolvePersonIdentity } from '../model/identity';
 import {

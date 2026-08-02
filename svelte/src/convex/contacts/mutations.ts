@@ -8,7 +8,6 @@ import {
 	addContactAddressModel,
 	addContactEmailModel,
 	addContactPhoneModel,
-	assertAuthUserAvailable,
 	assertRemoteIdAvailable,
 	contactLocationValidator,
 	contactStatusValidator,
@@ -166,49 +165,12 @@ export const updateContact = mutation({
 	}
 });
 
-// Granting or withdrawing a person's ability to sign in is member
-// management, not contact editing, so these three gate on members:manage
-// rather than contacts:write.
-export const linkAuthUser = mutation({
-	args: {
-		contactId: v.id('contacts'),
-		authUserId: v.string()
-	},
-	handler: async (ctx, args) => {
-		const { orgId } = await requireCapability(ctx, 'members:manage');
-		await requireContact(ctx, orgId, args.contactId);
-		await assertAuthUserAvailable(ctx, orgId, args.authUserId, args.contactId);
-
-		await ctx.db.patch('contacts', args.contactId, { authUserId: args.authUserId });
-		return args.contactId;
-	}
-});
-
-export const unlinkAuthUser = mutation({
-	args: {
-		contactId: v.id('contacts')
-	},
-	handler: async (ctx, args) => {
-		const { orgId } = await requireCapability(ctx, 'members:manage');
-		await requireContact(ctx, orgId, args.contactId);
-
-		await ctx.db.patch('contacts', args.contactId, { authUserId: undefined });
-		return args.contactId;
-	}
-});
-
-export const markInvited = mutation({
-	args: {
-		contactId: v.id('contacts')
-	},
-	handler: async (ctx, args) => {
-		const { orgId } = await requireCapability(ctx, 'members:manage');
-		await requireContact(ctx, orgId, args.contactId);
-
-		await ctx.db.patch('contacts', args.contactId, { invitedAt: Date.now() });
-		return args.contactId;
-	}
-});
+// Portal access is NOT here. `linkAuthUser`, `unlinkAuthUser` and
+// `markInvited` used to sit at this spot, each patching one column and each
+// with no caller. They are gone: `portal/mutations.ts` owns the lifecycle now,
+// because linking an account and recording that someone was invited are two
+// halves of one decision, and a mutation that could do either half alone is
+// how a contact ends up badged as invited with no email ever sent.
 
 export const deleteContact = mutation({
 	args: {

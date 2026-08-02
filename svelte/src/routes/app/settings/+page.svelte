@@ -16,6 +16,7 @@
 	// Feature
 	import CampaignGeneralCard from '$lib/features/campaigns/CampaignGeneralCard.svelte';
 	import CampaignPublicCard from '$lib/features/campaigns/CampaignPublicCard.svelte';
+	import CampaignStatsCard from '$lib/features/campaigns/CampaignStatsCard.svelte';
 	import CampaignMediaCard from '$lib/features/campaigns/CampaignMediaCard.svelte';
 	import CampaignEmbedCard from '$lib/features/campaigns/CampaignEmbedCard.svelte';
 	import PipelineStagesTab from '$lib/features/settings/PipelineStagesTab.svelte';
@@ -54,7 +55,7 @@
 		{ value: 'publicSite', label: () => m.settings_publicSite() },
 		{ value: 'pipeline', label: () => m.settings_pipeline() },
 		{ value: 'costTemplates', label: () => m.settings_costTemplates() },
-		{ value: 'taskTemplates', label: () => m.settings_taskTemplates() },
+		{ value: 'taskTemplates', label: () => m.settings_checklistAndImpact() },
 		{ value: 'customFields', label: () => m.settings_customFields() }
 	] as const;
 </script>
@@ -94,7 +95,12 @@
 				<CostTemplatesTab {campaignId} />
 			</Tabs.Content>
 			<Tabs.Content value="taskTemplates">
-				<TaskTemplatesTab {campaignId} />
+				<div class="flex flex-col gap-6">
+					{#if campaign}
+						<CampaignStatsCard {campaign} {canWrite} />
+					{/if}
+					<TaskTemplatesTab {campaignId} />
+				</div>
 			</Tabs.Content>
 			<Tabs.Content value="customFields">
 				<CustomFieldsTab {campaignId} />

@@ -8,7 +8,10 @@
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import InfoIcon from '@lucide/svelte/icons/info';
+	import EyeIcon from '@lucide/svelte/icons/eye';
+	import GaugeIcon from '@lucide/svelte/icons/gauge';
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
 	import { toast } from 'svelte-sonner';
 	import { ConvexError } from 'convex/values';
@@ -41,17 +44,47 @@
 	);
 	const isLoading = $derived(templatesResponse.isLoading);
 
+	// Where each tag's stat shows. Read once for the tab and looked up per row —
+	// the tag is the stat, so every row carrying it reports the same thing.
+	const tagsResponse = useQuery(api.taskTemplates.queries.listImpactTags, () =>
+		auth.isAuthenticated ? { campaignId } : 'skip'
+	);
+	const surfacesByTag = $derived(
+		new Map(
+			(tagsResponse.data ?? []).map((entry) => [
+				entry.tag,
+				{ showOnPublic: entry.showOnPublic, showOnDashboard: entry.showOnDashboard }
+			])
+		)
+	);
+
 	let dialogOpen = $state(false);
 	let activatingId = $state<string | null>(null);
+	// Null opens the dialog on "new version"; a template opens it on that one.
+	let editing = $state<TaskTemplate | null>(null);
+
+	function openNew(): void {
+		editing = null;
+		dialogOpen = true;
+	}
+
+	function openEdit(template: TaskTemplate): void {
+		editing = template;
+		dialogOpen = true;
+	}
 
 	function sortedItems(template: TaskTemplate): TaskTemplateItem[] {
 		return [...template.items].sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
 	}
 
-	function impactLabel(tag: TaskTemplateItem['impactTag']): string {
-		if (tag === 'business') return m.settings_impactTag_business();
-		if (tag === 'school') return m.settings_impactTag_school();
-		return m.settings_impactTag_none();
+	/**
+	 * A tagged item only publishes a count when its TAG's stat is set to show on
+	 * the public site, so that is what the version-level warning keys off.
+	 */
+	function publishesACount(template: TaskTemplate): boolean {
+		return template.items.some(
+			(item) => item.impactTag && surfacesByTag.get(item.impactTag)?.showOnPublic
+		);
 	}
 
 	async function activate(template: TaskTemplate): Promise<void> {
@@ -79,11 +112,11 @@
 <div class="flex flex-col gap-4">
 	<Alert.Root>
 		<InfoIcon class="size-4" />
-		<Alert.Description>{m.settings_appendOnlyNote()}</Alert.Description>
+		<Alert.Description>{m.settings_taskAppendOnlyNote()}</Alert.Description>
 	</Alert.Root>
 
 	<div class="flex justify-end">
-		<Button onclick={() => (dialogOpen = true)}>
+		<Button onclick={openNew}>
 			<PlusIcon />
 			{m.settings_versionNew()}
 		</Button>
@@ -100,7 +133,7 @@
 				<ListChecksIcon />
 			{/snippet}
 			{#snippet action()}
-				<Button onclick={() => (dialogOpen = true)}>
+				<Button onclick={openNew}>
 					<PlusIcon />
 					{m.settings_versionNew()}
 				</Button>
@@ -117,20 +150,30 @@
 								{m.settings_effectiveFrom()}: {template.effectiveFrom}
 							</Card.Description>
 						{/if}
+						{#if publishesACount(template)}
+							<!-- Same wording an admin meets on a public custom field. -->
+							<Card.Description>{m.settings_taskPublicWarning()}</Card.Description>
+						{/if}
 						<Card.Action>
-							{#if template.isActive}
-								<Badge variant="success">{m.settings_active()}</Badge>
-							{:else}
-								<Button
-									variant="outline"
-									size="sm"
-									loading={activatingId === template._id}
-									disabled={activatingId !== null}
-									onclick={() => activate(template)}
-								>
-									{m.settings_activate()}
+							<div class="flex items-center gap-2">
+								{#if template.isActive}
+									<Badge variant="success">{m.settings_active()}</Badge>
+								{:else}
+									<Button
+										variant="outline"
+										size="sm"
+										loading={activatingId === template._id}
+										disabled={activatingId !== null}
+										onclick={() => activate(template)}
+									>
+										{m.settings_activate()}
+									</Button>
+								{/if}
+								<Button variant="ghost" size="sm" onclick={() => openEdit(template)}>
+									<PencilIcon />
+									{m.action_edit()}
 								</Button>
-							{/if}
+							</div>
 						</Card.Action>
 					</Card.Header>
 					<Card.Content>
@@ -144,6 +187,8 @@
 										<Table.Head>{m.settings_taskItemKey()}</Table.Head>
 										<Table.Head>{m.settings_taskItemLabel()}</Table.Head>
 										<Table.Head>{m.settings_impactTag()}</Table.Head>
+										<Table.Head>{m.campaignStats_onPublic()}</Table.Head>
+										<Table.Head>{m.campaignStats_onDashboard()}</Table.Head>
 									</Table.Row>
 								</Table.Header>
 								<Table.Body>
@@ -156,7 +201,33 @@
 											<Table.Cell class="font-medium">{item.label}</Table.Cell>
 											<Table.Cell>
 												{#if item.impactTag}
-													<Badge variant="secondary">{impactLabel(item.impactTag)}</Badge>
+													<Badge variant="secondary">{item.impactTag}</Badge>
+												{:else}
+													<span class="text-muted-foreground">—</span>
+												{/if}
+											</Table.Cell>
+											<Table.Cell>
+												<!--
+													The same badge ProjectFields puts on a public custom
+													field, so "published" reads the same wherever an
+													admin meets it. An untagged item has no stat to
+													place, so it shows nothing either way.
+												-->
+												{#if item.impactTag && surfacesByTag.get(item.impactTag)?.showOnPublic}
+													<Badge variant="warning" class="gap-1">
+														<EyeIcon class="size-3" aria-hidden="true" />
+														{m.settings_fieldPublic()}
+													</Badge>
+												{:else}
+													<span class="text-muted-foreground">—</span>
+												{/if}
+											</Table.Cell>
+											<Table.Cell>
+												{#if item.impactTag && surfacesByTag.get(item.impactTag)?.showOnDashboard}
+													<Badge variant="secondary" class="gap-1">
+														<GaugeIcon class="size-3" aria-hidden="true" />
+														{m.campaignStats_onDashboard()}
+													</Badge>
 												{:else}
 													<span class="text-muted-foreground">—</span>
 												{/if}
@@ -173,4 +244,4 @@
 	{/if}
 </div>
 
-<TaskTemplateVersionDialog bind:open={dialogOpen} {campaignId} />
+<TaskTemplateVersionDialog bind:open={dialogOpen} {campaignId} template={editing} />

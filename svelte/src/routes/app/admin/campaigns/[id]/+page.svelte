@@ -20,6 +20,7 @@
 	import CampaignEmbedCard from '$lib/features/campaigns/CampaignEmbedCard.svelte';
 	import CampaignGeneralCard from '$lib/features/campaigns/CampaignGeneralCard.svelte';
 	import CampaignPublicCard from '$lib/features/campaigns/CampaignPublicCard.svelte';
+	import CampaignStatsCard from '$lib/features/campaigns/CampaignStatsCard.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
 
@@ -64,6 +65,7 @@
 
 			<CampaignGeneralCard {campaign} {canWrite} />
 			<CampaignPublicCard {campaign} {canWrite} {orgSlug} />
+			<CampaignStatsCard {campaign} {canWrite} />
 			<CampaignMediaCard {campaign} {canWrite} />
 			<CampaignEmbedCard {campaign} {orgSlug} />
 		{/if}

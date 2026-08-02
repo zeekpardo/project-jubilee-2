@@ -123,7 +123,11 @@ export interface TaskTemplateItem {
 	key: string;
 	label: string;
 	order: number;
-	impactTag: 'business' | 'school' | null;
+	/**
+	 * Free text; absent means the item feeds no stat. Where the tag's stat
+	 * shows lives on the campaign's publicStats row, not here.
+	 */
+	impactTag?: string;
 }
 
 export interface ProjectRow {
@@ -384,15 +388,41 @@ export const COST_TEMPLATES: Record<string, Record<string, number>> = {
 
 export const TASK_TEMPLATE_VERSION = 'v1-2026';
 export const TASK_TEMPLATE_EFFECTIVE_FROM = '2026-01-01';
+// `impactTag` decides whether an item feeds a stat at all. Most items carry
+// none — they are operational work. Several items can share a tag; the stat
+// counts distinct records, so a family with a tuktuk AND a sewing machine
+// counts once toward `business`.
 export const TASK_TEMPLATE_ITEMS: TaskTemplateItem[] = [
-	{ key: 'debt_paid', label: 'Debt paid', order: 1, impactTag: null },
-	{ key: 'certificate_of_freedom', label: 'Certificate of freedom', order: 2, impactTag: null },
-	{ key: 'tuktuk_delivered', label: 'TukTuk delivered', order: 3, impactTag: 'business' },
-	{ key: 'school_enrolled', label: 'Children enrolled in school', order: 4, impactTag: 'school' },
-	{ key: 'sewing_machine', label: 'Sewing machine provided', order: 5, impactTag: null },
-	{ key: 'housing_secured', label: 'Housing secured', order: 6, impactTag: null },
-	{ key: 'pastor_assigned', label: 'Pastor assigned', order: 7, impactTag: null },
-	{ key: 'follow_up', label: 'Follow-up check-in', order: 8, impactTag: null }
+	{ key: 'debt_paid', label: 'Debt paid', order: 1 },
+	{
+		key: 'certificate_of_freedom',
+		label: 'Certificate of freedom',
+		order: 2,
+		// Tagged but NOT public: a useful internal metric that is nobody else's
+		// business.
+		impactTag: 'legal_certificate'
+	},
+	{
+		key: 'tuktuk_delivered',
+		label: 'TukTuk delivered',
+		order: 3,
+		impactTag: 'business'
+	},
+	{
+		key: 'school_enrolled',
+		label: 'Children enrolled in school',
+		order: 4,
+		impactTag: 'school'
+	},
+	{
+		key: 'sewing_machine',
+		label: 'Sewing machine provided',
+		order: 5,
+		impactTag: 'business'
+	},
+	{ key: 'housing_secured', label: 'Housing secured', order: 6 },
+	{ key: 'pastor_assigned', label: 'Pastor assigned', order: 7 },
+	{ key: 'follow_up', label: 'Follow-up check-in', order: 8 }
 ];
 
 export const JUBILEE_DETAILS_CATEGORY = { name: 'Details', order: 0 };

@@ -3,6 +3,10 @@ import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
 import { activeOrgId } from '../model/auth';
+import { computeStats, evaluateStats, type EvaluatedStat, type ResolvedStat } from '../model/stats';
+import { resolveContactFieldDefs } from '../model/fields';
+import { HOUSEHOLD_ROLES, isPersonReachedRole } from '../../lib/domain/campaign-stats';
+import { isProtectedFieldKey } from '../../lib/domain/field-definitions';
 
 /**
  * An uploaded cover/icon is reachable only through a signed URL, so a
@@ -55,6 +59,134 @@ export const getCampaign = query({
 		}
 
 		return await withImageUrls(ctx, campaign);
+	}
+});
+
+/**
+ * The values a member stat can actually filter on, read from this campaign's
+ * own data rather than guessed at.
+ *
+ * A picker built from a fixed list would offer relationships nobody uses and
+ * miss the ones a campaign invented. `householdRoles` is the schema's enum, so
+ * it is complete by construction; `relationships` is free text and only what
+ * has been recorded exists.
+ */
+export const listMemberDimensions = query({
+	args: { campaignId: v.id('campaigns') },
+	handler: async (ctx, args) => {
+		const orgId = await activeOrgId(ctx);
+		if (!orgId) {
+			return { householdRoles: [], relationships: [], contactFields: [] };
+		}
+
+		const campaign = await ctx.db.get('campaigns', args.campaignId);
+		if (!campaign || campaign.orgId !== orgId) {
+			return { householdRoles: [], relationships: [], contactFields: [] };
+		}
+
+		const projects = await ctx.db
+			.query('projects')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', args.campaignId))
+			.collect();
+
+		const relationships = new Set<string>();
+		const householdRoles = new Set<string>();
+		for (const project of projects) {
+			const links = await ctx.db
+				.query('projectMembers')
+				.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
+				.collect();
+			for (const link of links) {
+				if (!isPersonReachedRole(link.role)) continue;
+				const relationship = link.attributes?.relationship;
+				if (typeof relationship === 'string' && relationship.trim()) {
+					relationships.add(relationship.trim());
+				}
+				const householdLinks = await ctx.db
+					.query('householdMembers')
+					.withIndex('by_contactId', (q) => q.eq('contactId', link.contactId))
+					.collect();
+				for (const householdLink of householdLinks) householdRoles.add(householdLink.role);
+			}
+		}
+
+		const contactDefs = await resolveContactFieldDefs(ctx, orgId, args.campaignId);
+
+		return {
+			// The enum is the full set; sorting the ones in use to the front would
+			// only make the list jump about as data changes.
+			householdRoles: HOUSEHOLD_ROLES.filter((role) => householdRoles.has(role)),
+			relationships: [...relationships].sort((a, b) => a.localeCompare(b)),
+			contactFields: contactDefs
+				// Refused at write time anyway; not offering it is the friendlier gate.
+				.filter((def) => !isProtectedFieldKey(def.key))
+				.map((def) => ({
+					key: def.key,
+					label: def.label,
+					isPublic: def.isPublic,
+					options: def.options ?? []
+				}))
+		};
+	}
+});
+
+/**
+ * Every configured stat with its current number AND whether the public site
+ * would actually show it. This is what lets the stat editor warn an admin
+ * ("this would be hidden — fewer than five records") instead of leaving them to
+ * discover a stat silently missing from their own site.
+ *
+ * Admin-only: it deliberately reports the un-suppressed internal figure and the
+ * reason a stat is withheld, neither of which may cross the public wall.
+ */
+export const previewStats = query({
+	args: { campaignId: v.id('campaigns') },
+	handler: async (ctx, args): Promise<EvaluatedStat[]> => {
+		const orgId = await activeOrgId(ctx);
+		if (!orgId) {
+			return [];
+		}
+
+		const campaign = await ctx.db.get('campaigns', args.campaignId);
+		if (!campaign || campaign.orgId !== orgId) {
+			return [];
+		}
+
+		return await evaluateStats(ctx, campaign);
+	}
+});
+
+/**
+ * The campaign's INTERNAL stat strip: the same configured list the public site
+ * renders, filtered to `showOnDashboard` instead. This is the only surface
+ * where a tagged-but-private stat is visible, and the only one that filters by
+ * date — public is always lifetime.
+ *
+ * `from`/`to` are epoch ms and are passed in by the client rather than read
+ * off the clock here: a query is not rerun merely because time advances, so a
+ * server-side `Date.now()` would go stale and would poison the query cache.
+ */
+export const getDashboardStats = query({
+	args: {
+		campaignId: v.id('campaigns'),
+		from: v.optional(v.number()),
+		to: v.optional(v.number())
+	},
+	handler: async (ctx, args): Promise<ResolvedStat[]> => {
+		const orgId = await activeOrgId(ctx);
+		if (!orgId) {
+			return [];
+		}
+
+		const campaign = await ctx.db.get('campaigns', args.campaignId);
+		if (!campaign || campaign.orgId !== orgId) {
+			return [];
+		}
+
+		return await computeStats(ctx, campaign, {
+			surface: 'dashboard',
+			window: { from: args.from, to: args.to }
+		});
 	}
 });
 

@@ -28,6 +28,17 @@ export async function deleteProjectCascade(
 		await ctx.db.delete('projectMembers', member._id);
 	}
 
+	// The checklist goes with the record. Unlike allocations below, a task
+	// carries no value once its project is gone: it is a tick against a record
+	// that no longer exists, and leaving it would keep it in the impact counts.
+	const tasks = await ctx.db
+		.query('tasks')
+		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
+		.collect();
+	for (const task of tasks) {
+		await ctx.db.delete('tasks', task._id);
+	}
+
 	const documents = await ctx.db
 		.query('documents')
 		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
@@ -198,12 +209,28 @@ export async function deleteCampaignCascade(
 		await ctx.db.delete('costTemplates', cost._id);
 	}
 
-	const tasks = await ctx.db
+	const taskTemplates = await ctx.db
 		.query('taskTemplates')
 		.withIndex('by_campaignId_and_version', (q) => q.eq('campaignId', campaignId))
 		.collect();
-	for (const task of tasks) {
-		await ctx.db.delete('taskTemplates', task._id);
+	for (const template of taskTemplates) {
+		await ctx.db.delete('taskTemplates', template._id);
+	}
+
+	// The org's public page may name this campaign as a stats section. The
+	// public read already skips a section whose campaign is gone, but leaving
+	// the row would resurrect the section if a new campaign ever reused the id.
+	if (campaign) {
+		const settings = await ctx.db
+			.query('orgSettings')
+			.withIndex('by_orgId', (q) => q.eq('orgId', campaign.orgId))
+			.unique();
+		const sections = settings?.publicStatSections;
+		if (settings && sections?.some((section) => section.campaignId === campaignId)) {
+			await ctx.db.patch('orgSettings', settings._id, {
+				publicStatSections: sections.filter((section) => section.campaignId !== campaignId)
+			});
+		}
 	}
 
 	await ctx.db.delete('campaigns', campaignId);

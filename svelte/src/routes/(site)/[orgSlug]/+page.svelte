@@ -1,8 +1,25 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import StatRow from '$lib/features/public-site/StatRow.svelte';
 	import * as m from '$lib/i18n/messages';
 
 	let { data } = $props();
+
+	// StatRow's local Stat type only knows 'number' | 'money'; the wall's
+	// StatFormat adds 'count' for the same "plain toLocaleString" behavior
+	// StatRow already gives anything that isn't 'money' — same mapping as the
+	// campaign grid page.
+	const sections = $derived(
+		data.statSections.map((section) => ({
+			...section,
+			stats: section.stats.map((stat) => ({
+				key: stat.key,
+				label: stat.label,
+				value: stat.value,
+				format: stat.format === 'money' ? ('money' as const) : ('number' as const)
+			}))
+		}))
+	);
 </script>
 
 <svelte:head>
@@ -19,7 +36,35 @@
 		</p>
 	</section>
 {:else}
-	<section class="mx-auto max-w-6xl px-4 pt-16 pb-12 sm:px-6 sm:pt-24">
+	{#if sections.length > 0}
+		<!--
+			One section per campaign the org selected, each rendering that
+			campaign's own configured stats. Never a sum across campaigns: adding
+			"families freed" to "attendees reached" produces a number that means
+			nothing.
+		-->
+		<section class="mx-auto max-w-6xl px-4 pt-16 pb-4 sm:px-6 sm:pt-24">
+			<div class="flex flex-col gap-10">
+				{#each sections as section (section.campaignSlug)}
+					<div>
+						<h2
+							class="text-muted-foreground mb-5 text-[11px] font-medium tracking-[0.18em] uppercase"
+						>
+							{section.heading}
+						</h2>
+						<StatRow stats={section.stats} />
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	<section
+		class="mx-auto max-w-6xl px-4 pb-12 sm:px-6"
+		class:pt-16={sections.length === 0}
+		class:sm:pt-24={sections.length === 0}
+		class:pt-12={sections.length > 0}
+	>
 		<h1 class="ps-serif text-foreground text-3xl leading-[1.08] sm:text-5xl">
 			{m.publicSite_campaignsTitle()}
 		</h1>

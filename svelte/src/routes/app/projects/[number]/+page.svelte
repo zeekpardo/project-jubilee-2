@@ -9,6 +9,7 @@
 	import * as Tabs from '$lib/primitives/ui/tabs';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import ProjectBudget from '$lib/features/projects/ProjectBudget.svelte';
+	import ProjectChecklist from '$lib/features/projects/ProjectChecklist.svelte';
 	import ProjectFields from '$lib/features/projects/ProjectFields.svelte';
 	import ProjectDocuments from '$lib/features/projects/ProjectDocuments.svelte';
 	import ProjectHero from '$lib/features/projects/ProjectHero.svelte';
@@ -103,6 +104,7 @@
 				<Tabs.List>
 					<Tabs.Trigger value="overview">{m.nav_section_overview()}</Tabs.Trigger>
 					<Tabs.Trigger value="details">{m.projectDetail_details()}</Tabs.Trigger>
+					<Tabs.Trigger value="checklist">{m.tasks_title()}</Tabs.Trigger>
 					<Tabs.Trigger value="people">{m.projects_members()}</Tabs.Trigger>
 					<Tabs.Trigger value="budget">{m.nav_budget()}</Tabs.Trigger>
 					<Tabs.Trigger value="documents">{m.projects_documents()}</Tabs.Trigger>
@@ -117,6 +119,10 @@
 
 				<Tabs.Content value="details">
 					<ProjectFields {project} />
+				</Tabs.Content>
+
+				<Tabs.Content value="checklist">
+					<ProjectChecklist {project} />
 				</Tabs.Content>
 
 				<Tabs.Content value="people">

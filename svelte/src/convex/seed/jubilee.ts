@@ -521,7 +521,7 @@ export const seedFoundation = internalMutation({
 					key: v.string(),
 					label: v.string(),
 					order: v.number(),
-					impactTag: v.union(v.literal('business'), v.literal('school'), v.null())
+					impactTag: v.optional(v.string())
 				})
 			)
 		}),
@@ -880,6 +880,100 @@ export const seedDocuments = internalMutation({
 		}
 
 		return { inserted, skipped };
+	}
+});
+
+// ---------------------------------------------------------------------------
+// 6b. seedMilestoneTasks — the active checklist, applied to every project
+// ---------------------------------------------------------------------------
+// A direct port of the reference's milestone-task seeding (scripts/seed.ts,
+// "Milestone tasks"). Every project except the freed-by-other off-ramp gets the
+// active template's checklist; a project whose goal is met has the "delivered"
+// items marked done, so the business/school impact counts reflect what the
+// reference reported.
+//
+// HONESTY NOTE, carried over from the reference: the source spreadsheet's
+// `tuktuk` milestone column is empty for every family, so neither app measures
+// these deliveries. Both ASSERT that a freed family received a tuk-tuk and had
+// its children enrolled — that is the seeding convention, not evidence. The
+// numbers are as accurate as the reference's, which is what "matching" means
+// here; they are not audited facts.
+
+/** Items a goal-met project has already completed. Mirrors FREED_DONE_KEYS. */
+const FREED_DONE_KEYS = new Set([
+	'debt_paid',
+	'certificate_of_freedom',
+	'tuktuk_delivered',
+	'school_enrolled'
+]);
+
+/** The reference stamps completions with its placeholder rescue date. */
+const PLACEHOLDER_COMPLETED_AT = Date.parse('2025-09-01T00:00:00Z');
+
+export const seedMilestoneTasks = internalMutation({
+	args: { orgId: v.string() },
+	returns: v.object({ inserted: v.number(), completed: v.number(), skipped: v.number() }),
+	handler: async (ctx, args) => {
+		const campaign = await requireCampaign(ctx, args.orgId);
+
+		const template = await ctx.db
+			.query('taskTemplates')
+			.withIndex('by_campaignId_and_isActive', (q) =>
+				q.eq('campaignId', campaign._id).eq('isActive', true)
+			)
+			.unique();
+		if (!template) {
+			throw new ConvexError('This campaign has no active task template');
+		}
+
+		const projects = await ctx.db
+			.query('projects')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
+			.collect();
+
+		let inserted = 0;
+		let completed = 0;
+		let skipped = 0;
+
+		for (const project of projects) {
+			// Never in our pipeline: this family was freed by another org.
+			if (project.stage === 'freed_by_other') continue;
+
+			const existing = await ctx.db
+				.query('tasks')
+				.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
+				.collect();
+			const have = new Set(existing.map((task) => task.key));
+
+			for (const item of template.items) {
+				if (have.has(item.key)) {
+					skipped++;
+					continue;
+				}
+				const done = project.isGoalMet && FREED_DONE_KEYS.has(item.key);
+				await ctx.db.insert('tasks', {
+					orgId: args.orgId,
+					projectId: project._id,
+					campaignId: campaign._id,
+					templateVersion: template.version,
+					key: item.key,
+					label: item.label,
+					order: item.order,
+					...(item.impactTag ? { impactTag: item.impactTag } : {}),
+					status: done ? ('done' as const) : ('todo' as const),
+					// goalMetAt when the project carries one, so a date-filtered
+					// dashboard places the completion at the same moment the
+					// record was freed rather than at seed time.
+					...(done
+						? { completedAt: project.goalMetAt ?? PLACEHOLDER_COMPLETED_AT }
+						: {})
+				});
+				inserted++;
+				if (done) completed++;
+			}
+		}
+
+		return { inserted, completed, skipped };
 	}
 });
 

@@ -2,61 +2,136 @@
 	// Primitives
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import * as Alert from '$lib/primitives/ui/alert';
-	import * as Select from '$lib/primitives/ui/select';
 	import { Button } from '$lib/primitives/ui/button';
 	import { Input } from '$lib/primitives/ui/input';
 	import { Label } from '$lib/primitives/ui/label';
 	import { Switch } from '$lib/primitives/ui/switch';
-	import { createListCollection } from '@ark-ui/svelte/select';
+	import type { SwitchCheckedChangeDetails } from '$lib/primitives/ui/switch';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import InfoIcon from '@lucide/svelte/icons/info';
+	import EyeIcon from '@lucide/svelte/icons/eye';
 	import { toast } from 'svelte-sonner';
 	import { ConvexError } from 'convex/values';
 
 	// API
-	import { useConvexClient } from '@mmailaender/convex-svelte';
+	import { useQuery, useConvexClient } from '@mmailaender/convex-svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
 
-	import type { TaskTemplateItem } from './types';
+	import type { TaskTemplate } from './types';
 	import * as m from '$lib/i18n/messages';
 
 	const { api } = getAuthContext();
 	const client = useConvexClient();
 
-	let { open = $bindable(false), campaignId }: { open?: boolean; campaignId: Id<'campaigns'> } =
-		$props();
+	let {
+		open = $bindable(false),
+		campaignId,
+		template = null
+	}: {
+		open?: boolean;
+		campaignId: Id<'campaigns'>;
+		/** Null creates a new version; a template edits that one in place. */
+		template?: TaskTemplate | null;
+	} = $props();
 
-	type ImpactTag = TaskTemplateItem['impactTag'];
-	type Row = { id: number; key: string; label: string; impactTag: ImpactTag };
+	const isEdit = $derived(template !== null);
+
+	// `existingKey` is set for a row that was already saved. Its key is then
+	// immutable — the key is how a project's tasks are matched back to the
+	// template, so renaming one would orphan every task carrying it.
+	type Row = {
+		id: number;
+		key: string;
+		label: string;
+		impactTag: string;
+		existingKey: string | null;
+	};
+
+	// Where each tag's stat shows. Keyed by TAG, not by row, because the tag is
+	// the stat: two items carrying `business` are one number, counted over
+	// distinct records, so they cannot disagree about where it appears.
+	type Surfaces = { showOnPublic: boolean; showOnDashboard: boolean };
 
 	let nextRowId = 0;
 	let version = $state('');
 	let effectiveFrom = $state('');
 	let activate = $state(false);
 	let rows = $state<Row[]>([]);
+	let surfaces = $state<Record<string, Surfaces>>({});
 	let isSaving = $state(false);
 
-	const impactCollection = createListCollection({
-		items: [
-			{ value: 'none', label: m.settings_impactTag_none() },
-			{ value: 'business', label: m.settings_impactTag_business() },
-			{ value: 'school', label: m.settings_impactTag_school() }
-		]
-	});
+	// How many records already hold a task for each key, so removing an item is
+	// an informed choice rather than a silent one.
+	const countsResponse = useQuery(api.taskTemplates.queries.countTasksByKey, () =>
+		open ? { campaignId } : 'skip'
+	);
+	const taskCounts = $derived(countsResponse.data ?? {});
+
+	// Where each existing tag's stat shows today. The dialog seeds from this so
+	// a tag already publishing keeps its toggles on when the checklist is edited.
+	const tagsResponse = useQuery(api.taskTemplates.queries.listImpactTags, () =>
+		open ? { campaignId } : 'skip'
+	);
+	const savedSurfaces = $derived(tagsResponse.data ?? []);
 
 	function blankRow(): Row {
 		nextRowId += 1;
-		return { id: nextRowId, key: '', label: '', impactTag: null };
+		return { id: nextRowId, key: '', label: '', impactTag: '', existingKey: null };
+	}
+
+	/** The stat settings for a tag, defaulting to "tracked but shown nowhere". */
+	function surfacesFor(tag: string): Surfaces {
+		return surfaces[tag] ?? { showOnPublic: false, showOnDashboard: false };
+	}
+
+	function setSurface(tag: string, key: keyof Surfaces, value: boolean): void {
+		const trimmed = tag.trim();
+		if (!trimmed) return;
+		surfaces = { ...surfaces, [trimmed]: { ...surfacesFor(trimmed), [key]: value } };
 	}
 
 	$effect(() => {
 		if (!open) return;
-		version = '';
-		effectiveFrom = '';
+		const source = template;
+		version = source?.version ?? '';
+		effectiveFrom = source?.effectiveFrom ?? '';
 		activate = false;
-		rows = [blankRow()];
+		rows = source
+			? [...source.items]
+					.sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
+					.map((item) => {
+						nextRowId += 1;
+						return {
+							id: nextRowId,
+							key: item.key,
+							label: item.label,
+							impactTag: item.impactTag ?? '',
+							existingKey: item.key
+						};
+					})
+			: [blankRow()];
+	});
+
+	// Seeded separately from the rows: the tag list arrives on its own query, and
+	// re-seeding on every keystroke would fight the toggles being flipped.
+	let surfacesLoaded = $state(false);
+	$effect(() => {
+		if (!open) {
+			surfacesLoaded = false;
+			return;
+		}
+		if (surfacesLoaded || tagsResponse.isLoading) return;
+		const next: Record<string, Surfaces> = {};
+		for (const entry of savedSurfaces) {
+			next[entry.tag] = {
+				showOnPublic: entry.showOnPublic,
+				showOnDashboard: entry.showOnDashboard
+			};
+		}
+		surfaces = next;
+		surfacesLoaded = true;
 	});
 
 	const filled = $derived(rows.filter((row) => row.key.trim() !== '' || row.label.trim() !== ''));
@@ -74,6 +149,29 @@
 		version.trim().length > 0 && filled.length > 0 && rowsComplete && duplicateKeys.length === 0
 	);
 
+	/** Every distinct tag in the form, in row order. One tag is one stat. */
+	const tagsInUse = $derived([
+		...new Set(filled.map((row) => row.impactTag.trim()).filter((tag) => tag !== ''))
+	]);
+
+	// Publishing is only meaningful for a tag, so the warning fires on the stat
+	// rather than on any one row.
+	const publishesACount = $derived(tagsInUse.some((tag) => surfacesFor(tag).showOnPublic));
+
+	/**
+	 * Saved items that this edit would drop, and how many records already hold a
+	 * task for each. Those tasks are left alone — they are work that actually
+	 * happened — so the dialog says so rather than implying a clean removal.
+	 */
+	const removedWithTasks = $derived.by(() => {
+		if (!template) return [];
+		const kept = new Set(rows.map((row) => row.existingKey).filter(Boolean));
+		return template.items
+			.filter((item) => !kept.has(item.key))
+			.map((item) => ({ label: item.label, count: taskCounts[item.key] ?? 0 }))
+			.filter((entry) => entry.count > 0);
+	});
+
 	function addRow(): void {
 		rows = [...rows, blankRow()];
 	}
@@ -82,34 +180,55 @@
 		rows = rows.filter((row) => row.id !== id);
 	}
 
+	function reportError(error: unknown): void {
+		toast.error(
+			error instanceof ConvexError
+				? String(error.data)
+				: error instanceof Error
+					? error.message
+					: m.state_saveFailed()
+		);
+	}
+
 	async function handleSubmit(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
 		if (isSaving || !canSubmit) return;
 
+		const items = filled.map((row, index) => ({
+			key: row.key.trim(),
+			label: row.label.trim(),
+			order: index,
+			impactTag: row.impactTag.trim() || undefined
+		}));
+
+		// One save: the items and where each tag's number shows go together, and a
+		// Convex mutation is a transaction, so they cannot half-apply.
+		const statSurfaces = tagsInUse.map((tag) => ({ impactTag: tag, ...surfacesFor(tag) }));
+
 		isSaving = true;
 		try {
-			await client.mutation(api.taskTemplates.mutations.createTaskTemplateVersion, {
-				campaignId,
-				version: version.trim(),
-				items: filled.map((row, index) => ({
-					key: row.key.trim(),
-					label: row.label.trim(),
-					order: index,
-					impactTag: row.impactTag
-				})),
-				effectiveFrom: effectiveFrom.trim() || undefined,
-				activate
-			});
-			toast.success(m.settings_taskCreated());
+			if (template) {
+				await client.mutation(api.taskTemplates.mutations.updateTaskTemplate, {
+					taskTemplateId: template._id,
+					items,
+					statSurfaces,
+					effectiveFrom: effectiveFrom.trim() || undefined
+				});
+				toast.success(m.settings_taskUpdated());
+			} else {
+				await client.mutation(api.taskTemplates.mutations.createTaskTemplateVersion, {
+					campaignId,
+					version: version.trim(),
+					items,
+					statSurfaces,
+					effectiveFrom: effectiveFrom.trim() || undefined,
+					activate
+				});
+				toast.success(m.settings_taskCreated());
+			}
 			open = false;
 		} catch (error: unknown) {
-			toast.error(
-				error instanceof ConvexError
-					? String(error.data)
-					: error instanceof Error
-						? error.message
-						: m.state_saveFailed()
-			);
+			reportError(error);
 		} finally {
 			isSaving = false;
 		}
@@ -117,21 +236,34 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="md:max-w-2xl">
+	<Dialog.Content class="md:max-w-3xl">
 		<Dialog.Header class="w-full">
-			<Dialog.Title>{m.settings_versionNew()}</Dialog.Title>
+			<Dialog.Title>
+				{isEdit ? m.settings_taskVersionEdit({ version: version || '' }) : m.settings_versionNew()}
+			</Dialog.Title>
 		</Dialog.Header>
 
 		<Alert.Root class="w-full">
 			<InfoIcon class="size-4" />
-			<Alert.Description>{m.settings_appendOnlyNote()}</Alert.Description>
+			<Alert.Description>
+				{isEdit ? m.settings_taskEditNote() : m.settings_taskAppendOnlyNote()}
+			</Alert.Description>
 		</Alert.Root>
 
 		<form onsubmit={handleSubmit} class="flex w-full flex-col gap-4">
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div class="flex flex-col gap-2">
 					<Label for="task-version">{m.settings_version()}</Label>
-					<Input id="task-version" bind:value={version} placeholder="2026.1" required />
+					<!-- The version names the row; renaming it would make an old task's
+					     recorded templateVersion point at nothing. -->
+					<Input
+						id="task-version"
+						bind:value={version}
+						placeholder="2026.1"
+						required
+						readonly={isEdit}
+						disabled={isEdit}
+					/>
 				</div>
 				<div class="flex flex-col gap-2">
 					<Label for="task-effective-from">{m.settings_effectiveFrom()}</Label>
@@ -141,40 +273,67 @@
 
 			<div class="flex flex-col gap-2">
 				<Label>{m.nav_tasks()}</Label>
+				<p class="text-muted-foreground text-xs">{m.settings_impactTagHelp()}</p>
+
+				<div
+					class="text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase"
+				>
+					<span class="w-40 shrink-0">{m.settings_taskItemKey()}</span>
+					<span class="flex-1">{m.settings_taskItemLabel()}</span>
+					<span class="w-36 shrink-0">{m.settings_impactTag()}</span>
+					<span class="w-9 shrink-0 text-center">{m.campaignStats_onPublicShort()}</span>
+					<span class="w-9 shrink-0 text-center">{m.campaignStats_onDashboardShort()}</span>
+					<span class="w-9 shrink-0"></span>
+				</div>
 
 				<div class="flex flex-col gap-2">
 					{#each rows as row (row.id)}
+						<!--
+							The surface toggles belong to the TAG, not the row: two items
+							carrying `business` are one number, so flipping either flips
+							both. An untagged row has no stat to place, so both are disabled.
+						-->
+						{@const tag = row.impactTag.trim()}
 						<div class="flex items-center gap-2">
 							<Input
 								bind:value={row.key}
-								class="max-w-44 font-mono"
+								class="w-40 shrink-0 font-mono"
 								placeholder={m.settings_taskItemKey()}
 								aria-label={m.settings_taskItemKey()}
 								aria-invalid={duplicateKeys.includes(row.key.trim()) || undefined}
+								readonly={row.existingKey !== null}
+								disabled={row.existingKey !== null}
+								title={row.existingKey !== null ? m.settings_taskItemKeyLocked() : undefined}
 							/>
 							<Input
 								bind:value={row.label}
 								placeholder={m.settings_taskItemLabel()}
 								aria-label={m.settings_taskItemLabel()}
 							/>
-							<Select.Root
-								collection={impactCollection}
-								value={[row.impactTag ?? 'none']}
-								onValueChange={(details: { value: string[] }): void => {
-									const next = details.value[0];
-									if (next) row.impactTag = next === 'none' ? null : (next as ImpactTag);
+							<Input
+								bind:value={row.impactTag}
+								class="w-36 shrink-0"
+								placeholder={m.settings_impactTag()}
+								aria-label={m.settings_impactTag()}
+							/>
+							<Switch
+								checked={surfacesFor(tag).showOnPublic}
+								disabled={tag === ''}
+								aria-label={m.campaignStats_onPublic()}
+								title={m.campaignStats_onPublic()}
+								onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
+									setSurface(tag, 'showOnPublic', details.checked);
 								}}
-							>
-								<Select.Label class="sr-only">{m.settings_impactTag()}</Select.Label>
-								<Select.Trigger class="w-36 shrink-0" placeholder={m.settings_impactTag()} />
-								<Select.Content>
-									{#each impactCollection.items as option (option.value)}
-										<Select.Item item={option}>
-											<Select.ItemText>{option.label}</Select.ItemText>
-										</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
+							/>
+							<Switch
+								checked={surfacesFor(tag).showOnDashboard}
+								disabled={tag === ''}
+								aria-label={m.campaignStats_onDashboard()}
+								title={m.campaignStats_onDashboard()}
+								onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
+									setSurface(tag, 'showOnDashboard', details.checked);
+								}}
+							/>
 							<Button
 								type="button"
 								variant="ghost"
@@ -202,14 +361,36 @@
 				{/if}
 			</div>
 
-			<Switch bind:checked={activate}>{m.settings_activateOnCreate()}</Switch>
+			{#if removedWithTasks.length > 0}
+				<Alert.Root variant="warning" class="w-full">
+					<InfoIcon class="size-4" />
+					<Alert.Description>
+						{m.settings_taskItemRemovedKeepsTasks({
+							items: removedWithTasks.map((entry) => `${entry.label} (${entry.count})`).join(', ')
+						})}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
+
+			{#if publishesACount}
+				<!-- Same warning an admin meets on a public custom field, so
+				     "published" looks the same wherever they run into it. -->
+				<Alert.Root variant="warning" class="w-full">
+					<EyeIcon class="size-4" />
+					<Alert.Description>{m.settings_taskPublicWarning()}</Alert.Description>
+				</Alert.Root>
+			{/if}
+
+			{#if !isEdit}
+				<Switch bind:checked={activate}>{m.settings_activateOnCreate()}</Switch>
+			{/if}
 
 			<Dialog.Footer class="w-full">
 				<Button type="button" variant="outline" onclick={() => (open = false)} disabled={isSaving}>
 					{m.action_cancel()}
 				</Button>
 				<Button type="submit" loading={isSaving} disabled={isSaving || !canSubmit}>
-					{m.action_create()}
+					{isEdit ? m.action_saveChanges() : m.action_create()}
 				</Button>
 			</Dialog.Footer>
 		</form>

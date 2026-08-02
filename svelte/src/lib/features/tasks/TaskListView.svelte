@@ -52,7 +52,7 @@
 	import TaskFilterBar from './TaskFilterBar.svelte';
 	import TaskSavedViews from './TaskSavedViews.svelte';
 	import TaskSheet from './TaskSheet.svelte';
-	import TaskTable from './TaskTable.svelte';
+	import TaskTable, { EDITABLE_TASK_COLUMNS } from './TaskTable.svelte';
 	import * as m from '$lib/i18n/messages';
 
 	let {
@@ -202,6 +202,13 @@
 		auth.isAuthenticated && allowed && scope === 'campaign' && campaignId ? { campaignId } : 'skip'
 	);
 	const projects = $derived(projectsResponse.data ?? []);
+
+	// Both surfaces edit in place. The org-wide page is where someone triages
+	// across campaigns — reassigning a batch, pushing dates — and sending them
+	// through the sheet one row at a time to change a single field is the slower
+	// path, not the safer one. Every guard the fields carry is per-row and
+	// travels with them: a template title stays read-only, a viewer without
+	// write access gets plain text, and a failed write reverts and says why.
 
 	// What THIS campaign calls a record — "Family" at Jubilee. The org-wide page
 	// spans campaigns that each name it differently, so it keeps the generic word
@@ -453,7 +460,9 @@
 			{today}
 			{loading}
 			{selected}
+			{members}
 			{recordLabel}
+			editable={EDITABLE_TASK_COLUMNS}
 			sort={filters.sort}
 			dir={filters.dir}
 			onSort={sortBy}

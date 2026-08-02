@@ -49,6 +49,13 @@ const CAMPAIGN_MAX = 200;
 // one that says it did, so the caller is told when this bit.
 const ASSIGNABLE_CONTACT_MAX = 500;
 
+/** Typed, so the guard clauses do not infer `never[]` and widen the row shape. */
+const EMPTY_CHECKLIST: {
+	tasks: HydratedTask[];
+	pendingTemplateItems: number;
+	hasActiveTemplate: boolean;
+} = { tasks: [], pendingTemplateItems: 0, hasActiveTemplate: false };
+
 /**
  * A project's checklist. Returns the task rows plus how many items the
  * campaign's active template holds that this project has not been given yet,
@@ -57,24 +64,33 @@ const ASSIGNABLE_CONTACT_MAX = 500;
  * Named for the surface it serves rather than for its table: `listTasks` below
  * is the scoped LIST, and the two answer different questions about the same
  * rows — this one is ordered by the checklist and knows about templates.
+ *
+ * Rows are hydrated by the SAME joiner the list uses. The checklist shows an
+ * assignee and hands a row straight to the shared sheet, and a second, thinner
+ * row shape would be one the two surfaces are free to drift apart on.
  */
 export const listProjectChecklist = query({
 	args: { projectId: v.id('projects') },
 	handler: async (ctx, args) => {
 		const orgId = await activeOrgId(ctx);
-		if (!orgId) return { tasks: [], pendingTemplateItems: 0, hasActiveTemplate: false };
+		if (!orgId) return EMPTY_CHECKLIST;
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
-			return { tasks: [], pendingTemplateItems: 0, hasActiveTemplate: false };
-		}
+		if (!project || project.orgId !== orgId) return EMPTY_CHECKLIST;
 
 		const tasks = await listProjectTasks(ctx, args.projectId);
 		const template = await activeTaskTemplate(ctx, project.campaignId);
 		const have = new Set(tasks.map((task) => task.key));
 
+		// One campaign, because one record belongs to exactly one.
+		const campaign = await ctx.db.get('campaigns', project.campaignId);
+
 		return {
-			tasks,
+			tasks: await hydrateTasks(
+				ctx,
+				tasks,
+				new Map(campaign ? [[campaign._id as string, campaign]] : [])
+			),
 			pendingTemplateItems: (template?.items ?? []).filter((item) => !have.has(item.key)).length,
 			hasActiveTemplate: template !== null
 		};

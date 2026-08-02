@@ -1,13 +1,28 @@
 <script lang="ts">
+	// A record's checklist — the same table the task pages use, with the columns
+	// that mean something on this screen.
+	//
+	// What makes it a CHECKLIST rather than a third task list is what it leaves
+	// out: no filters beyond status, no sort (the order is the campaign
+	// template's), no Record or Campaign column — you are standing on the record
+	// — and a tick-box as the first column, because completing a step is what
+	// people come here to do.
+	//
+	// COMPLETED ITEMS ARE HIDDEN, matching the task pages, whose default filter is
+	// `todo`. The filtering happens HERE rather than in the query, for two
+	// reasons: a checklist is tens of rows, so the whole set is already in hand;
+	// and `pendingTemplateItems` has to be counted against every task whatever its
+	// status, or the sync button would offer to re-add steps that exist and are
+	// done — which would create duplicates.
+
 	// Primitives
 	import * as Card from '$lib/primitives/ui/card';
-	import { Badge } from '$lib/primitives/ui/badge';
 	import { Button } from '$lib/primitives/ui/button';
-	import { Checkbox } from '$lib/primitives/ui/checkbox';
-	import { Skeleton } from '$lib/primitives/ui/skeleton';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
+	import * as Select from '$lib/primitives/ui/select';
+	import { createListCollection } from '@ark-ui/svelte/select';
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
-	import EyeIcon from '@lucide/svelte/icons/eye';
+	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { toast } from 'svelte-sonner';
 	import { ConvexError } from 'convex/values';
 
@@ -17,6 +32,13 @@
 	import type { Doc } from '$convex/_generated/dataModel';
 
 	import { getAccessContext } from '$lib/access';
+	import type { TaskRow } from '$lib/features/tasks/rows';
+	import type { TaskStatus } from '$lib/features/tasks/types';
+	import TaskSheet from '$lib/features/tasks/TaskSheet.svelte';
+	import TaskTable, {
+		EDITABLE_TASK_COLUMNS,
+		type TaskColumn
+	} from '$lib/features/tasks/TaskTable.svelte';
 	import * as m from '$lib/i18n/messages';
 
 	let { project }: { project: Doc<'projects'> } = $props();
@@ -26,6 +48,18 @@
 	const access = getAccessContext();
 
 	const canWrite = $derived(access.can('projects:write', project.campaignId));
+
+	/** Neither Record nor Campaign: both would repeat one value down every row. */
+	const COLUMNS: readonly TaskColumn[] = ['done', 'label', 'assignee', 'dueOn', 'priority'];
+
+	// Today, from the CLIENT — local calendar parts rather than `toISOString()`,
+	// which is UTC and would call tomorrow's work overdue west of Greenwich. The
+	// server is never asked: a Convex query that read the clock would go stale
+	// with no write and poison its own cache.
+	const now = new Date();
+	const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+		now.getDate()
+	).padStart(2, '0')}`;
 
 	const response = useQuery(api.tasks.queries.listProjectChecklist, () => ({
 		projectId: project._id
@@ -42,11 +76,43 @@
 			(tagsResponse.data ?? []).filter((entry) => entry.showOnPublic).map((entry) => entry.tag)
 		)
 	);
-	const tasks = $derived(response.data?.tasks ?? []);
+
+	// For the assignee column and the sheet's picker, both of which are on this
+	// screen from the start now that a row edits in place.
+	const membersResponse = useQuery(api.tasks.queries.listAssignableMembers, () => ({
+		campaignId: project.campaignId
+	}));
+	const members = $derived(membersResponse.data);
+
+	const allTasks = $derived(response.data?.tasks ?? []);
 	const pending = $derived(response.data?.pendingTemplateItems ?? 0);
 	const hasTemplate = $derived(response.data?.hasActiveTemplate ?? false);
 
-	let busyId = $state<string | null>(null);
+	// The same three-way choice the task pages offer, in the same words and with
+	// the same default. Held in component state rather than the URL: the record
+	// page's query string is its open TAB, and a checklist's status is a glance,
+	// not a view someone links to.
+	let statusFilter = $state<TaskStatus | 'all'>('todo');
+
+	const statusCollection = createListCollection({
+		items: [
+			{ value: 'todo', label: m.taskStatus_todo() },
+			{ value: 'done', label: m.taskStatus_done() },
+			{ value: 'all', label: m.taskList_statusAll() }
+		]
+	});
+
+	const tasks = $derived(
+		statusFilter === 'all' ? allTasks : allTasks.filter((task) => task.status === statusFilter)
+	);
+
+	// Counted over EVERY task, not the visible ones: the progress line is what
+	// stops a filtered checklist from reading as an emptier one.
+	const doneCount = $derived(allTasks.filter((task) => task.status === 'done').length);
+
+	let sheetOpen = $state(false);
+	let sheetTask = $state<TaskRow | null>(null);
+
 	let isSyncing = $state(false);
 
 	function reportError(error: unknown): void {
@@ -57,21 +123,6 @@
 					? error.message
 					: m.state_saveFailed()
 		);
-	}
-
-	async function toggle(task: Doc<'tasks'>, checked: boolean): Promise<void> {
-		if (busyId || !canWrite) return;
-		busyId = task._id;
-		try {
-			await client.mutation(api.tasks.mutations.setTaskStatus, {
-				taskId: task._id,
-				status: checked ? 'done' : 'todo'
-			});
-		} catch (error) {
-			reportError(error);
-		} finally {
-			busyId = null;
-		}
 	}
 
 	async function sync(): Promise<void> {
@@ -89,35 +140,63 @@
 		}
 	}
 
-	const doneCount = $derived(tasks.filter((task) => task.status === 'done').length);
+	function openCreate(): void {
+		sheetTask = null;
+		sheetOpen = true;
+	}
+
+	function openEdit(task: TaskRow): void {
+		sheetTask = task;
+		sheetOpen = true;
+	}
 </script>
 
 <Card.Root>
 	<Card.Header>
 		<Card.Title>{m.tasks_title()}</Card.Title>
 		<Card.Description>
-			{#if tasks.length > 0}
-				{m.tasks_progress({ done: doneCount, total: tasks.length })}
+			{#if allTasks.length > 0}
+				{m.tasks_progress({ done: doneCount, total: allTasks.length })}
 			{:else}
 				{m.tasks_body()}
 			{/if}
 		</Card.Description>
-		{#if canWrite && pending > 0}
-			<Card.Action>
-				<Button variant="outline" size="sm" loading={isSyncing} onclick={sync}>
-					{m.tasks_addFromTemplate({ count: pending })}
+		<Card.Action class="flex flex-wrap items-center gap-2">
+			<Select.Root
+				collection={statusCollection}
+				value={[statusFilter]}
+				onValueChange={(details: { value: string[] }): void => {
+					statusFilter = (details.value[0] as TaskStatus | 'all') ?? 'todo';
+				}}
+			>
+				<Select.Label class="sr-only">{m.taskList_filterStatus()}</Select.Label>
+				<Select.Trigger size="sm" class="w-32" placeholder={m.taskStatus_todo()} />
+				<Select.Content>
+					{#each statusCollection.items as option (option.value)}
+						<Select.Item item={option}>
+							<Select.ItemText>{option.label}</Select.ItemText>
+						</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			{#if canWrite}
+				<!-- New task is offered even when the campaign defines no checklist at
+				     all: whether a template exists is the campaign's business, and this
+				     record still has work that belongs to it. -->
+				{#if pending > 0}
+					<Button variant="outline" size="sm" loading={isSyncing} onclick={sync}>
+						{m.tasks_addFromTemplate({ count: pending })}
+					</Button>
+				{/if}
+				<Button size="sm" onclick={openCreate}>
+					<PlusIcon aria-hidden="true" />
+					{m.taskList_new()}
 				</Button>
-			</Card.Action>
-		{/if}
+			{/if}
+		</Card.Action>
 	</Card.Header>
 	<Card.Content>
-		{#if response.isLoading}
-			<div class="flex flex-col gap-3">
-				<Skeleton class="h-6 w-full" />
-				<Skeleton class="h-6 w-full" />
-				<Skeleton class="h-6 w-full" />
-			</div>
-		{:else if tasks.length === 0}
+		{#if !response.isLoading && allTasks.length === 0}
 			<EmptyState
 				size="sm"
 				variant="plain"
@@ -128,40 +207,50 @@
 					<ListChecksIcon />
 				{/snippet}
 			</EmptyState>
+		{:else if !response.isLoading && tasks.length === 0}
+			<!-- Distinct copy from "no checklist yet", and it carries the count: a
+			     record whose steps are all done must not read as a record with none. -->
+			<EmptyState
+				size="sm"
+				variant="plain"
+				title={m.tasks_filteredEmptyTitle()}
+				description={m.tasks_filteredEmptyBody({ done: doneCount, total: allTasks.length })}
+			>
+				{#snippet icon()}
+					<ListChecksIcon />
+				{/snippet}
+			</EmptyState>
 		{:else}
-			<ul class="flex flex-col">
-				{#each tasks as task (task._id)}
-					<li class="flex flex-col gap-1 border-b py-3 last:border-b-0">
-						<Checkbox
-							class="items-start"
-							labelClass="flex flex-wrap items-center gap-2"
-							checked={task.status === 'done'}
-							disabled={!canWrite || busyId === task._id}
-							onCheckedChange={(details) => void toggle(task, details.checked === true)}
-						>
-							<span
-								class:line-through={task.status === 'done'}
-								class:text-muted-foreground={task.status === 'done'}
-							>
-								{task.label}
-							</span>
-							{#if task.impactTag}
-								<Badge variant="secondary">{task.impactTag}</Badge>
-							{/if}
-							{#if task.impactTag && publicTags.has(task.impactTag)}
-								<!-- The same badge a public custom field carries. -->
-								<Badge variant="warning" class="gap-1">
-									<EyeIcon class="size-3" aria-hidden="true" />
-									{m.settings_fieldPublic()}
-								</Badge>
-							{/if}
-						</Checkbox>
-						{#if task.description}
-							<p class="text-muted-foreground ps-7 text-xs">{task.description}</p>
-						{/if}
-					</li>
-				{/each}
-			</ul>
+			<!-- No `onSort`: the order is the template's, and a heading that reordered
+			     a checklist would be answering a question nobody asked here. -->
+			<TaskTable
+				{tasks}
+				{today}
+				{members}
+				{publicTags}
+				scope="campaign"
+				columns={COLUMNS}
+				editable={EDITABLE_TASK_COLUMNS}
+				showTaskDetail
+				loading={response.isLoading}
+				onOpen={openEdit}
+				canWrite={() => canWrite}
+			/>
 		{/if}
 	</Card.Content>
 </Card.Root>
+
+<!-- Keyed on the task, so switching rows REMOUNTS the sheet: its fields are
+     `$state` seeded on mount, and without the key one row's unsaved text would
+     appear under the next row's title. The record is PINNED — on this screen it
+     is not a choice. -->
+{#key sheetTask?._id ?? 'new'}
+	<TaskSheet
+		bind:open={sheetOpen}
+		task={sheetTask}
+		campaignId={project.campaignId}
+		presetProjectId={project._id}
+		{members}
+		{canWrite}
+	/>
+{/key}

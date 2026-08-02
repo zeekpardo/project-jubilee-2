@@ -45,7 +45,8 @@
 		task,
 		campaignId,
 		members,
-		canWrite
+		canWrite,
+		presetProjectId = null
 	}: {
 		open?: boolean;
 		/** Null creates. The component is keyed on this, so it never changes in place. */
@@ -53,6 +54,14 @@
 		campaignId: Id<'campaigns'>;
 		members?: AssignableMembers;
 		canWrite: boolean;
+		/**
+		 * PINS the record. Set by a surface that already is one — the record's own
+		 * checklist — where the record is not a choice: a new task belongs to it,
+		 * and moving an existing one elsewhere would make the row vanish from the
+		 * list it was opened from. The task pages leave this unset and get the
+		 * record picker.
+		 */
+		presetProjectId?: Id<'projects'> | null;
 	} = $props();
 
 	const { api } = getAuthContext();
@@ -76,7 +85,8 @@
 		assigneeOption: assigneeOptionValue(task?.assignee),
 		dueOn: task?.dueOn ?? '',
 		priority: task?.priority ?? ('normal' as TaskPriority),
-		projectId: (task?.projectId as string | undefined) ?? NONE,
+		projectId:
+			(task?.projectId as string | undefined) ?? (presetProjectId as string | null) ?? NONE,
 		stageKey: task?.stageKey ?? NONE,
 		impactTag: task?.impactTag ?? NONE
 	}));
@@ -180,6 +190,14 @@
 				...(tagsResponse.data ?? []).map((entry) => ({ value: entry.tag, label: entry.tag }))
 			]
 		})
+	);
+
+	// The pinned record still renders — it decides whether the impact tag is
+	// offered, and a form that hides which record it is writing to is a form you
+	// cannot check before saving.
+	const pinnedProject = $derived(presetProjectId !== null);
+	const pinnedProjectLabel = $derived(
+		projectCollection.items.find((option) => option.value === projectId)?.label ?? ''
 	);
 
 	// Impact stats count DISTINCT projects, so a tagged campaign-level task would
@@ -371,27 +389,32 @@
 
 				<div class="flex flex-col gap-2">
 					<Label for="task-project">{m.taskSheet_project()}</Label>
-					<Select.Root
-						collection={projectCollection}
-						ids={{ trigger: 'task-project' }}
-						value={[projectId]}
-						disabled={!canWrite}
-						onValueChange={(details: { value: string[] }): void => {
-							projectId = details.value[0] ?? NONE;
-							// Dropping the record drops the tag with it, so the form cannot
-							// hold a combination the write would refuse.
-							if (projectId === NONE) impactTag = NONE;
-						}}
-					>
-						<Select.Trigger class="w-full" placeholder={m.taskSheet_projectNone()} />
-						<Select.Content>
-							{#each projectCollection.items as option (option.value)}
-								<Select.Item item={option}>
-									<Select.ItemText>{option.label}</Select.ItemText>
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+					{#if pinnedProject}
+						<Input id="task-project" value={pinnedProjectLabel} readonly />
+						<p class="text-muted-foreground text-xs">{m.taskSheet_projectPinned()}</p>
+					{:else}
+						<Select.Root
+							collection={projectCollection}
+							ids={{ trigger: 'task-project' }}
+							value={[projectId]}
+							disabled={!canWrite}
+							onValueChange={(details: { value: string[] }): void => {
+								projectId = details.value[0] ?? NONE;
+								// Dropping the record drops the tag with it, so the form cannot
+								// hold a combination the write would refuse.
+								if (projectId === NONE) impactTag = NONE;
+							}}
+						>
+							<Select.Trigger class="w-full" placeholder={m.taskSheet_projectNone()} />
+							<Select.Content>
+								{#each projectCollection.items as option (option.value)}
+									<Select.Item item={option}>
+										<Select.ItemText>{option.label}</Select.ItemText>
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					{/if}
 				</div>
 
 				<div class="flex flex-col gap-2">

@@ -45,6 +45,54 @@ export function isPersonReachedRole(role: string): boolean {
 	return !DONOR_ROLES.has(role.trim().toLowerCase());
 }
 
+/**
+ * Anyone this age or younger is a child when no relationship says otherwise.
+ * Ported from the reference's impact query rather than picked: changing it
+ * would silently restate every published children figure.
+ */
+export const CHILD_AGE_MAX = 17;
+
+/** Everything that can tell us a person attached to a record is a child. */
+export interface ChildMemberInput {
+	/** `contacts.child` — an explicit flag, when an org populates it. */
+	contactChild?: boolean | null;
+	/** `projectMembers.attributes.relationship` — "child", "head", "spouse". */
+	relationship?: string | null;
+	/** Every `householdMembers.role` this person holds. */
+	householdRoles?: string[];
+	/** `projectMembers.attributes.age` — a number RECORDED at intake. */
+	age?: unknown;
+}
+
+/**
+ * Is this person a child?
+ *
+ * Four signals, because no one of them is populated everywhere. The original
+ * built-in read `contacts.child` alone, which nothing in this app has ever
+ * written — so it counted zero children in a database full of them. The
+ * relationship and household-role signals are what the data actually carries.
+ *
+ * Age is only consulted when the relationship is absent or "other", matching
+ * the reference: a recorded relationship is a statement about this person and
+ * beats an age that may be stale. It reads a RECORDED age rather than deriving
+ * one from `contacts.birthdate`, deliberately — a birthdate needs today's date
+ * to become an age, and a Convex query must not read the clock (it would go
+ * stale without a write and would poison the query cache).
+ */
+export function isChildMember(input: ChildMemberInput): boolean {
+	if (input.contactChild === true) return true;
+
+	const relationship = input.relationship?.trim().toLowerCase() ?? '';
+	if (relationship === 'child') return true;
+
+	if (input.householdRoles?.some((role) => role.trim().toLowerCase() === 'child')) return true;
+
+	// Only where no relationship contradicts it.
+	if (relationship !== '' && relationship !== 'other') return false;
+	const age = typeof input.age === 'number' ? input.age : Number(input.age);
+	return Number.isFinite(age) && age >= 0 && age <= CHILD_AGE_MAX;
+}
+
 /** What a metric needs to resolve a label when it borrows the campaign's own wording. */
 export interface StatLabelContext {
 	objectLabelPlural: string;

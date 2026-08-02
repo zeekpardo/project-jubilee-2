@@ -34,6 +34,7 @@ import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
 import {
 	humanizeToken,
+	isChildMember,
 	isPersonReachedRole,
 	isStatMetricKey,
 	memberStatLabel,
@@ -147,8 +148,12 @@ type MemberRow = {
 	contactId: string;
 	/** projectMembers.attributes.relationship — the word recorded on the link. */
 	relationship: string | null;
+	/** projectMembers.attributes.age — a number recorded at intake, if any. */
+	age: unknown;
 	/** Every household role this person holds. A person can be in more than one. */
 	householdRoles: string[];
+	/** contacts.child, for an org that populates the explicit flag. */
+	contactChild: boolean | null;
 	contactFields: Record<string, unknown>;
 };
 
@@ -192,7 +197,9 @@ async function loadMembers(ctx: QueryCtx, scope: StatScope): Promise<MemberRow[]
 				projectId: project._id as string,
 				contactId,
 				relationship: typeof relationship === 'string' ? relationship : null,
+				age: link.attributes?.age,
 				householdRoles: resolved.roles,
+				contactChild: resolved.contact?.child ?? null,
 				contactFields: resolved.contact?.customFields ?? {}
 			});
 		}
@@ -239,28 +246,27 @@ function freedProjects(scope: StatScope, window: StatWindow | undefined): Doc<'p
 	);
 }
 
-/** People and children reached, counted across the goal-met projects. */
-async function reachCounts(
-	ctx: QueryCtx,
+/**
+ * People and children reached, counted across the goal-met projects. Reads the
+ * shared member index rather than re-querying, so `people_reached` and a
+ * member stat over the same records can never disagree about who is attached
+ * to what — and donors are excluded once, in one place.
+ *
+ * Counts LINKS, not distinct people: someone attached to two records was
+ * reached by both. A member stat counts distinct people instead, which is the
+ * right reading for "how many children" and the wrong one for "how much reach".
+ */
+function reachCounts(
 	scope: StatScope,
+	members: MemberRow[],
 	window: StatWindow | undefined
-): Promise<{ people: number; children: number }> {
-	let people = 0;
-	let children = 0;
-	for (const project of freedProjects(scope, window)) {
-		const rows = await ctx.db
-			.query('projectMembers')
-			.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
-			.collect();
-		// A donor attached to a record is not a person that record reached.
-		const members = rows.filter((row) => isPersonReachedRole(row.role));
-		people += members.length;
-		for (const member of members) {
-			const contact = await ctx.db.get('contacts', member.contactId);
-			if (contact?.child === true) children++;
-		}
-	}
-	return { people, children };
+): { people: number; children: number } {
+	const freedIds = new Set(freedProjects(scope, window).map((project) => project._id as string));
+	const reached = members.filter((member) => freedIds.has(member.projectId));
+	return {
+		people: reached.length,
+		children: reached.filter((member) => isChildMember(member)).length
+	};
 }
 
 /** Donation cents allocated to this campaign, within the window. */
@@ -484,8 +490,9 @@ export async function evaluateStats(
 		goalLabel: campaign.goalLabel
 	};
 
-	// The people index is the expensive read in this module, so it is built once
-	// and only if a member stat is actually configured.
+	// The people index is the expensive read in this module, so it is built at
+	// most once per call and only when something actually asks for people —
+	// a member stat, or one of the reach built-ins.
 	let members: MemberRow[] | null = null;
 	const membersOnce = async () => (members ??= await loadMembers(ctx, scope));
 
@@ -497,7 +504,7 @@ export async function evaluateStats(
 		const key = `${w?.from ?? ''}:${w?.to ?? ''}`;
 		const hit = reachCache.get(key);
 		if (hit) return hit;
-		const computed = await reachCounts(ctx, scope, w);
+		const computed = reachCounts(scope, await membersOnce(), w);
 		reachCache.set(key, computed);
 		return computed;
 	};

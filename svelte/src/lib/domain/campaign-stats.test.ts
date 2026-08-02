@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	CHILD_AGE_MAX,
 	defaultStatConfigs,
+	isChildMember,
 	memberStatLabel,
 	isStatMetricKey,
 	resolveStatConfigs,
@@ -187,6 +189,47 @@ describe('suppressesPublicValue', () => {
 
 	it('never withholds a built-in, which counts already-published facts', () => {
 		expect(suppressesPublicValue({ kind: 'builtin', metric: 'projects_freed' }, 'count', 1)).toBe(
+			false
+		);
+	});
+});
+
+describe('isChildMember', () => {
+	it('honours the explicit contact flag', () => {
+		expect(isChildMember({ contactChild: true })).toBe(true);
+	});
+
+	it('reads the relationship recorded on the link', () => {
+		expect(isChildMember({ relationship: 'child' })).toBe(true);
+		expect(isChildMember({ relationship: '  Child ' })).toBe(true);
+		expect(isChildMember({ relationship: 'head' })).toBe(false);
+		expect(isChildMember({ relationship: 'spouse' })).toBe(false);
+	});
+
+	it('reads the household role, which is what this app populates', () => {
+		expect(isChildMember({ householdRoles: ['child'] })).toBe(true);
+		expect(isChildMember({ householdRoles: ['parent_guardian'] })).toBe(false);
+		expect(isChildMember({ householdRoles: ['adult', 'child'] })).toBe(true);
+	});
+
+	it('falls back to a recorded age only when no relationship contradicts it', () => {
+		expect(isChildMember({ age: 9 })).toBe(true);
+		expect(isChildMember({ age: CHILD_AGE_MAX })).toBe(true);
+		expect(isChildMember({ age: CHILD_AGE_MAX + 1 })).toBe(false);
+		expect(isChildMember({ relationship: 'other', age: 9 })).toBe(true);
+		// A stated relationship beats an age that may be years stale.
+		expect(isChildMember({ relationship: 'head', age: 9 })).toBe(false);
+	});
+
+	it('accepts an age that arrived as a string, and ignores nonsense', () => {
+		expect(isChildMember({ age: '12' })).toBe(true);
+		expect(isChildMember({ age: 'twelve' })).toBe(false);
+		expect(isChildMember({ age: -1 })).toBe(false);
+	});
+
+	it('is false when nothing says anything', () => {
+		expect(isChildMember({})).toBe(false);
+		expect(isChildMember({ contactChild: null, relationship: null, householdRoles: [] })).toBe(
 			false
 		);
 	});

@@ -75,6 +75,7 @@ import type * as projects_queries from "../projects/queries.js";
 import type * as public_queries from "../public/queries.js";
 import type * as seed from "../seed.js";
 import type * as seed_jubilee from "../seed/jubilee.js";
+import type * as seed_portal from "../seed/portal.js";
 import type * as seed_transform from "../seed/transform.js";
 import type * as storage from "../storage.js";
 import type * as taskTemplates_mutations from "../taskTemplates/mutations.js";
@@ -164,6 +165,7 @@ declare const fullApi: ApiFromModules<{
   "public/queries": typeof public_queries;
   seed: typeof seed;
   "seed/jubilee": typeof seed_jubilee;
+  "seed/portal": typeof seed_portal;
   "seed/transform": typeof seed_transform;
   storage: typeof storage;
   "taskTemplates/mutations": typeof taskTemplates_mutations;

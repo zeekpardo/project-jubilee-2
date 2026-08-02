@@ -31,14 +31,17 @@
 	const access = getAccessContext();
 	const active = getActiveCampaignContext();
 
-	// settings:manage is org-wide: a team leader never reaches this page, however
-	// many campaigns they are assigned to.
-	const allowed = $derived(access.can('settings:manage'));
 	const campaignId = $derived(active.id as Id<'campaigns'> | null);
 
 	// campaign:edit is campaign-scoped — the same gate the admin campaigns
 	// route uses for these same cards.
 	const canWrite = $derived(campaignId ? access.can('campaign:edit', campaignId) : false);
+
+	// Custom fields are the org's, not the campaign's, so they are the one tab a
+	// campaign manager does not get. Everything else here configures the campaign
+	// they already run.
+	const canManageOrgSettings = $derived(access.can('settings:manage'));
+	const allowed = $derived(canWrite || canManageOrgSettings);
 
 	const campaignResponse = useQuery(api.campaigns.queries.getCampaign, () =>
 		auth.isAuthenticated && campaignId ? { campaignId } : 'skip'
@@ -56,8 +59,10 @@
 		{ value: 'pipeline', label: () => m.settings_pipeline() },
 		{ value: 'costTemplates', label: () => m.settings_costTemplates() },
 		{ value: 'taskTemplates', label: () => m.settings_checklistAndImpact() },
-		{ value: 'customFields', label: () => m.settings_customFields() }
+		{ value: 'customFields', label: () => m.settings_customFields(), orgWide: true }
 	] as const;
+
+	const tabs = $derived(TABS.filter((tab) => !('orgWide' in tab) || canManageOrgSettings));
 </script>
 
 <PageContainer
@@ -69,7 +74,7 @@
 	{#if campaignId}
 		<Tabs.Root value="campaign" class="gap-6">
 			<Tabs.List>
-				{#each TABS as tab (tab.value)}
+				{#each tabs as tab (tab.value)}
 					<Tabs.Trigger value={tab.value}>{tab.label()}</Tabs.Trigger>
 				{/each}
 			</Tabs.List>
@@ -102,9 +107,11 @@
 					<TaskTemplatesTab {campaignId} />
 				</div>
 			</Tabs.Content>
-			<Tabs.Content value="customFields">
-				<CustomFieldsTab {campaignId} />
-			</Tabs.Content>
+			{#if canManageOrgSettings}
+				<Tabs.Content value="customFields">
+					<CustomFieldsTab {campaignId} />
+				</Tabs.Content>
+			{/if}
 		</Tabs.Root>
 	{:else}
 		<EmptyState title={m.shell_noCampaigns()} />

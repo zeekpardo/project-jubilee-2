@@ -45,7 +45,10 @@ export const CAMPAIGN_NAV: NavItem[] = [
 	{ key: 'tasks', href: '/app/tasks', icon: ListChecks, capability: 'projects:read' },
 	{ key: 'campaignContacts', href: '/app/contacts', icon: Contact, capability: 'contacts:read' },
 	{ key: 'budget', href: '/app/budget', icon: Wallet, capability: 'money:read' },
-	{ key: 'settings', href: '/app/settings', icon: Settings, capability: 'settings:manage' }
+	// Campaign settings, so campaign:edit rather than settings:manage — a
+	// campaign manager configures their own campaign without being let near the
+	// org's custom fields, which the page hides behind settings:manage.
+	{ key: 'settings', href: '/app/settings', icon: Settings, capability: 'campaign:edit' }
 ];
 
 export const ADMIN_NAV: NavItem[] = [

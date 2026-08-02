@@ -8,11 +8,16 @@
 	let {
 		project,
 		href,
-		objectLabel
+		objectLabel,
+		target,
+		rel
 	}: {
 		project: PublicProject;
 		href: string;
 		objectLabel: string;
+		/** Set by an (embed) widget: its links must open the real page, not navigate the iframe. */
+		target?: '_blank';
+		rel?: string;
 	} = $props();
 
 	// `name` is null unless an admin explicitly set a public name (see the
@@ -29,6 +34,8 @@
 
 <a
 	{href}
+	{target}
+	{rel}
 	class="group bg-card ring-border hover:ring-primary/40 focus-visible:ring-ring flex flex-col overflow-hidden rounded-xl shadow-xs ring-1 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:outline-none"
 >
 	<div class="relative aspect-[4/3] overflow-hidden">

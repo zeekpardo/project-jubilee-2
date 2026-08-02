@@ -777,5 +777,6 @@
 	"publicSite_donateSubmit": "Continue to payment",
 	"publicSite_donateClosedNotice": "Online giving isn't connected yet — our team is still setting this up. Please check back soon.",
 	"publicSite_donateSecureNote": "Card details are entered on Stripe's secure checkout, never on this page.",
-	"publicSite_donateRemaining": "{amount} still needed"
+	"publicSite_donateRemaining": "{amount} still needed",
+	"publicSite_embedViewFullProfile": "View full profile"
 }

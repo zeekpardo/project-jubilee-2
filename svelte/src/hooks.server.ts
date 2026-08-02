@@ -36,6 +36,13 @@ const isPublic = createRouteMatcher([
  */
 const isPublicSite = (routeId: string | null): boolean => routeId?.startsWith('/(site)') ?? false;
 
+/**
+ * The embeddable widgets (see src/routes/(embed)). Same fail-closed matcher
+ * shape as isPublicSite: membership of the `(embed)` group is the whole
+ * test, matched on the resolved route id rather than a parsed path.
+ */
+const isEmbed = (routeId: string | null): boolean => routeId?.startsWith('/(embed)') ?? false;
+
 /* --------------------------------------------------------- */
 /* ---------------------- auth helpers --------------------- */
 /* --------------------------------------------------------- */
@@ -59,7 +66,7 @@ const requireAuth: Handle = async ({ event, resolve }) => {
 	const sessionCookie = getSessionCookie(event.request);
 
 	/* ---------- 1. Handle public routes first ---------- */
-	if (isPublic(pathname) || isPublicSite(event.route.id)) {
+	if (isPublic(pathname) || isPublicSite(event.route.id) || isEmbed(event.route.id)) {
 		// Special case: redirect authenticated users away from signin
 		if (isLogin(pathname) && sessionCookie) {
 			throw redirect(307, '/');
@@ -118,12 +125,50 @@ const setLocaleAndTheme: Handle = ({ event, resolve }) =>
 	});
 
 /* --------------------------------------------------------- */
+/* ------------------- framing policy ----------------------- */
+/* --------------------------------------------------------- */
+
+/**
+ * Nothing set frame-ancestors or X-Frame-Options before this, which meant the
+ * authenticated admin app at /app could be framed by any site. `/(embed)`
+ * routes exist specifically to be framed by an org's own site, and serve
+ * nothing that isn't already public through src/convex/public/queries.ts —
+ * so they get an explicit allow. Everything else is denied, including a new
+ * top-level route added later: the check is fail-closed the same way
+ * isPublicSite/isEmbed are, keyed off event.route.id rather than a
+ * hand-parsed path.
+ */
+const setFrameAncestors: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+
+	// Only documents can be framed, so only documents carry the policy. That is
+	// not merely an optimisation: /api/auth/* is proxied from better-auth and
+	// returns a Response whose headers are IMMUTABLE, so setting a header on
+	// every response throws `TypeError: immutable` and turns sign-in into a 500.
+	const isDocument = response.headers.get('content-type')?.includes('text/html') ?? false;
+	if (!isDocument) return response;
+
+	if (isEmbed(event.route.id)) {
+		response.headers.set('Content-Security-Policy', 'frame-ancestors *');
+	} else {
+		response.headers.set('Content-Security-Policy', "frame-ancestors 'none'");
+		// Belt-and-braces for browsers that don't honor CSP's frame-ancestors;
+		// DENY is the only value here since ALLOW-FROM is deprecated/removed —
+		// which is exactly why the embed branch above cannot use this header.
+		response.headers.set('X-Frame-Options', 'DENY');
+	}
+
+	return response;
+};
+
+/* --------------------------------------------------------- */
 /* ---------------------- exported hook -------------------- */
 /* --------------------------------------------------------- */
 
 export const handle = sequence(
 	/* 1 */ requireAuth,
 	/* 2 */ setTokenFromCookies,
-	/* 3 */ setLocaleAndTheme
+	/* 3 */ setLocaleAndTheme,
+	/* 4 */ setFrameAncestors
 );
 export type { Handle };

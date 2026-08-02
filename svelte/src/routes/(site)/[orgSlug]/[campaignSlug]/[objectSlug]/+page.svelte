@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { cn } from '$lib/primitives/utils';
 	import * as m from '$lib/i18n/messages';
@@ -10,42 +9,12 @@
 	let { data } = $props();
 	const campaign = $derived(data.campaign);
 
-	// The `view` param value is a stable key ('met' / 'awaiting'), never the
-	// campaign's own goalLabel text — so a campaign that renames its goal
-	// later doesn't invalidate a URL someone already shared.
-	type FilterKey = 'all' | 'met' | 'awaiting';
-	const filter: FilterKey = $derived(
-		page.url.searchParams.get('view') === 'met'
-			? 'met'
-			: page.url.searchParams.get('view') === 'awaiting'
-				? 'awaiting'
-				: 'all'
-	);
-
-	const filters = $derived([
-		{ key: 'all' as const, label: m.publicSite_filterAll() },
-		{ key: 'met' as const, label: campaign.goalLabel },
-		{ key: 'awaiting' as const, label: m.publicSite_awaitingSponsor() }
-	]);
-
-	const visible = $derived(
-		data.projects.filter((project) => {
-			if (filter === 'met') return project.isGoalMet;
-			if (filter === 'awaiting') return !project.isGoalMet;
-			return true;
-		})
-	);
-
-	const gridBaseHref = $derived(
-		resolve('/(site)/[orgSlug]/[campaignSlug]/[objectSlug]', {
-			orgSlug: data.orgProfile.slug,
-			campaignSlug: campaign.slug,
-			objectSlug: campaign.objectSlug
-		})
-	);
-	function filterHref(key: FilterKey): string {
-		return key === 'all' ? gridBaseHref : `${gridBaseHref}?view=${key}`;
-	}
+	// Both groups render unconditionally, headed rather than gated behind a
+	// filter chip: a donor scanning the page sees every record at once, and
+	// a crawler indexing the page sees every record too, instead of only
+	// whichever chip happened to be selected when it was crawled.
+	const metRecords = $derived(data.projects.filter((project) => project.isGoalMet));
+	const restRecords = $derived(data.projects.filter((project) => !project.isGoalMet));
 
 	const orgHref = $derived(resolve('/(site)/[orgSlug]', { orgSlug: data.orgProfile.slug }));
 	const objectLower = $derived(campaign.objectLabelPlural.toLowerCase());
@@ -136,47 +105,63 @@
 </section>
 
 <section class="mx-auto max-w-6xl px-4 sm:px-6">
-	<div class="ps-rule flex flex-wrap items-center gap-2 pt-6 sm:pt-8">
-		{#each filters as f (f.key)}
-			<a
-				href={filterHref(f.key)}
-				aria-current={filter === f.key ? 'page' : undefined}
-				class={cn(
-					'rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-					filter === f.key
-						? 'bg-primary text-primary-foreground shadow-xs'
-						: 'text-muted-foreground ring-border hover:text-foreground hover:ring-primary/40 ring-1'
-				)}
-			>
-				{f.label}
-			</a>
-		{/each}
-		<span class="text-muted-foreground ml-auto hidden text-xs sm:block">
-			{m.publicSite_projectCount({ count: visible.length, object: objectLower })}
-		</span>
-	</div>
-
-	{#if visible.length === 0}
-		<div class="py-20 text-center">
+	{#if data.projects.length === 0}
+		<div class="ps-rule py-20 text-center">
 			<p class="ps-serif text-foreground text-2xl">{m.publicSite_gridEmptyTitle()}</p>
 			<p class="text-muted-foreground mx-auto mt-3 max-w-md text-sm leading-relaxed">
 				{m.publicSite_gridEmptyBody()}
 			</p>
 		</div>
 	{:else}
-		<div class="grid grid-cols-1 gap-5 pt-6 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
-			{#each visible as project (project.number)}
-				<ProjectCard
-					{project}
-					href={resolve('/(site)/[orgSlug]/[campaignSlug]/[objectSlug]/[number]', {
-						orgSlug: data.orgProfile.slug,
-						campaignSlug: campaign.slug,
-						objectSlug: campaign.objectSlug,
-						number: project.number
-					})}
-					objectLabel={campaign.objectLabel}
-				/>
-			{/each}
-		</div>
+		{#if metRecords.length > 0}
+			<div class="ps-rule flex items-baseline justify-between gap-2 pt-6 sm:pt-8">
+				<h2 class="ps-serif text-foreground text-2xl">{campaign.goalLabel}</h2>
+				<span class="text-muted-foreground text-xs">
+					{m.publicSite_projectCount({ count: metRecords.length, object: objectLower })}
+				</span>
+			</div>
+			<div class="grid grid-cols-1 gap-5 pt-6 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+				{#each metRecords as project (project.number)}
+					<ProjectCard
+						{project}
+						href={resolve('/(site)/[orgSlug]/[campaignSlug]/[objectSlug]/[number]', {
+							orgSlug: data.orgProfile.slug,
+							campaignSlug: campaign.slug,
+							objectSlug: campaign.objectSlug,
+							number: project.number
+						})}
+						objectLabel={campaign.objectLabel}
+					/>
+				{/each}
+			</div>
+		{/if}
+
+		{#if restRecords.length > 0}
+			<div
+				class={cn(
+					'flex items-baseline justify-between gap-2 pt-6 sm:pt-8',
+					metRecords.length > 0 ? 'mt-10 sm:mt-12' : 'ps-rule'
+				)}
+			>
+				<h2 class="ps-serif text-foreground text-2xl">{m.publicSite_awaitingSponsor()}</h2>
+				<span class="text-muted-foreground text-xs">
+					{m.publicSite_projectCount({ count: restRecords.length, object: objectLower })}
+				</span>
+			</div>
+			<div class="grid grid-cols-1 gap-5 pt-6 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+				{#each restRecords as project (project.number)}
+					<ProjectCard
+						{project}
+						href={resolve('/(site)/[orgSlug]/[campaignSlug]/[objectSlug]/[number]', {
+							orgSlug: data.orgProfile.slug,
+							campaignSlug: campaign.slug,
+							objectSlug: campaign.objectSlug,
+							number: project.number
+						})}
+						objectLabel={campaign.objectLabel}
+					/>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </section>

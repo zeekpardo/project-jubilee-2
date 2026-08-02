@@ -137,8 +137,17 @@ export async function offerPortalAccess(ctx: MutationCtx, contact: Doc<'contacts
  * Withdraw it. The row, the giving and the history all stay — this is a state,
  * not a deletion — and the link to the account is cut so a signed-in session
  * resolves to no viewer on its very next read.
+ *
+ * Their org MEMBERSHIP is deliberately left alone. It is Better Auth's row,
+ * not ours, and removing it is a separate decision an admin makes from the
+ * members screen; what it would buy is nothing, because `portal_member` holds
+ * no capability, so a revoked person with a live membership can reach exactly
+ * one thing — the portal's own "nothing here for you" page.
  */
-export async function revokePortalAccess(ctx: MutationCtx, contact: Doc<'contacts'>): Promise<void> {
+export async function revokePortalAccess(
+	ctx: MutationCtx,
+	contact: Doc<'contacts'>
+): Promise<void> {
 	await ctx.db.patch('contacts', contact._id, {
 		portalAccess: 'revoked',
 		authUserId: undefined

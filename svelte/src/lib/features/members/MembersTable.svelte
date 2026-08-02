@@ -7,7 +7,7 @@
 	import SlidersHorizontalIcon from '@lucide/svelte/icons/sliders-horizontal';
 
 	// Rules
-	import { isRole, type Role } from '$lib/domain/permissions';
+	import { isAssignedRole, isRole, type Role } from '$lib/domain/permissions';
 	import { roleBadgeVariant, roleLabel } from './roles';
 	import RoleSelect from './RoleSelect.svelte';
 
@@ -94,7 +94,7 @@
 						{/if}
 					</Table.Cell>
 					<Table.Cell class="text-muted-foreground">
-						{#if role === 'team_leader'}
+						{#if isAssignedRole(role)}
 							{assignedCounts[member.userId] ?? 0}
 						{:else}
 							—
@@ -102,7 +102,7 @@
 					</Table.Cell>
 					<Table.Cell>
 						<div class="flex justify-end">
-							{#if role === 'team_leader'}
+							{#if isAssignedRole(role)}
 								<Button variant="outline" size="sm" onclick={() => onAssign(member)}>
 									<SlidersHorizontalIcon />
 									{m.members_assignedCampaigns()}

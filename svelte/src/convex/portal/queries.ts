@@ -25,7 +25,6 @@ import {
 	PORTAL_RECORD_MAX,
 	portalConnections,
 	portalGiving,
-	toPortalOwnRecord,
 	toPortalProfile,
 	toPortalRecord,
 	type PortalConnection,
@@ -92,7 +91,7 @@ async function buildRecords(
 			campaigns.set(project.campaignId, loaded);
 		}
 
-		const record = await toPortalRecord(ctx, project, campaign, connection);
+		const record = await toPortalRecord(ctx, viewer, project, campaign, connection);
 		if (record) records.push(record);
 	}
 
@@ -142,9 +141,8 @@ export const listPortalRecords = query({
 
 /**
  * One record, addressed by its public `number` the way the wall addresses
- * everything. Returns the own-record projection when the viewer is someone the
- * record serves, and the public card otherwise — a supporter reading a family's
- * page sees what any visitor sees.
+ * everything. Same shape the list returns, so a page cannot read one of them
+ * correctly and the other not.
  *
  * A number they have no connection to resolves to null, not to a public card.
  * The portal is not a second route to the public site.
@@ -157,7 +155,9 @@ export const getPortalRecord = query({
 
 		const project = await ctx.db
 			.query('projects')
-			.withIndex('by_orgId_and_number', (q) => q.eq('orgId', viewer.orgId).eq('number', args.number))
+			.withIndex('by_orgId_and_number', (q) =>
+				q.eq('orgId', viewer.orgId).eq('number', args.number)
+			)
 			.unique();
 		if (!project) return null;
 
@@ -168,13 +168,7 @@ export const getPortalRecord = query({
 		const campaign = await ctx.db.get('campaigns', project.campaignId);
 		if (!campaign || campaign.orgId !== viewer.orgId) return null;
 
-		if (connection.belongsTo) {
-			const own = await toPortalOwnRecord(ctx, viewer, project, campaign);
-			if (own) return { kind: 'own' as const, connection, ...own };
-		}
-
-		const record = await toPortalRecord(ctx, project, campaign, connection);
-		return record ? { kind: 'public' as const, ...record } : null;
+		return await toPortalRecord(ctx, viewer, project, campaign, connection);
 	}
 });
 

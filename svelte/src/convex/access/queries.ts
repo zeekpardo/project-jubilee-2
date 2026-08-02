@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import { getAccess } from '../model/access';
-import { visibleCampaignIds } from '../../lib/domain/permissions';
+import { can, visibleCampaignIds } from '../../lib/domain/permissions';
 
 /**
  * The caller's role and assignments. The whole admin UI gates on this one
@@ -47,7 +47,7 @@ export const listMembers = query({
 	handler: async (ctx) => {
 		const access = await getAccess(ctx);
 		if (!access.orgId) return [];
-		if (access.role !== 'owner' && access.role !== 'admin') return [];
+		if (!can(access, 'members:manage')) return [];
 
 		const assignments = await ctx.db
 			.query('campaignAssignments')
@@ -71,7 +71,10 @@ export const listAssignmentsForUser = query({
 	handler: async (ctx, args) => {
 		const access = await getAccess(ctx);
 		if (!access.orgId) return [];
-		if (access.role !== 'owner' && access.role !== 'admin' && access.userId !== args.userId) {
+		// Anyone may ask about themselves; asking about someone else is member
+		// management, which is the capability rather than the pair of roles that
+		// happened to hold it.
+		if (!can(access, 'members:manage') && access.userId !== args.userId) {
 			return [];
 		}
 

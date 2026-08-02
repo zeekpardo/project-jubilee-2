@@ -156,6 +156,15 @@ const ADMIN_ROLES: Role[] = ['owner', 'admin', 'campaign_manager', 'team_leader'
 /** Roles scoped to their campaign assignments rather than to the whole org. */
 const ASSIGNED_ROLES: Role[] = ['campaign_manager', 'team_leader'];
 
+/**
+ * True when this role's reach IS its campaign assignments — so the UI knows
+ * whether to offer an assignment control, and whether an empty workspace means
+ * "nothing here yet" or "nobody has assigned you anything".
+ */
+export function isAssignedRole(role: Role | null): boolean {
+	return role !== null && ASSIGNED_ROLES.includes(role);
+}
+
 /** Campaigns this person may work in, given every campaign in the org. */
 export function visibleCampaignIds(access: Access, allCampaignIds: string[]): string[] {
 	const { role } = access;
@@ -183,7 +192,8 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 	owner: 'Full access, including organization settings and billing.',
 	admin: 'Full access except organization settings and billing.',
 	campaign_manager: 'Runs the campaigns they are assigned to, settings included.',
-	team_leader: 'Works in the campaigns they are assigned to, but cannot change the campaign itself.',
+	team_leader:
+		'Works in the campaigns they are assigned to, but cannot change the campaign itself.',
 	portal_member: 'No admin access. Sees only their own items, in the portal.',
 	member: 'No admin access.'
 };

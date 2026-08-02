@@ -89,8 +89,8 @@
 <PageContainer title={m.dash_title()} description={m.dash_subtitle()}>
 	{#if !active.current}
 		<EmptyState
-			title={access.isTeamLeader ? m.access_noCampaignsTitle() : m.shell_noCampaigns()}
-			description={access.isTeamLeader ? m.access_noCampaignsBody() : undefined}
+			title={access.isAssignedRole ? m.access_noCampaignsTitle() : m.shell_noCampaigns()}
+			description={access.isAssignedRole ? m.access_noCampaignsBody() : undefined}
 		/>
 	{:else}
 		<!-- Tiles pick up a faint primary wash via `*:data-[slot=card]` rather than a

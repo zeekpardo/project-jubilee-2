@@ -22,8 +22,8 @@
 		<TaskListView scope="campaign" {campaignId} />
 	{:else}
 		<EmptyState
-			title={access.isTeamLeader ? m.access_noCampaignsTitle() : m.shell_noCampaigns()}
-			description={access.isTeamLeader ? m.access_noCampaignsBody() : undefined}
+			title={access.isAssignedRole ? m.access_noCampaignsTitle() : m.shell_noCampaigns()}
+			description={access.isAssignedRole ? m.access_noCampaignsBody() : undefined}
 		/>
 	{/if}
 </PageContainer>

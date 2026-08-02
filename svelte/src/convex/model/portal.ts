@@ -40,8 +40,8 @@
 //     per-record split of each one. `transactions.contactId` is the
 //     attribution, so "theirs" is a column and not an inference
 //   - public cards for the records they are connected to, from the wall
-//   - ONE second projection: `toPortalOwnRecord`, the unscrubbed name and
-//     story of a record the viewer is themselves a member of. That is the
+//   - ONE second projection: the `own` half of a record the viewer is
+//     themselves a member of — its unscrubbed name and full story. That is the
 //     single case where the public view is wrong rather than merely partial —
 //     a family reading their own page should not be shown the scrubbed
 //     version of their own name.
@@ -269,9 +269,32 @@ export type PortalConnection = {
 	belongsTo: boolean;
 };
 
+/**
+ * Enough of the campaign to render a card in its own vocabulary — a campaign
+ * that calls its projects "families" says so in the portal too. Every field is
+ * one the wall already publishes.
+ */
+export type PortalRecordCampaign = {
+	name: string;
+	objectLabel: string;
+};
+
+/**
+ * The unscrubbed half of a record, present only for someone the record
+ * SERVES. See `toPortalRecord` for why it is a field on the ordinary shape
+ * rather than a second one.
+ */
+export type PortalOwnDetail = {
+	/** The real name, not the scrubbed one. */
+	name: string;
+	story: string | null;
+};
+
 export type PortalRecord = {
 	connection: PortalConnection;
+	campaign: PortalRecordCampaign;
 	card: PublicProject;
+	own: PortalOwnDetail | null;
 };
 
 /**
@@ -322,49 +345,12 @@ export async function portalConnections(
 }
 
 /**
- * The public card for a connected record — the wall's own projection, called
- * rather than reimplemented.
- *
- * That is not only economy. `toPublicProject` loads the org's public policy
- * ITSELF, "so no caller can forget it", and a portal projection that built its
- * own card would bypass that org's added denylist in silence. Calling the wall
- * means the portal cannot drift from what the public site shows, which is rule
- * 2 enforced by construction rather than by discipline.
- *
- * Returns null for an UNPUBLISHED record. A supporter's card list is the
- * public list filtered by their connection, and an unpublished record is not
- * on the public list — so giving to one does not conjure a page that its
- * people have not agreed to show.
- */
-export async function toPortalRecord(
-	ctx: QueryCtx,
-	project: Doc<'projects'>,
-	campaign: Doc<'campaigns'>,
-	connection: PortalConnection
-): Promise<PortalRecord | null> {
-	if (!project.isPublished) return null;
-	return { connection, card: await toPublicProject(ctx, project, campaign) };
-}
-
-// ------------------------------------------------------------------
-// Their own record — the one second projection
-// ------------------------------------------------------------------
-
-export type PortalOwnRecord = {
-	card: PublicProject;
-	/** The real name, not the scrubbed one. See below. */
-	name: string;
-	story: string | null;
-};
-
-/**
- * A record the viewer is themselves part of, shown to them unscrubbed.
+ * The unscrubbed name and story, for someone the record SERVES.
  *
  * This is the single place the public view is WRONG rather than merely
  * partial. `publicName` exists because publishing a family's real name can
  * endanger them; showing that same family their own page under a name they did
- * not choose is not privacy, it is a bug. So the real `name` and the full
- * `story` are added on top of the public card.
+ * not choose is not privacy, it is a bug.
  *
  * Two things it deliberately does NOT add. Protected custom-field keys stay
  * withheld — site references and locations are dangerous to print on a device
@@ -372,16 +358,15 @@ export type PortalOwnRecord = {
  * print where its people are held. And nothing about the record's supporters
  * appears, not even a count: who gives to a family is the giver's business.
  *
- * Only for a role the record SERVES. A sponsor holds a `projectMembers` row
- * too, and a donor is not the subject of the record they fund — the same
- * distinction `toPublicProject` makes when it counts household size.
+ * A donor holds a `projectMembers` row too, and is not the subject of the
+ * record they fund — the same distinction `toPublicProject` makes when it
+ * counts household size, made with the same function.
  */
-export async function toPortalOwnRecord(
+async function ownDetail(
 	ctx: QueryCtx,
 	viewer: PortalViewer,
-	project: Doc<'projects'>,
-	campaign: Doc<'campaigns'>
-): Promise<PortalOwnRecord | null> {
+	project: Doc<'projects'>
+): Promise<PortalOwnDetail | null> {
 	const link = await ctx.db
 		.query('projectMembers')
 		.withIndex('by_projectId_and_contactId', (q) =>
@@ -391,9 +376,44 @@ export async function toPortalOwnRecord(
 	if (!link || link.orgId !== viewer.orgId) return null;
 	if (!isPersonReachedRole(link.role)) return null;
 
+	return { name: project.name, story: project.story ?? null };
+}
+
+/**
+ * A connected record, as this viewer may see it.
+ *
+ * The card is the wall's own projection, CALLED rather than reimplemented.
+ * That is not only economy: `toPublicProject` loads the org's public policy
+ * itself, "so no caller can forget it", and a portal card built by hand would
+ * bypass that org's added denylist in silence. Calling the wall means the
+ * portal cannot drift from what the public site shows, which is rule 2
+ * enforced by construction rather than by discipline.
+ *
+ * The unscrubbed half rides along as `own` rather than being a second function
+ * the caller must remember to ask for. A list that forgot it would show a
+ * family their own record under the scrubbed name — the exact bug `own`
+ * exists to fix — so the two shapes are one shape and the list and the detail
+ * page cannot disagree.
+ *
+ * PUBLISHING gates a supporter, not a subject. An unpublished record is not on
+ * the public list, so giving to one does not conjure a page its people have
+ * not agreed to show — but their own record is theirs whether or not an admin
+ * has published it yet.
+ */
+export async function toPortalRecord(
+	ctx: QueryCtx,
+	viewer: PortalViewer,
+	project: Doc<'projects'>,
+	campaign: Doc<'campaigns'>,
+	connection: PortalConnection
+): Promise<PortalRecord | null> {
+	const own = connection.belongsTo ? await ownDetail(ctx, viewer, project) : null;
+	if (!project.isPublished && !own) return null;
+
 	return {
+		connection,
+		campaign: { name: campaign.name, objectLabel: campaign.objectLabel },
 		card: await toPublicProject(ctx, project, campaign),
-		name: project.name,
-		story: project.story ?? null
+		own
 	};
 }

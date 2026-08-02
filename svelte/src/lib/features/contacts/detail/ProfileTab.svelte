@@ -9,7 +9,9 @@
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import * as m from '$lib/i18n/messages';
 
+	import { getAccessContext } from '$lib/access';
 	import { gradeLabel } from '../contact-info-labels';
+	import PortalAccessCard from './PortalAccessCard.svelte';
 	import ContactEmailsCard from './ContactEmailsCard.svelte';
 	import ContactPhonesCard from './ContactPhonesCard.svelte';
 	import ContactAddressesCard from './ContactAddressesCard.svelte';
@@ -22,6 +24,15 @@
 
 	const { api } = getAuthContext();
 	const auth = useAuth();
+	const access = getAccessContext();
+
+	// Only for the portal invite, which needs an organization id to address the
+	// Better Auth invitation at.
+	const activeOrganizationResponse = useQuery(
+		api.organizations.queries.getActiveOrganization,
+		() => (auth.isAuthenticated ? {} : 'skip')
+	);
+	const activeOrganization = $derived(activeOrganizationResponse.data);
 
 	const contactResponse = useQuery(api.contacts.queries.getContact, () =>
 		auth.isAuthenticated ? { contactId } : 'skip'
@@ -264,21 +275,15 @@
 						</span>
 					</div>
 
-					<div class="grid gap-1 sm:grid-cols-3 sm:gap-4">
-						<span class="text-muted-foreground text-sm">{m.contactDetail_portalLogin()}</span>
-						<span class="sm:col-span-2">
-							{#if contact.authUserId}
-								<Badge variant="secondary">{m.contactDetail_hasPortalLogin()}</Badge>
-							{:else if contact.invitedAt}
-								<Badge variant="outline">
-									{m.contactDetail_invitedOn()}
-									{new Date(contact.invitedAt).toLocaleDateString()}
-								</Badge>
-							{:else}
-								<span class="text-muted-foreground text-sm">{m.contactDetail_noPortalLogin()}</span>
-							{/if}
-						</span>
-					</div>
+					<PortalAccessCard
+						{contactId}
+						email={contact.email}
+						authUserId={contact.authUserId}
+						invitedAt={contact.invitedAt}
+						portalAccess={contact.portalAccess}
+						organizationId={activeOrganization?.id}
+						canManage={access.can('members:manage')}
+					/>
 				</div>
 			</Card.Content>
 		</Card.Root>

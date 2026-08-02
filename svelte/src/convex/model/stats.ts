@@ -252,9 +252,11 @@ function freedProjects(scope: StatScope, window: StatWindow | undefined): Doc<'p
  * member stat over the same records can never disagree about who is attached
  * to what — and donors are excluded once, in one place.
  *
- * Counts LINKS, not distinct people: someone attached to two records was
- * reached by both. A member stat counts distinct people instead, which is the
- * right reading for "how many children" and the wrong one for "how much reach".
+ * Counted DISTINCT BY PERSON. Someone attached to two records is one person
+ * reached, not two: this is a headline figure about human beings, and the same
+ * child appearing twice because a family was split across records would
+ * overstate it. It is the reading a member stat already takes, so a configured
+ * "people in freed records" stat and this built-in agree by construction.
  */
 function reachCounts(
 	scope: StatScope,
@@ -264,8 +266,10 @@ function reachCounts(
 	const freedIds = new Set(freedProjects(scope, window).map((project) => project._id as string));
 	const reached = members.filter((member) => freedIds.has(member.projectId));
 	return {
-		people: reached.length,
-		children: reached.filter((member) => isChildMember(member)).length
+		people: new Set(reached.map((member) => member.contactId)).size,
+		children: new Set(
+			reached.filter((member) => isChildMember(member)).map((member) => member.contactId)
+		).size
 	};
 }
 

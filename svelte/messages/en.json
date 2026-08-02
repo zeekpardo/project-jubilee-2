@@ -919,6 +919,8 @@
 	"taskList_groupMembers": "Members",
 	"taskList_groupContacts": "Contacts",
 	"taskList_contactsTruncated": "Showing the first contacts only. Search on the contacts page to find the rest.",
+	"taskList_assigneeUnknown": "Someone no longer listed",
+	"taskList_facetsTruncated": "There are too many tasks to check every one, so a rarely used value may be missing from the filters above.",
 	"taskList_filterPriority": "Priority",
 	"taskList_priorityAny": "Any priority",
 	"taskList_filterStatus": "Status",

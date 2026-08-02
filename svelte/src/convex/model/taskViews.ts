@@ -41,6 +41,27 @@ import {
  */
 export const TASK_PAGE_MAX = 500;
 
+/**
+ * The ceiling on the FACET read — the scan behind "which values do the filter
+ * dropdowns actually offer".
+ *
+ * Deliberately larger than `TASK_PAGE_MAX` and deliberately its own number.
+ * Deriving the dropdowns from the returned page would hide every value that
+ * only exists past the page cap, so this is a separate read; it can afford a
+ * bigger slice because it never hydrates a row — it collects ids and throws the
+ * documents away. It can still be hit, and `listTaskFacets` reports `truncated`
+ * for the same reason the list does: a short list of options that looks
+ * complete is worse than one that says it is not.
+ */
+export const TASK_FACET_MAX = 2000;
+
+/**
+ * How many DISTINCT values one dropdown may offer. The scan is cheap, but every
+ * distinct contact and record costs a document read to name it — and a select
+ * with two hundred entries has stopped being a shortlist anyway.
+ */
+export const TASK_FACET_OPTION_MAX = 200;
+
 /** How many tasks one bulk call may touch. A mutation is a transaction. */
 export const BULK_TASK_MAX = 200;
 

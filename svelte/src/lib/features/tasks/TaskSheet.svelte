@@ -356,6 +356,12 @@
 							{/each}
 						</Select.Content>
 					</Select.Root>
+					<!-- The picker offers EVERYONE — you cannot assign work to someone
+					     it left out — so when the contact half stops short it says so
+					     here, on the control that is actually incomplete. -->
+					{#if members?.contactsTruncated}
+						<p class="text-muted-foreground text-xs">{m.taskList_contactsTruncated()}</p>
+					{/if}
 				</div>
 
 				<div class="flex flex-col gap-2">

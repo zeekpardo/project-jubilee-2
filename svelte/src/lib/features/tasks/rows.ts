@@ -20,8 +20,15 @@ export type TaskImpactWarning = FunctionReturnType<
 	typeof api.tasks.queries.listTaskImpactWarnings
 >[number];
 
-/** Org members and contacts, as one choice. */
+/** Org members and contacts, as one choice. EVERYONE — this feeds the picker. */
 export type AssignableMembers = FunctionReturnType<typeof api.tasks.queries.listAssignableMembers>;
+
+/**
+ * Which values the narrowing filters can actually offer. NOT a substitute for
+ * `AssignableMembers`: this is the short list of people who have tasks, and
+ * assigning work still needs the long one.
+ */
+export type TaskFacets = FunctionReturnType<typeof api.tasks.queries.listTaskFacets>;
 
 // ------------------------------------------------------------------
 // The assignee picker's option values

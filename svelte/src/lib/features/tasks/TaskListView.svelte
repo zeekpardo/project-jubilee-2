@@ -183,10 +183,34 @@
 	const truncated = $derived(listResponse.data?.truncated ?? false);
 	const loading = $derived(listResponse.isLoading);
 
+	// EVERYONE, for the sheet's picker and the bulk bar: you cannot assign a task
+	// to someone the list left out. The FILTER's shorter list is `facets` below —
+	// the two must not be collapsed into one query.
 	const membersResponse = useQuery(api.tasks.queries.listAssignableMembers, () =>
 		auth.isAuthenticated && allowed ? { campaignId: activeCampaignId ?? undefined } : 'skip'
 	);
 	const members = $derived(membersResponse.data);
+
+	// Which values the filters can actually offer. A SEPARATE read from the list:
+	// `listTasks` caps at its page size, so deriving the dropdowns from the rows
+	// on screen would hide every value that only exists past the cap.
+	//
+	// Only `status` is passed alongside the scope. The rest of the filters are
+	// deliberately withheld — facets computed over the filtered set would delete
+	// every other option the moment one was picked, and there would be no way to
+	// switch from one person to another. Status is the exception because it
+	// defaults to hiding completed work, so it is the one filter that can leave a
+	// live-looking option with nothing behind it.
+	const facetsResponse = useQuery(api.tasks.queries.listTaskFacets, () =>
+		auth.isAuthenticated && allowed
+			? {
+					scope,
+					campaignId: (scope === 'campaign' ? campaignId : filterCampaignId) ?? undefined,
+					status: filters.status
+				}
+			: 'skip'
+	);
+	const facets = $derived(facetsResponse.data);
 
 	// Stages belong to one campaign, so the filter is only offered once one is in
 	// play. Across campaigns the same label can mean different keys.
@@ -380,6 +404,7 @@
 		{filters}
 		{scope}
 		{members}
+		{facets}
 		onChange={applyFilters}
 		objectLabel={active.objectLabel}
 		objectLabelPlural={active.objectLabelPlural}

@@ -23,6 +23,8 @@ import { getAccess } from '../model/access';
 import { activeTaskTemplate, listProjectTasks } from '../model/tasks';
 import {
 	BULK_TASK_MAX,
+	TASK_FACET_MAX,
+	TASK_FACET_OPTION_MAX,
 	TASK_PAGE_MAX,
 	matchesResolvedAssignee,
 	publicTaskStatLabel,
@@ -164,6 +166,73 @@ async function readOrgPage(
 }
 
 /**
+ * Which indexes a scoped read covers: `null` for the org-wide one, a list for
+ * "these campaigns, merged", `'denied'` for nothing the caller may see.
+ *
+ * Shared by the list and the facets deliberately. A dropdown computed over a
+ * WIDER set than the list reads would offer options that select into an empty
+ * page, and a narrower one would hide values that are really there — so the two
+ * surfaces resolve their scope through the same function rather than each
+ * writing down the same four branches.
+ */
+type TaskReadScope = Id<'campaigns'>[] | null;
+
+function resolveTaskScope(
+	access: Awaited<ReturnType<typeof getAccess>>,
+	campaigns: Doc<'campaigns'>[],
+	campaignsById: Map<string, Doc<'campaigns'>>,
+	scope: 'campaign' | 'org',
+	campaignId: Id<'campaigns'> | undefined
+): TaskReadScope | 'denied' {
+	// A saved view may name a campaign the viewer cannot access. That is checked
+	// rather than trusted: applying a view narrows to what they may see and never
+	// widens.
+	if (campaignId) {
+		if (!campaignsById.has(campaignId)) return 'denied';
+		if (!can(access, 'projects:read', campaignId)) return 'denied';
+		return [campaignId];
+	}
+	// A campaign page with no campaign chosen shows nothing, where an org page
+	// with no campaign filter shows everything the caller may see.
+	if (scope === 'campaign') return 'denied';
+	if (!can(access, 'projects:read')) return 'denied';
+	if (access.role === 'owner' || access.role === 'admin') return null;
+
+	// A team leader sees a slice of the org. Reading the org index and dropping
+	// what they may not see would spend the page budget on rows they never get,
+	// and report truncation that is not theirs — so their own campaigns are read
+	// directly instead.
+	const visible = new Set(
+		visibleCampaignIds(
+			access,
+			campaigns.map((campaign) => campaign._id as string)
+		)
+	);
+	return campaigns
+		.filter((campaign) => visible.has(campaign._id as string))
+		.map((campaign) => campaign._id);
+}
+
+/** One bounded read over a resolved scope. `take` is the whole budget, merged. */
+async function readScope(
+	ctx: QueryCtx,
+	orgId: string,
+	scope: TaskReadScope,
+	status: 'todo' | 'done' | 'all',
+	take: number
+): Promise<Doc<'tasks'>[]> {
+	if (scope === null) return await readOrgPage(ctx, orgId, status, take);
+
+	const rows: Doc<'tasks'>[] = [];
+	for (const campaignId of scope) {
+		const remaining = take - rows.length;
+		if (remaining <= 0) break;
+		rows.push(...(await readCampaignPage(ctx, campaignId, status, remaining)));
+	}
+	return rows;
+}
+
+/**
  * Better Auth holds the member list, not our tables, so a user assignee's name
  * comes from there. Names are DECORATION: if the auth component is unreachable
  * the list still renders, with those rows reading "Unassigned" rather than the
@@ -296,48 +365,15 @@ export const listTasks = query({
 			.take(CAMPAIGN_MAX);
 		const campaignsById = new Map(campaigns.map((campaign) => [campaign._id as string, campaign]));
 
-		// null means "read the org-wide index"; a list means "read these
-		// campaigns' indexes and merge".
-		let campaignIds: Id<'campaigns'>[] | null = null;
-		if (args.campaignId) {
-			if (!campaignsById.has(args.campaignId)) return EMPTY_LIST;
-			if (!can(access, 'projects:read', args.campaignId)) return EMPTY_LIST;
-			campaignIds = [args.campaignId];
-		} else if (args.scope === 'campaign') {
-			return EMPTY_LIST;
-		} else if (!can(access, 'projects:read')) {
-			return EMPTY_LIST;
-		} else if (access.role !== 'owner' && access.role !== 'admin') {
-			// A team leader sees a slice of the org. Reading the org index and
-			// dropping what they may not see would spend the page budget on rows
-			// they never get, and report truncation that is not theirs — so their
-			// own campaigns are read directly instead.
-			const visible = new Set(
-				visibleCampaignIds(
-					access,
-					campaigns.map((campaign) => campaign._id as string)
-				)
-			);
-			campaignIds = campaigns
-				.filter((campaign) => visible.has(campaign._id as string))
-				.map((campaign) => campaign._id);
-		}
+		const scope = resolveTaskScope(access, campaigns, campaignsById, args.scope, args.campaignId);
+		if (scope === 'denied') return EMPTY_LIST;
 
 		const status = args.status ?? 'todo';
 		const budget = Math.max(1, Math.min(args.limit ?? TASK_PAGE_MAX, TASK_PAGE_MAX));
 
 		// One over the budget, so "there are more" is a fact rather than the guess
 		// that a full page implies one.
-		let rows: Doc<'tasks'>[] = [];
-		if (campaignIds === null) {
-			rows = await readOrgPage(ctx, orgId, status, budget + 1);
-		} else {
-			for (const campaignId of campaignIds) {
-				const remaining = budget + 1 - rows.length;
-				if (remaining <= 0) break;
-				rows.push(...(await readCampaignPage(ctx, campaignId, status, remaining)));
-			}
-		}
+		let rows = await readScope(ctx, orgId, scope, status, budget + 1);
 		const truncated = rows.length > budget;
 		rows = rows.slice(0, budget);
 
@@ -401,6 +437,12 @@ export const listTasks = query({
  * permission scope rather than a filter — a team leader asks about a campaign
  * they hold, and gets the org's people, because a contact's identity is
  * campaign-agnostic.
+ *
+ * DELIBERATELY COMPLETE, and it must stay that way. This feeds the PICKER —
+ * assigning work — and you cannot put a task on someone the list left out, so
+ * "only people who already have tasks" is exactly the wrong set here. The
+ * narrowing the FILTER wants is `listTaskFacets` below; the two lists of people
+ * answer different questions and must not converge.
  */
 export const listAssignableMembers = query({
 	args: { campaignId: v.optional(v.id('campaigns')) },
@@ -435,6 +477,201 @@ export const listAssignableMembers = query({
 			.sort((a, b) => a.name.localeCompare(b.name));
 
 		return { users, contacts, contactsTruncated };
+	}
+});
+
+// ------------------------------------------------------------------
+// What the filters can actually offer
+// ------------------------------------------------------------------
+
+/** The values each narrowing filter has rows behind it. Names already resolved. */
+type TaskFacets = {
+	assignees: {
+		users: { userId: string; name: string }[];
+		contacts: { contactId: Id<'contacts'>; name: string }[];
+		/** Whether anything in scope is on nobody, and whether anything is on the viewer. */
+		unassigned: boolean;
+		mine: boolean;
+	};
+	campaigns: { _id: Id<'campaigns'>; name: string }[];
+	projects: { _id: Id<'projects'>; number: string; name: string }[];
+	stages: { key: string; label: string }[];
+	/** The scan hit its bound, so a rarely used value may be missing. Said out loud. */
+	truncated: boolean;
+};
+
+const EMPTY_FACETS: TaskFacets = {
+	assignees: { users: [], contacts: [], unassigned: false, mine: false },
+	campaigns: [],
+	projects: [],
+	stages: [],
+	truncated: false
+};
+
+/**
+ * Which values the assignee, campaign, record and stage filters can offer —
+ * only the ones that actually occur, so the dropdowns are a shortlist of what
+ * is there rather than a catalogue of what could be.
+ *
+ * COMPUTED OVER THE SCOPE, NOT OVER THE FILTERED SET. The applied assignee,
+ * record, stage, priority and dates are all ignored on purpose: a facet derived
+ * from the filtered rows would delete every other option the moment one was
+ * picked, and there would be no way to switch from person A to person B.
+ *
+ * STATUS IS THE EXCEPTION and is passed in. It defaults to `todo`, so a person
+ * whose only tasks are done would otherwise be a live-looking option that
+ * selects into an empty list — a dead end the other filters do not have,
+ * because nothing else has a default that hides rows.
+ *
+ * A SEPARATE READ from `listTasks`, bounded by `TASK_FACET_MAX`. Deriving the
+ * options from the returned page would hide every value that only exists past
+ * `TASK_PAGE_MAX`, which is the failure this query exists to avoid.
+ */
+export const listTaskFacets = query({
+	args: {
+		scope: v.union(v.literal('campaign'), v.literal('org')),
+		campaignId: v.optional(v.id('campaigns')),
+		status: v.optional(taskStatusFilterValidator)
+	},
+	handler: async (ctx, args): Promise<TaskFacets> => {
+		const access = await getAccess(ctx);
+		if (!access.orgId || !access.role) return EMPTY_FACETS;
+		const orgId = access.orgId;
+
+		const campaigns = await ctx.db
+			.query('campaigns')
+			.withIndex('by_orgId', (q) => q.eq('orgId', orgId))
+			.take(CAMPAIGN_MAX);
+		const campaignsById = new Map(campaigns.map((campaign) => [campaign._id as string, campaign]));
+
+		const scope = resolveTaskScope(access, campaigns, campaignsById, args.scope, args.campaignId);
+		if (scope === 'denied') return EMPTY_FACETS;
+
+		const status = args.status ?? 'todo';
+		const budget = TASK_FACET_MAX;
+
+		// One over, so "there are more" is a fact rather than the guess that a full
+		// scan implies one — the same shape as the list's own `truncated`.
+		const read = await readScope(ctx, orgId, scope, status, budget + 1);
+		let truncated = read.length > budget;
+		const rows = read.slice(0, budget);
+
+		// The CAMPAIGN facet is the one that must not be narrowed by the campaign
+		// filter. Narrowed, it would hold only the campaign already chosen and there
+		// would be no way back to any other — so when a campaign is filtered on the
+		// org page the wider scope is read a second time, for this list alone.
+		let campaignRows = rows;
+		if (args.scope === 'org' && args.campaignId) {
+			const wide = resolveTaskScope(access, campaigns, campaignsById, 'org', undefined);
+			if (wide === 'denied') {
+				campaignRows = [];
+			} else {
+				const wideRead = await readScope(ctx, orgId, wide, status, budget + 1);
+				truncated = truncated || wideRead.length > budget;
+				campaignRows = wideRead.slice(0, budget);
+			}
+		}
+
+		// ----- Assignees
+		const userIds = new Set<string>();
+		const contactIds = new Set<Id<'contacts'>>();
+		let unassigned = false;
+		for (const row of rows) {
+			if (!row.assignee) unassigned = true;
+			else if (row.assignee.kind === 'user') userIds.add(row.assignee.userId);
+			else contactIds.add(row.assignee.contactId);
+		}
+
+		// A contact LINKED to a member is the same human as that member, and
+		// `resolveAssigneeFilter` already matches a person through either id — so the
+		// contact folds into the member half rather than appearing as a second row
+		// for the same person. Its display name is kept as the fallback for when
+		// Better Auth has no name for them, or is unreachable.
+		const linkedNames = new Map<string, string>();
+		const contacts: { contactId: Id<'contacts'>; name: string }[] = [];
+		let looked = 0;
+		for (const contactId of contactIds) {
+			if (looked >= TASK_FACET_OPTION_MAX) {
+				truncated = true;
+				break;
+			}
+			looked += 1;
+			const contact = await ctx.db.get('contacts', contactId);
+			if (!contact || contact.orgId !== orgId) continue;
+			if (contact.authUserId) {
+				linkedNames.set(contact.authUserId, contactDisplayName(contact));
+				continue;
+			}
+			contacts.push({ contactId, name: contactDisplayName(contact) });
+		}
+		for (const userId of linkedNames.keys()) userIds.add(userId);
+
+		const memberNames = userIds.size > 0 ? await orgMemberNames(ctx) : new Map<string, string>();
+		const users = [...userIds]
+			.map((userId) => ({ userId, name: memberNames.get(userId) ?? linkedNames.get(userId) ?? '' }))
+			// An id with no name left is someone who has left the org: there is nothing
+			// to print on the option, and a raw id is not a name.
+			.filter((user) => user.name !== '')
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		// "Assigned to me" is a person like any other, so it is offered only when the
+		// viewer has something in scope. Judged by the ONE rule, never re-derived.
+		const viewer = await resolvePersonIdentity(ctx, orgId, { userId: access.userId ?? undefined });
+		const mineFilter: ResolvedAssigneeFilter = { kind: 'person', person: viewer };
+		const mine = rows.some((row) => matchesResolvedAssignee(row.assignee, mineFilter));
+
+		// ----- Campaigns
+		const facetCampaigns = [...new Set(campaignRows.map((row) => row.campaignId as string))]
+			.flatMap((campaignId) => {
+				const campaign = campaignsById.get(campaignId);
+				return campaign ? [{ _id: campaign._id, name: campaign.name }] : [];
+			})
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		// ----- Records and stages
+		// Both belong to exactly one campaign, so neither is meaningful until one is
+		// in play — which is also when the UI offers them at all.
+		const projects: { _id: Id<'projects'>; number: string; name: string }[] = [];
+		const stages: { key: string; label: string }[] = [];
+
+		if (args.campaignId) {
+			const projectIds = new Set(rows.flatMap((row) => (row.projectId ? [row.projectId] : [])));
+			looked = 0;
+			for (const projectId of projectIds) {
+				if (looked >= TASK_FACET_OPTION_MAX) {
+					truncated = true;
+					break;
+				}
+				looked += 1;
+				const project = await ctx.db.get('projects', projectId);
+				if (!project || project.orgId !== orgId) continue;
+				projects.push({ _id: project._id, number: project.number, name: project.name });
+			}
+			// A record number is a prefix and a counter, only padded to three digits —
+			// the same numeric compare the record sort uses, for the same reason.
+			projects.sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
+
+			const stageKeys = new Set(rows.flatMap((row) => (row.stageKey ? [row.stageKey] : [])));
+			const defined = await ctx.db
+				.query('pipelineStages')
+				.withIndex('by_campaignId_and_order', (q) => q.eq('campaignId', args.campaignId!))
+				.collect();
+			// Pipeline order, because that is the order the stage means something in.
+			for (const stage of defined) {
+				if (stageKeys.delete(stage.key)) stages.push({ key: stage.key, label: stage.label });
+			}
+			// A key the campaign no longer defines still has rows behind it, so it stays
+			// filterable and falls back to itself — the same way the table renders it.
+			for (const key of stageKeys) stages.push({ key, label: key });
+		}
+
+		return {
+			assignees: { users, contacts, unassigned, mine },
+			campaigns: facetCampaigns,
+			projects,
+			stages,
+			truncated
+		};
 	}
 });
 

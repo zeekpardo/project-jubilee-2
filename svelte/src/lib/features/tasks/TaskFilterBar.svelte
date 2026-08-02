@@ -18,8 +18,9 @@
 		parseTaskQuery,
 		serializeTaskFilters
 	} from './filters';
+	import { assigneeFilterOptions, withSelected } from './facets';
 	import { TASK_PRIORITIES, type TaskFilters, type TaskPriority } from './types';
-	import type { AssignableMembers } from './rows';
+	import type { AssignableMembers, TaskFacets } from './rows';
 	import * as m from '$lib/i18n/messages';
 
 	let {
@@ -31,7 +32,8 @@
 		projects = [],
 		objectLabel,
 		objectLabelPlural,
-		members
+		members,
+		facets
 	}: {
 		filters: TaskFilters;
 		onChange: (next: TaskFilters) => void;
@@ -50,6 +52,14 @@
 		objectLabel: string;
 		objectLabelPlural: string;
 		members?: AssignableMembers;
+		/**
+		 * Which values actually have tasks behind them. The four lists above stay
+		 * COMPLETE — they are what a value already chosen is named from, and the
+		 * same lists feed controls that create and edit — while this is what the
+		 * dropdowns are narrowed to. Undefined until the scan answers, and then
+		 * nothing is narrowed; see `facets.ts`.
+		 */
+		facets?: TaskFacets;
 	} = $props();
 
 	const ANY = '';
@@ -79,23 +89,17 @@
 		urgent: m.taskPriority_urgent
 	};
 
+	// Only people with tasks — but the rules for that are in the pure module, not
+	// here, because "what happens to the person you already picked" is the part
+	// that is easy to get silently wrong.
 	const assigneeCollection = $derived(
 		createListCollection({
-			items: [
-				{ value: ANY, label: m.taskList_assigneeAnyone() },
-				{ value: 'me', label: m.taskList_assigneeMe() },
-				{ value: 'unassigned', label: m.taskList_assigneeUnassigned() },
-				...(members?.users ?? []).map((user) => ({
-					value: `user:${user.userId}`,
-					label: user.name
-				})),
-				// Contacts second, and only those NOT already listed as a member:
-				// a linked contact is the same person, and offering them twice makes
-				// the picker a coin flip about which id gets stored.
-				...(members?.contacts ?? [])
-					.filter((contact) => !contact.authUserId)
-					.map((contact) => ({ value: `contact:${contact.contactId}`, label: contact.name }))
-			]
+			items: assigneeFilterOptions(facets?.assignees, members, assigneeValue, {
+				anyone: m.taskList_assigneeAnyone(),
+				me: m.taskList_assigneeMe(),
+				unassigned: m.taskList_assigneeUnassigned(),
+				unknown: m.taskList_assigneeUnknown()
+			})
 		})
 	);
 
@@ -116,20 +120,30 @@
 		]
 	});
 
+	// A stage the campaign no longer defines can still have tasks on it, so the
+	// facet carries its own label and is trusted over the campaign's list.
+	const stageOptions = $derived(
+		withSelected(facets?.stages, stages, (stage) => stage.key, filters.stageKey)
+	);
+
 	const stageCollection = $derived(
 		createListCollection({
 			items: [
 				{ value: ANY, label: m.taskList_stageAny() },
-				...stages.map((stage) => ({ value: stage.key, label: stage.label }))
+				...stageOptions.map((stage) => ({ value: stage.key, label: stage.label }))
 			]
 		})
+	);
+
+	const campaignOptions = $derived(
+		withSelected(facets?.campaigns, campaigns, (campaign) => campaign._id, filters.campaignId)
 	);
 
 	const campaignCollection = $derived(
 		createListCollection({
 			items: [
 				{ value: ANY, label: m.taskList_campaignAny() },
-				...campaigns.map((campaign) => ({ value: campaign._id, label: campaign.name }))
+				...campaignOptions.map((campaign) => ({ value: campaign._id, label: campaign.name }))
 			]
 		})
 	);
@@ -137,11 +151,15 @@
 	// Labelled `number — name`, the same way the sheet's record picker is: the
 	// number is what the table column shows and what the sort orders on, so the
 	// two surfaces name a record identically.
+	const projectOptions = $derived(
+		withSelected(facets?.projects, projects, (project) => project._id, filters.projectId)
+	);
+
 	const projectCollection = $derived(
 		createListCollection({
 			items: [
 				{ value: ANY, label: m.taskList_projectAny({ label: objectLabelPlural }) },
-				...projects.map((project) => ({
+				...projectOptions.map((project) => ({
 					value: project._id,
 					label: `${project.number} — ${project.name}`
 				}))
@@ -150,6 +168,13 @@
 	);
 
 	const isFiltered = $derived(hasActiveTaskFilters(filters));
+
+	// A control with nothing but "Anyone" in it is a dead control: it cannot
+	// narrow anything and cannot be cleared, because nothing is set. All four
+	// hide rather than sit there disabled — which is what the record and stage
+	// pickers already did when their campaign had none, and the reading that
+	// scales to a bar of six controls where a disabled one is just noise.
+	const hasAssignees = $derived(assigneeCollection.items.length > 1);
 
 	/** Sort survives a clear: it is a view preference, not a constraint. */
 	function clear(): void {
@@ -162,22 +187,24 @@
 	aria-orientation="horizontal"
 	class="flex w-full flex-wrap items-center gap-2 p-1"
 >
-	<Select.Root
-		collection={assigneeCollection}
-		ids={{ trigger: 'task-filter-assignee' }}
-		value={[assigneeValue]}
-		onValueChange={(details: { value: string[] }): void => setAssignee(details.value[0] ?? ANY)}
-	>
-		<Select.Label class="sr-only">{m.taskList_filterAssignee()}</Select.Label>
-		<Select.Trigger size="sm" class="w-44" placeholder={m.taskList_assigneeAnyone()} />
-		<Select.Content>
-			{#each assigneeCollection.items as option (option.value)}
-				<Select.Item item={option}>
-					<Select.ItemText>{option.label}</Select.ItemText>
-				</Select.Item>
-			{/each}
-		</Select.Content>
-	</Select.Root>
+	{#if hasAssignees}
+		<Select.Root
+			collection={assigneeCollection}
+			ids={{ trigger: 'task-filter-assignee' }}
+			value={[assigneeValue]}
+			onValueChange={(details: { value: string[] }): void => setAssignee(details.value[0] ?? ANY)}
+		>
+			<Select.Label class="sr-only">{m.taskList_filterAssignee()}</Select.Label>
+			<Select.Trigger size="sm" class="w-44" placeholder={m.taskList_assigneeAnyone()} />
+			<Select.Content>
+				{#each assigneeCollection.items as option (option.value)}
+					<Select.Item item={option}>
+						<Select.ItemText>{option.label}</Select.ItemText>
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	{/if}
 
 	<Select.Root
 		multiple
@@ -216,7 +243,7 @@
 		</Select.Content>
 	</Select.Root>
 
-	{#if scope === 'org'}
+	{#if scope === 'org' && campaignOptions.length > 0}
 		<Select.Root
 			collection={campaignCollection}
 			ids={{ trigger: 'task-filter-campaign' }}
@@ -243,9 +270,11 @@
 		</Select.Root>
 	{/if}
 
-	<!-- Records are per campaign too, and a campaign with none has nothing to
-	     offer — so the picker is absent rather than empty. -->
-	{#if projects.length > 0}
+	<!-- Records are per campaign too, and one that no task names has nothing to
+	     offer — so the picker is absent rather than empty. Campaign scope only,
+	     still: `objectLabel` is ONE campaign's word for a record, and the org-wide
+	     page spans campaigns that each name it differently. -->
+	{#if scope === 'campaign' && projectOptions.length > 0}
 		<Select.Root
 			collection={projectCollection}
 			ids={{ trigger: 'task-filter-project' }}
@@ -272,7 +301,7 @@
 	{/if}
 
 	<!-- Stages are per campaign, so this only makes sense once one is in play. -->
-	{#if stages.length > 0}
+	{#if stageOptions.length > 0}
 		<Select.Root
 			collection={stageCollection}
 			ids={{ trigger: 'task-filter-stage' }}
@@ -328,6 +357,8 @@
 	{/if}
 </div>
 
-{#if members?.contactsTruncated}
-	<p class="text-muted-foreground px-1 text-xs">{m.taskList_contactsTruncated()}</p>
+<!-- Said out loud, exactly as the list says when its own page was cut: a
+     shortlist that quietly stops short reads as a complete one. -->
+{#if facets?.truncated}
+	<p class="text-muted-foreground px-1 text-xs">{m.taskList_facetsTruncated()}</p>
 {/if}

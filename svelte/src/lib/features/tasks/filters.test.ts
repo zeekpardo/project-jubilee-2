@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
 	compareTasks,
 	DEFAULT_TASK_FILTERS,
+	DEFAULT_TASK_PAGING,
 	hasActiveTaskFilters,
 	isAssignedToViewer,
 	isOverdue,
 	matchesFilters,
+	parseTaskPaging,
 	parseTaskQuery,
+	resetTaskPaging,
 	serializeTaskFilters
 } from './filters';
 import { TASK_PRIORITIES, type TaskFilters, type TaskLike } from './types';
@@ -142,6 +145,96 @@ describe('parseTaskQuery tolerance', () => {
 		expect(parseTaskQuery('sort=&dir=&status=&priority=&assignee=&stage=&dueOn=today')).toEqual(
 			filters()
 		);
+	});
+});
+
+describe('parseTaskPaging / serializeTaskFilters paging', () => {
+	it('page one at the default size is an empty query', () => {
+		expect(parseTaskPaging('')).toEqual(DEFAULT_TASK_PAGING);
+		expect(serializeTaskFilters(filters(), DEFAULT_TASK_PAGING)).toBe('');
+	});
+
+	it('round-trips a page and a size', () => {
+		for (const paging of [
+			{ page: 3, size: 25 },
+			{ page: 1, size: 100 },
+			{ page: 12, size: 50 }
+		] as const) {
+			expect(parseTaskPaging(serializeTaskFilters(filters(), paging))).toEqual(paging);
+		}
+	});
+
+	it('round-trips paging alongside the filters, in the documented order', () => {
+		const original = filters({ priority: ['high'], sort: 'label', dir: 'desc' });
+		const paging = { page: 4, size: 100 } as const;
+		const query = serializeTaskFilters(original, paging);
+
+		expect(query).toBe('priority=high&sort=label&dir=desc&page=4&size=100');
+		expect(parseTaskQuery(query)).toEqual(original);
+		expect(parseTaskPaging(query)).toEqual(paging);
+	});
+
+	it('never writes paging when the caller does not ask for it', () => {
+		// This is what a SAVED VIEW stores. A view that remembered "page 3" would
+		// drop whoever applied it into the middle of a list they have not seen the
+		// top of, and applying one must always land on page one.
+		expect(serializeTaskFilters(filters({ priority: ['high'] }))).toBe('priority=high');
+	});
+
+	it('leaves the filters alone: a page param is not a filter', () => {
+		expect(parseTaskQuery('page=7&size=50')).toEqual(filters());
+		expect(hasActiveTaskFilters(parseTaskQuery('page=7&size=50'))).toBe(false);
+	});
+
+	it('falls back to page one rather than throwing on junk', () => {
+		for (const query of [
+			'page=0',
+			'page=-3',
+			'page=banana',
+			'page=2.5',
+			'page=',
+			'page= ',
+			'page=1e3',
+			'page=99999999999999999999'
+		]) {
+			expect(parseTaskPaging(query).page).toBe(1);
+		}
+	});
+
+	it('falls back to the default size for one the list does not offer', () => {
+		expect(parseTaskPaging('size=13').size).toBe(DEFAULT_TASK_PAGING.size);
+		expect(parseTaskPaging('size=0').size).toBe(DEFAULT_TASK_PAGING.size);
+		expect(parseTaskPaging('size=nonsense').size).toBe(DEFAULT_TASK_PAGING.size);
+		// The offered ones do survive, or the fallback would be hiding a bug.
+		expect(parseTaskPaging('size=100').size).toBe(100);
+	});
+});
+
+describe('resetTaskPaging', () => {
+	it('sends a filter or sort change back to page one', () => {
+		// THE pagination bug: narrowing to three results while sitting on page five
+		// shows an empty table under a filter bar that says rows exist.
+		expect(resetTaskPaging({ page: 5, size: 25 })).toEqual({ page: 1, size: 25 });
+	});
+
+	it('keeps the page size, which is a preference and not a constraint', () => {
+		expect(resetTaskPaging({ page: 5, size: 100 })).toEqual({ page: 1, size: 100 });
+	});
+
+	it('drops the page param from the query a filter change navigates to', () => {
+		// The rule as the URL sees it: this is exactly what `applyFilters` writes.
+		const next = filters({ priority: ['urgent'] });
+		expect(serializeTaskFilters(next, resetTaskPaging({ page: 5, size: 50 }))).toBe(
+			'priority=urgent&size=50'
+		);
+		expect(
+			parseTaskPaging(serializeTaskFilters(next, resetTaskPaging({ page: 5, size: 50 })))
+		).toEqual({ page: 1, size: 50 });
+	});
+
+	it('leaves page one untouched, so an unchanged value stays unchanged', () => {
+		const paging = { page: 1, size: 50 } as const;
+		expect(resetTaskPaging(paging)).toBe(paging);
 	});
 });
 

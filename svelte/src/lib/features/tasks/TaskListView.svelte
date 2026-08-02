@@ -21,6 +21,7 @@
 	// Primitives
 	import { Button } from '$lib/primitives/ui/button';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
+	import { Pagination, clampPage, countPages } from '$lib/primitives/ui/pagination';
 	import ListChecksIcon from '@lucide/svelte/icons/list-checks';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { toast } from 'svelte-sonner';
@@ -43,10 +44,13 @@
 	import {
 		DEFAULT_TASK_FILTERS,
 		hasActiveTaskFilters,
+		parseTaskPaging,
 		parseTaskQuery,
+		resetTaskPaging,
 		serializeTaskFilters
 	} from './filters';
-	import type { TaskFilters, TaskPriority, TaskSortKey } from './types';
+	import { TASK_PAGE_SIZES } from './types';
+	import type { TaskFilters, TaskPageSize, TaskPriority, TaskSortKey } from './types';
 	import type { TaskAssigneeWrite, TaskRow } from './rows';
 	import TaskBulkBar from './TaskBulkBar.svelte';
 	import TaskFilterBar from './TaskFilterBar.svelte';
@@ -99,6 +103,11 @@
 	const filters = $derived(parseTaskQuery(page.url.searchParams));
 	const isFiltered = $derived(hasActiveTaskFilters(filters));
 
+	// Which page, and how long a page is. Read from the SAME url as the filters
+	// but parsed apart from them — a saved view stores filters only, so applying
+	// one lands on page 1 without anybody having to remember to reset it.
+	const paging = $derived(parseTaskPaging(page.url.searchParams));
+
 	/**
 	 * Put a query string in the address bar. The one place this component
 	 * navigates — a saved view is applied through here too, by handing over its
@@ -121,8 +130,30 @@
 		});
 	}
 
+	/**
+	 * The ONE way the filters or the sort change — and therefore the one place
+	 * the page has to be reset. `resetTaskPaging` is what does it, and it is
+	 * pure and tested, so the rule is not a habit maintained across call sites.
+	 */
 	function applyFilters(next: TaskFilters): void {
-		applyQuery(serializeTaskFilters(next));
+		applyQuery(serializeTaskFilters(next, resetTaskPaging(paging)));
+	}
+
+	/**
+	 * Moving within the same list: the filters stand, only the position moves.
+	 *
+	 * Through `applyQuery`, so paging REPLACES the history entry like every other
+	 * control on this screen. Pushing one only for the pager would make Back mean
+	 * "previous page" sometimes and "before I filtered" the rest of the time,
+	 * which is worse than it consistently meaning the latter.
+	 */
+	function applyPaging(next: { page?: number; size?: TaskPageSize }): void {
+		applyQuery(
+			serializeTaskFilters(filters, {
+				page: next.page ?? paging.page,
+				size: next.size ?? paging.size
+			})
+		);
 	}
 
 	/** Clicking the active column flips direction; a new column starts ascending. */
@@ -182,6 +213,67 @@
 	const tasks = $derived(listResponse.data?.tasks ?? []);
 	const truncated = $derived(listResponse.data?.truncated ?? false);
 	const loading = $derived(listResponse.isLoading);
+
+	// ------------------------------------------------------------------
+	// Paging, on the CLIENT, over the window the server already sorted
+	// ------------------------------------------------------------------
+	// The rows are sliced here rather than fetched a page at a time, and that is
+	// a correctness decision before it is a performance one.
+	//
+	// `.paginate()` hands back rows in INDEX order. Four of the six sorts this
+	// table offers — priority, label, assignee, status — have no index behind
+	// them, and the record sort orders on the project's display NUMBER, which is
+	// not a column on `tasks` at all and could never have one. `listTasks`
+	// therefore sorts in the handler, across the whole window. Paginating on the
+	// server while keeping that sort would sort each page WITHIN ITSELF: "by
+	// priority" would show a fresh, locally-ordered jumble on every page, which
+	// looks like a feature and is a bug.
+	//
+	// The reported problem was render weight — 400 rows, each carrying the full
+	// member list in an inline select — and slicing fixes that without touching
+	// the ordering: the server still sorts everything it read, so page 2 really
+	// is the rows that come after page 1.
+	//
+	// The read stays capped at the server's `TASK_PAGE_MAX`. Lowering it would
+	// shrink the window the sort is globally correct over, which is the one
+	// property that makes this arrangement honest, and the cap no longer costs
+	// anything on screen.
+
+	const pageCount = $derived(countPages(tasks.length, paging.size));
+	/** What the reader is actually shown, which is not always what they asked for. */
+	const currentPage = $derived(clampPage(paging.page, pageCount));
+	const visibleTasks = $derived(
+		tasks.slice((currentPage - 1) * paging.size, currentPage * paging.size)
+	);
+
+	/**
+	 * A new page length always starts at page one: at 100 rows a page there may
+	 * be no page 5 at all, and even where there is, row 200 is not on the page it
+	 * was at 25 — so "keep the reader roughly where they were" is not a promise
+	 * this can keep, and pretending otherwise is worse than the reset.
+	 *
+	 * The size is re-narrowed against the offered list rather than cast: the
+	 * control is generic and hands back a plain number.
+	 */
+	function changeSize(next: number): void {
+		const size = TASK_PAGE_SIZES.find((option) => option === next);
+		if (!size) return;
+		applyPaging({ page: 1, size });
+	}
+
+	// A page number can outlive the list behind it: a pasted link, or a row
+	// completed by somebody else while this tab watched. It is clamped for
+	// display above, and the URL is then corrected to say the page it is really
+	// showing — an address bar reading `page=9` over page 3 is a link that
+	// misleads the next person it is sent to.
+	//
+	// Only once the rows have arrived. Before that `tasks` is empty, every page
+	// looks out of range, and correcting it would throw away the page a pasted
+	// link asked for before the data that justifies it has loaded.
+	$effect(() => {
+		if (loading || currentPage === paging.page) return;
+		applyPaging({ page: currentPage });
+	});
 
 	// EVERYONE, for the sheet's picker and the bulk bar: you cannot assign a task
 	// to someone the list left out. The FILTER's shorter list is `facets` below —
@@ -245,10 +337,25 @@
 
 	const selected = new SvelteSet<string>();
 
-	// A row that filtering removed is no longer selectable, and keeping its id
-	// would let a bulk action reach a task the user can no longer see.
+	// SELECTION IS PER PAGE. Turning the page clears it, and that is the answer
+	// to "does selecting rows on page 1 survive to page 2": no, deliberately.
+	//
+	// The bulk bar has no Save — every control on it fires on change — and each
+	// action offers a single undo. Both of those only work if the rows a click
+	// is about are the rows on screen. A count of 40 above a table of 25, where
+	// 15 of them were ticked two pages ago and are not coming back into view, is
+	// a number the reader cannot check before acting on it.
+	//
+	// The cost is that a batch bigger than a page needs the page made bigger —
+	// the size picker goes to 100, which is why it stops there and why it stays
+	// under the server's bulk cap. That keeps "selected" and "shown" the same set
+	// at every size the UI can reach.
+	//
+	// The same effect covers the older case it was written for: a row that
+	// filtering removed is no longer selectable, and keeping its id would let a
+	// bulk action reach a task the user can no longer see.
 	$effect(() => {
-		const visible = new Set(tasks.map((task) => task._id as string));
+		const visible = new Set(visibleTasks.map((task) => task._id as string));
 		for (const id of selected) {
 			if (!visible.has(id)) selected.delete(id);
 		}
@@ -266,7 +373,9 @@
 	function toggleAll(checked: boolean): void {
 		selected.clear();
 		if (!checked) return;
-		for (const task of tasks) {
+		// This page's rows, which is what the header checkbox has always claimed:
+		// "select every task shown".
+		for (const task of visibleTasks) {
 			if (canWriteCampaign(task.campaignId)) selected.add(task._id);
 		}
 	}
@@ -480,7 +589,7 @@
 		{/if}
 	{:else}
 		<TaskTable
-			{tasks}
+			tasks={visibleTasks}
 			{scope}
 			{today}
 			{loading}
@@ -497,13 +606,30 @@
 			onDelete={openDelete}
 			canWrite={canWriteCampaign}
 		/>
+
+		<!-- Hidden while the first rows are still coming: a pager that says "0 of 0"
+		     and then jumps to "1–25 of 400" is a layout shift for no information. -->
+		{#if !loading}
+			<Pagination
+				page={currentPage}
+				total={tasks.length}
+				pageSize={paging.size}
+				pageSizes={TASK_PAGE_SIZES}
+				onPageChange={(next) => applyPaging({ page: next })}
+				onPageSizeChange={changeSize}
+			/>
+		{/if}
 	{/if}
 
 	{#if truncated}
-		<!-- Said out loud: a silently truncated list reads as missing data. -->
-		<p class="text-muted-foreground px-1 text-xs">
-			{m.taskList_truncated({ count: tasks.length })}
-		</p>
+		<!-- Said out loud: a silently truncated list reads as missing data.
+		     Reworded for paging, and the wording is the point — the cap is on what
+		     was LOADED, so the missing rows are not waiting on a later page and no
+		     amount of clicking Next will reach them. It also takes no count: the
+		     flag comes from the raw indexed read and the rows are counted after the
+		     handler's filters, so any number printed here could disagree with the
+		     list it sits under. -->
+		<p class="text-muted-foreground px-1 text-xs">{m.taskList_truncated()}</p>
 	{/if}
 </div>
 

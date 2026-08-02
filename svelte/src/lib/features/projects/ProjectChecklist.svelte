@@ -27,7 +27,9 @@
 
 	const canWrite = $derived(access.can('projects:write', project.campaignId));
 
-	const response = useQuery(api.tasks.queries.listTasks, () => ({ projectId: project._id }));
+	const response = useQuery(api.tasks.queries.listProjectChecklist, () => ({
+		projectId: project._id
+	}));
 
 	// Which tags are actually published, read live from the campaign's stat
 	// config rather than off the task. Ticking an item that feeds a public
@@ -154,8 +156,8 @@
 								</Badge>
 							{/if}
 						</Checkbox>
-						{#if task.note}
-							<p class="text-muted-foreground ps-7 text-xs">{task.note}</p>
+						{#if task.description}
+							<p class="text-muted-foreground ps-7 text-xs">{task.description}</p>
 						{/if}
 					</li>
 				{/each}

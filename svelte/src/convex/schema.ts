@@ -237,8 +237,27 @@ const taskTemplates = defineTable({
 	.index('by_campaignId_and_version', ['campaignId', 'version'])
 	.index('by_campaignId_and_isActive', ['campaignId', 'isActive']);
 
-// A checklist item instantiated against one project. This is what makes a
-// task-sourced stat truthful: the number moves because work got ticked off.
+// Who a task is on. Polymorphic because the same job can belong to a staff
+// member or to a contact — and once contacts.authUserId is set the two are the
+// same person, which is why "assigned to me" has to be resolved in one place
+// rather than compared per call site. See lib/features/tasks.
+const taskAssignee = v.union(
+	v.object({ kind: v.literal('user'), userId: v.string() }),
+	v.object({ kind: v.literal('contact'), contactId: v.id('contacts') })
+);
+
+// A unit of work. Two kinds live here, told apart by `source`:
+//
+//   'template' — a checklist item instantiated against one project. This is
+//     what makes a task-sourced stat truthful: the number moves because work
+//     got ticked off. Carries `templateVersion` and `key`.
+//   'manual'   — anything someone typed. May or may not name a project; with
+//     no `projectId` it is campaign-level work, which is the reason that
+//     column is optional and the reason deleteCampaignCascade has to delete
+//     tasks by campaignId (nothing else would reach a project-less one).
+//
+// One table rather than two because the list, the filters, the assignee and
+// the due date are identical for both, and only three columns differ.
 //
 // label and impactTag are SNAPSHOTTED off the template item, for the same
 // reason `budgets` snapshot a costTemplates version — rewording a checklist
@@ -251,28 +270,78 @@ const taskTemplates = defineTable({
 // the switch was flipped — which is what an admin flipping it expects.
 const tasks = defineTable({
 	orgId: v.string(),
-	projectId: v.id('projects'),
+	// Optional: absent means campaign-level work that belongs to no record.
+	// Impact stats count DISTINCT projectId, so a tagged task without one would
+	// count zero forever — writes refuse `impactTag` when this is unset.
+	projectId: v.optional(v.id('projects')),
 	// Carried directly, never reached by traversal, so a stat query can never
-	// pick up a task belonging to another campaign.
+	// pick up a task belonging to another campaign. Required for both sources:
+	// every task belongs to exactly one campaign even when it names no project.
 	campaignId: v.id('campaigns'),
+	source: v.union(v.literal('template'), v.literal('manual')),
 	// The taskTemplates version this was created against — templates are
-	// append-only, so a task must remember whose wording it agreed to.
-	templateVersion: v.string(),
-	key: v.string(),
+	// append-only, so a task must remember whose wording it agreed to. Set iff
+	// source is 'template'; a typed-in task agreed to nothing.
+	templateVersion: v.optional(v.string()),
+	// The template item's key, and the dedup key for instantiation. Manual
+	// tasks have no natural key, so duplicates among them are allowed and are
+	// the user's business.
+	key: v.optional(v.string()),
 	label: v.string(),
+	// Free text. Replaces the old `note`, which said the same thing in a field
+	// named for an afterthought — see backfillTaskDefaults in migrations.ts.
+	description: v.optional(v.string()),
 	order: v.number(),
 	impactTag: v.optional(v.string()),
+	// A pipelineStages.key, exactly like projects.stage: stages are
+	// admin-managed data with immutable keys, so a rename cannot orphan this.
+	// Label and filter only — it does not move the project's own stage.
+	stageKey: v.optional(v.string()),
+	// Cleared, not cascaded, when the person is deleted or leaves: the work
+	// still happened. An id that no longer resolves renders "Unassigned".
+	assignee: v.optional(taskAssignee),
+	// ISO YYYY-MM-DD, like every other date here. A due date is a calendar day,
+	// not an instant: epoch ms would make the same task overdue in Karachi and
+	// not in Chicago.
+	dueOn: v.optional(v.string()),
+	priority: v.union(v.literal('low'), v.literal('normal'), v.literal('high'), v.literal('urgent')),
 	status: v.union(v.literal('todo'), v.literal('done')),
 	completedAt: v.optional(v.number()),
 	// Better Auth user id.
-	completedBy: v.optional(v.string()),
-	note: v.optional(v.string())
+	completedBy: v.optional(v.string())
 })
-	// unique(projectId, key)
+	// unique(projectId, key) for template tasks only
 	.index('by_projectId', ['projectId'])
 	.index('by_projectId_and_key', ['projectId', 'key'])
 	.index('by_campaignId_and_status', ['campaignId', 'status'])
-	.index('by_campaignId_and_impactTag', ['campaignId', 'impactTag']);
+	.index('by_campaignId_and_impactTag', ['campaignId', 'impactTag'])
+	// The admin-wide list, and its campaign-scoped twin above. The orgId prefix
+	// alone is also the only bounded way to reach tasks by assignee — that field
+	// is optional and polymorphic, so it cannot carry a useful index of its own.
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	// dueOn is the default sort on both pages, so the common case reads in index
+	// order instead of sorting a page of rows in the handler.
+	.index('by_campaignId_and_dueOn', ['campaignId', 'dueOn'])
+	.index('by_orgId_and_dueOn', ['orgId', 'dueOn']);
+
+// A saved filter set for the task lists.
+const taskViews = defineTable({
+	orgId: v.string(),
+	// Better Auth user id. Views are personal unless deliberately published.
+	ownerUserId: v.string(),
+	name: v.string(),
+	// Org-wide. Only settings:manage may set this true.
+	isShared: v.boolean(),
+	// The URL query string, stored VERBATIM. Filters already live in the URL, so
+	// a saved view is literally "the URL I had" — no parallel filter schema to
+	// keep in step, and a view is a shareable link. It may name a campaign the
+	// viewer cannot access; applying it filters to what they may see, and never
+	// widens access.
+	query: v.string(),
+	order: v.number()
+})
+	.index('by_orgId_and_ownerUserId', ['orgId', 'ownerUserId'])
+	.index('by_orgId_and_isShared', ['orgId', 'isShared']);
 
 // The sponsored case record. Called "projects" generically; a campaign renames
 // it for display via objectLabel (Jubilee: "Family").
@@ -736,6 +805,7 @@ export default defineSchema({
 	costTemplates,
 	taskTemplates,
 	tasks,
+	taskViews,
 	projects,
 	budgets,
 	documents,

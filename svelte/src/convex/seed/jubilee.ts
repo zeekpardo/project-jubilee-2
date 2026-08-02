@@ -955,6 +955,8 @@ export const seedMilestoneTasks = internalMutation({
 					orgId: args.orgId,
 					projectId: project._id,
 					campaignId: campaign._id,
+					source: 'template' as const,
+					priority: 'normal' as const,
 					templateVersion: template.version,
 					key: item.key,
 					label: item.label,

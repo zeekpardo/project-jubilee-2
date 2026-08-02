@@ -54,6 +54,7 @@ import type * as model_policy from "../model/policy.js";
 import type * as model_projects from "../model/projects.js";
 import type * as model_public from "../model/public.js";
 import type * as model_stats from "../model/stats.js";
+import type * as model_taskViews from "../model/taskViews.js";
 import type * as model_tasks from "../model/tasks.js";
 import type * as orgSettings_mutations from "../orgSettings/mutations.js";
 import type * as orgSettings_queries from "../orgSettings/queries.js";
@@ -139,6 +140,7 @@ declare const fullApi: ApiFromModules<{
   "model/projects": typeof model_projects;
   "model/public": typeof model_public;
   "model/stats": typeof model_stats;
+  "model/taskViews": typeof model_taskViews;
   "model/tasks": typeof model_tasks;
   "orgSettings/mutations": typeof orgSettings_mutations;
   "orgSettings/queries": typeof orgSettings_queries;

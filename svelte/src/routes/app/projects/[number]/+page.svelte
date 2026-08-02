@@ -24,6 +24,7 @@
 	import { useConvexClient } from '@mmailaender/convex-svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { toStages } from '$lib/features/projects/stages';
 	import { useProjectMoney } from '$lib/features/projects/money.svelte';
 	import * as m from '$lib/i18n/messages';
@@ -63,6 +64,40 @@
 	);
 	const orgSlug = $derived(settingsResponse.data?.slug ?? null);
 
+	// The open tab lives in the URL so a record can be LINKED to a particular
+	// one — the task list points at ?tab=checklist. Without this the page always
+	// opened on Overview and the link landed a click short of what it promised.
+	const TAB_VALUES = [
+		'overview',
+		'details',
+		'checklist',
+		'people',
+		'budget',
+		'documents',
+		'giving',
+		'public',
+		'internal'
+	];
+
+	const activeTab = $derived.by(() => {
+		const requested = page.url.searchParams.get('tab');
+		// An unknown tab falls back rather than rendering an empty panel: this
+		// value arrives from a hand-editable URL and a stale bookmark.
+		return requested && TAB_VALUES.includes(requested) ? requested : 'overview';
+	});
+
+	function selectTab(value: string): void {
+		if (value === activeTab) return;
+		const query = value === 'overview' ? '' : `?tab=${value}`;
+		void goto(resolve(`${page.url.pathname}${query}` as Pathname), {
+			// Switching a tab is not a navigation someone wants to walk back
+			// through, and the page must not jump to the top under the tab strip.
+			replaceState: true,
+			keepFocus: true,
+			noScroll: true
+		});
+	}
+
 	const client = useConvexClient();
 	let editOpen = $state(false);
 	let deleteOpen = $state(false);
@@ -100,7 +135,11 @@
 				targetCents={money.targetCents}
 			/>
 
-			<Tabs.Root value="overview" class="gap-6">
+			<Tabs.Root
+				value={activeTab}
+				onValueChange={(details: { value: string }) => selectTab(details.value)}
+				class="gap-6"
+			>
 				<Tabs.List>
 					<Tabs.Trigger value="overview">{m.nav_section_overview()}</Tabs.Trigger>
 					<Tabs.Trigger value="details">{m.projectDetail_details()}</Tabs.Trigger>

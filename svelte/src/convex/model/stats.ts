@@ -439,6 +439,11 @@ async function taskDoneProjectIds(
 	const projectIds = new Set<string>();
 	for (const task of rows) {
 		if (task.status !== 'done') continue;
+		// A campaign-level task has no record to count. The write path refuses to
+		// tag one, so this is belt-and-braces — but the set lookup below would
+		// silently exclude it anyway, and a guard that works by accident is one
+		// nobody knows they are relying on.
+		if (!task.projectId) continue;
 		if (!scope.projectIds.has(task.projectId as string)) continue;
 		if (!withinWindow(task.completedAt, window)) continue;
 		projectIds.add(task.projectId as string);

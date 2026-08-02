@@ -8,6 +8,8 @@ const SECTION_LABELS: Record<string, () => string> = {
 const ITEM_LABELS: Record<string, () => string> = {
 	dashboard: m.nav_dashboard,
 	projects: m.nav_projects,
+	tasks: m.nav_tasks,
+	adminTasks: m.nav_adminTasks,
 	campaignContacts: m.campaignContacts_title,
 	budget: m.nav_budget,
 	contacts: m.nav_contacts,

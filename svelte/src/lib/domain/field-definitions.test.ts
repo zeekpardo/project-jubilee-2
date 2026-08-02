@@ -38,6 +38,17 @@ describe('coerceFieldValue', () => {
 		expect(() => coerceFieldValue(def({ type: 'number' }), 'abc')).toThrow();
 	});
 
+	// `<input type="number">` binds back a real number, not a string, so a
+	// caller passing the raw binding must not blow up on `.trim()`.
+	it('accepts non-string input from a form binding', () => {
+		expect(coerceFieldValue(def({ type: 'number' }), 129)).toBe(129);
+		expect(coerceFieldValue(def({ type: 'money' }), 10.5)).toBe(1050);
+		expect(coerceFieldValue(def({ type: 'text' }), 42)).toBe('42');
+		expect(coerceFieldValue(def({ type: 'boolean' }), true)).toBe(true);
+		expect(coerceFieldValue(def({ type: 'number' }), null)).toBeNull();
+		expect(coerceFieldValue(def({ type: 'number' }), undefined)).toBeNull();
+	});
+
 	it('money stores integer cents', () => {
 		expect(coerceFieldValue(def({ type: 'money' }), '10.50')).toBe(1050);
 	});

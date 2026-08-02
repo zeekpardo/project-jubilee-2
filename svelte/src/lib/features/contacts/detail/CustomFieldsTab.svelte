@@ -124,10 +124,20 @@
 		});
 	}
 
+	/**
+	 * A draft entry as text. `<input type="number">` binds back a real number,
+	 * so reading the draft directly and calling string methods on it throws for
+	 * exactly the fields most likely to be edited.
+	 */
+	function fieldText(key: string): string {
+		const value = draft[key];
+		return value === null || value === undefined ? '' : String(value);
+	}
+
 	function buildAttributes(): Record<string, string | number | boolean | null> {
 		const attributes: Record<string, string | number | boolean | null> = {};
 		for (const def of fields) {
-			const raw = draft[def.key] ?? '';
+			const raw = fieldText(def.key);
 			if (def.type === 'money') {
 				const trimmed = raw.trim();
 				if (trimmed === '') {
@@ -285,7 +295,8 @@
 										bind:value={draft[def.key]}
 										disabled={!canWrite}
 										required={def.isRequired}
-										aria-invalid={draft[def.key]?.trim() && dollarsToCents(draft[def.key]) === null
+										aria-invalid={fieldText(def.key).trim() &&
+										dollarsToCents(fieldText(def.key)) === null
 											? true
 											: undefined}
 									/>

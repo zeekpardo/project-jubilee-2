@@ -62,8 +62,13 @@ export function attributeValue(attributes: Attributes, def: FieldDefinition): un
  * `attributes` for a definition. Empty string → null. Throws on invalid
  * number/money/date/boolean/select so callers can surface a field error.
  */
-export function coerceFieldValue(def: FieldDefinition, raw: string): unknown {
-	const trimmed = raw.trim();
+export function coerceFieldValue(def: FieldDefinition, raw: unknown): unknown {
+	// `unknown`, not `string`, because the callers are form bindings: Svelte
+	// hands back a real number from `<input type="number">`, and a `string`
+	// signature merely hid that until `.trim()` threw at runtime. Normalising
+	// here keeps every caller from having to remember it.
+	if (raw === null || raw === undefined) return null;
+	const trimmed = String(raw).trim();
 	if (trimmed === '') return null;
 
 	switch (def.type) {

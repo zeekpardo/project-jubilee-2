@@ -3,7 +3,7 @@ import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { createBudgetModel, recomputeTarget, resolveCostTemplate } from '../model/budgets';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 
 async function requireBudget(
 	ctx: MutationCtx,
@@ -17,6 +17,19 @@ async function requireBudget(
 	return budget;
 }
 
+/** The project a budget belongs to — its campaign is what the second gate checks. */
+async function requireBudgetProject(
+	ctx: MutationCtx,
+	orgId: string,
+	budget: Doc<'budgets'>
+): Promise<Doc<'projects'>> {
+	const project = await ctx.db.get('projects', budget.projectId);
+	if (!project || project.orgId !== orgId) {
+		throw new ConvexError('Project not found');
+	}
+	return project;
+}
+
 const extrasValidator = v.array(v.object({ label: v.string(), amount_cents: v.number() }));
 
 export const createBudget = mutation({
@@ -27,7 +40,13 @@ export const createBudget = mutation({
 		extras: v.optional(extrasValidator)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
+		const project = await ctx.db.get('projects', args.projectId);
+		if (!project || project.orgId !== orgId) {
+			throw new ConvexError('Project not found');
+		}
+		await requireCapability(ctx, 'money:write', project.campaignId);
+
 		return await createBudgetModel(ctx, { ...args, orgId });
 	}
 });
@@ -40,8 +59,10 @@ export const updateBudget = mutation({
 		extras: v.optional(extrasValidator)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		const budget = await requireBudget(ctx, orgId, args.budgetId);
+		const project = await requireBudgetProject(ctx, orgId, budget);
+		await requireCapability(ctx, 'money:write', project.campaignId);
 
 		return await recomputeTarget(ctx, budget, {
 			debtCents: args.debtCents,
@@ -58,13 +79,10 @@ export const reapplyTemplate = mutation({
 		costTemplateId: v.id('costTemplates')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		const budget = await requireBudget(ctx, orgId, args.budgetId);
-
-		const project = await ctx.db.get('projects', budget.projectId);
-		if (!project || project.orgId !== orgId) {
-			throw new ConvexError('Project not found');
-		}
+		const project = await requireBudgetProject(ctx, orgId, budget);
+		await requireCapability(ctx, 'money:write', project.campaignId);
 
 		const costTemplate = await resolveCostTemplate(
 			ctx,
@@ -85,8 +103,10 @@ export const deleteBudget = mutation({
 		budgetId: v.id('budgets')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
-		await requireBudget(ctx, orgId, args.budgetId);
+		const { orgId } = await requireCapability(ctx, 'money:write');
+		const budget = await requireBudget(ctx, orgId, args.budgetId);
+		const project = await requireBudgetProject(ctx, orgId, budget);
+		await requireCapability(ctx, 'money:write', project.campaignId);
 
 		await ctx.db.delete('budgets', args.budgetId);
 		return null;

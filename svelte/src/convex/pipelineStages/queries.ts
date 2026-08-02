@@ -1,13 +1,13 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 
 export const listStages = query({
 	args: {
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}

@@ -1,7 +1,7 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { loadPublicPolicy } from '../model/policy';
 import {
 	assertCategoryUsable,
@@ -28,7 +28,7 @@ export const createCategory = mutation({
 		order: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 		assertScopeShape(args.scope, args.campaignId);
 		if (args.campaignId !== undefined) {
 			await requireCampaign(ctx, orgId, args.campaignId);
@@ -52,7 +52,7 @@ export const updateCategory = mutation({
 		order: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 		await requireCategory(ctx, orgId, args.categoryId);
 
 		const { categoryId, ...updates } = args;
@@ -78,7 +78,7 @@ export const deleteCategory = mutation({
 		categoryId: v.id('customFieldCategories')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 		await requireCategory(ctx, orgId, args.categoryId);
 
 		// The fields survive as uncategorized — deleting a grouping must never
@@ -111,7 +111,7 @@ export const createFieldDefinition = mutation({
 		isPublic: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 		assertScopeShape(args.scope, args.campaignId);
 		if (args.campaignId !== undefined) {
 			await requireCampaign(ctx, orgId, args.campaignId);
@@ -162,7 +162,7 @@ export const updateFieldDefinition = mutation({
 		isPublic: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 		const field = await requireFieldDefinition(ctx, orgId, args.fieldId);
 
 		if (args.isPublic !== undefined) {
@@ -215,7 +215,7 @@ export const deleteFieldDefinition = mutation({
 		fieldId: v.id('customFieldDefinitions')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 		await requireFieldDefinition(ctx, orgId, args.fieldId);
 
 		await ctx.db.delete('customFieldDefinitions', args.fieldId);
@@ -234,7 +234,18 @@ export const setRecordAttributes = mutation({
 		campaignId: v.optional(v.id('campaigns'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		// Setting values is writing to a record, so the capability follows the
+		// record's own entity rather than a single "custom fields" permission.
+		// Gate org-wide first, on the capability the entity implies, to establish
+		// the caller; the campaign-scoped branches gate again once the row (and
+		// its campaignId) is loaded.
+		const capability =
+			args.entity === 'project'
+				? 'projects:write'
+				: args.entity === 'campaign'
+					? 'campaign:edit'
+					: 'contacts:write';
+		const { orgId } = await requireCapability(ctx, capability);
 
 		if (args.entity === 'project') {
 			const projectId = args.recordId as Id<'projects'>;
@@ -242,6 +253,7 @@ export const setRecordAttributes = mutation({
 			if (!project || project.orgId !== orgId) {
 				throw new ConvexError('Project not found');
 			}
+			await requireCapability(ctx, 'projects:write', project.campaignId);
 			const attributes = await validateAttributes(
 				ctx,
 				orgId,
@@ -256,6 +268,7 @@ export const setRecordAttributes = mutation({
 		if (args.entity === 'campaign') {
 			const campaignId = args.recordId as Id<'campaigns'>;
 			const campaign = await requireCampaign(ctx, orgId, campaignId);
+			await requireCapability(ctx, 'campaign:edit', campaign._id);
 			const attributes = await validateAttributes(
 				ctx,
 				orgId,
@@ -267,6 +280,8 @@ export const setRecordAttributes = mutation({
 			return campaignId;
 		}
 
+		// Contacts have no campaign of their own, so `contacts:write` was already
+		// checked org-wide above — there is no row-level campaignId to re-check.
 		const contactId = args.recordId as Id<'contacts'>;
 		const contact = await ctx.db.get('contacts', contactId);
 		if (!contact || contact.orgId !== orgId) {
@@ -278,6 +293,10 @@ export const setRecordAttributes = mutation({
 		// same inheritance resolveForRecord already gives projects and campaigns.
 		if (args.campaignId !== undefined) {
 			await requireCampaign(ctx, orgId, args.campaignId);
+			// Naming a campaign here decides which fields may be written, so the
+			// caller has to hold the capability in THAT campaign, not merely
+			// somewhere.
+			await requireCapability(ctx, 'contacts:write', args.campaignId);
 		}
 		const customFields = await validateAttributes(
 			ctx,

@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import {
 	allocationsForTransaction,
 	assertAmountCoversAllocations,
@@ -37,7 +37,7 @@ export const createTransaction = mutation({
 		note: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		assertNonNegativeCents('amountCents', args.amountCents);
 		if (args.contactId !== undefined) {
 			await requireContact(ctx, orgId, args.contactId);
@@ -62,7 +62,7 @@ export const updateTransaction = mutation({
 		note: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		const transaction = await requireTransaction(ctx, orgId, args.transactionId);
 
 		if (args.clearContact === true && args.contactId !== undefined) {
@@ -124,7 +124,7 @@ export const deleteTransaction = mutation({
 		transactionId: v.id('transactions')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		const transaction = await requireTransaction(ctx, orgId, args.transactionId);
 
 		// Convex has no cascade: the transaction's allocations would otherwise

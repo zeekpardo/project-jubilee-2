@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 import { normalizeEmail } from '../model/contacts';
 
 function matchesSearch(contact: Doc<'contacts'>, needle: string): boolean {
@@ -22,7 +22,7 @@ export const listContacts = query({
 		limit: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'contacts:read');
 		if (!orgId) {
 			return [];
 		}
@@ -46,7 +46,7 @@ export const getContact = query({
 		contactId: v.id('contacts')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'contacts:read');
 		if (!orgId) {
 			return null;
 		}
@@ -65,7 +65,7 @@ export const getContactByEmail = query({
 		email: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'contacts:read');
 		if (!orgId) {
 			return null;
 		}
@@ -89,7 +89,7 @@ export const getContactByAuthUserId = query({
 		authUserId: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'contacts:read');
 		if (!orgId) {
 			return null;
 		}

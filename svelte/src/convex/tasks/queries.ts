@@ -18,8 +18,7 @@ import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { authComponent, createAuth } from '../auth';
-import { activeOrgId } from '../model/auth';
-import { getAccess } from '../model/access';
+import { getAccess, readableOrgId } from '../model/access';
 import { activeTaskTemplate, listProjectTasks } from '../model/tasks';
 import {
 	BULK_TASK_MAX,
@@ -74,11 +73,16 @@ const EMPTY_CHECKLIST: {
 export const listProjectChecklist = query({
 	args: { projectId: v.id('projects') },
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		// Gated twice: the project's campaign is only known once it is loaded, so
+		// the first check is org-wide and the second is scoped to that campaign.
+		const orgId = await readableOrgId(ctx, 'projects:read');
 		if (!orgId) return EMPTY_CHECKLIST;
 
 		const project = await ctx.db.get('projects', args.projectId);
 		if (!project || project.orgId !== orgId) return EMPTY_CHECKLIST;
+
+		const scopedOrgId = await readableOrgId(ctx, 'projects:read', project.campaignId);
+		if (!scopedOrgId) return EMPTY_CHECKLIST;
 
 		const tasks = await listProjectTasks(ctx, args.projectId);
 		const template = await activeTaskTemplate(ctx, project.campaignId);

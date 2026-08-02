@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 
 async function requireCampaign(
 	ctx: MutationCtx,
@@ -55,7 +55,7 @@ export const createStage = mutation({
 		countsTowardImpact: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit', args.campaignId);
 		await requireCampaign(ctx, orgId, args.campaignId);
 
 		const conflict = await ctx.db
@@ -110,12 +110,13 @@ export const updateStage = mutation({
 		countsTowardImpact: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit');
 
 		const stage = await ctx.db.get('pipelineStages', args.stageId);
 		if (!stage || stage.orgId !== orgId) {
 			throw new ConvexError('Stage not found');
 		}
+		await requireCapability(ctx, 'campaign:edit', stage.campaignId);
 
 		const { stageId, ...updates } = args;
 
@@ -150,12 +151,13 @@ export const deleteStage = mutation({
 		stageId: v.id('pipelineStages')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit');
 
 		const stage = await ctx.db.get('pipelineStages', args.stageId);
 		if (!stage || stage.orgId !== orgId) {
 			throw new ConvexError('Stage not found');
 		}
+		await requireCapability(ctx, 'campaign:edit', stage.campaignId);
 
 		if (stage.isSystem) {
 			throw new ConvexError('System stages cannot be deleted');
@@ -187,7 +189,7 @@ export const reorderStages = mutation({
 		orderedStageIds: v.array(v.id('pipelineStages'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit', args.campaignId);
 		await requireCampaign(ctx, orgId, args.campaignId);
 
 		const stages = await campaignStages(ctx, args.campaignId);

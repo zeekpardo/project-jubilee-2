@@ -1,13 +1,13 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 
 export const listTaskTemplates = query({
 	args: {
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -37,7 +37,7 @@ export const countTasksByKey = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return {};
 		}
@@ -78,7 +78,7 @@ export const listImpactTags = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -124,7 +124,7 @@ export const getActiveTaskTemplate = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return null;
 		}

@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { assertAmountCents, assertStage, requireDocumentProject } from '../model/documents';
 
 async function requireDocument(
@@ -29,7 +29,8 @@ const kindValidator = v.union(
 export const generateUploadUrl = mutation({
 	args: {},
 	handler: async (ctx) => {
-		await requireOrgId(ctx);
+		// No row exists yet to carry a campaignId, so this gates org-wide.
+		await requireCapability(ctx, 'projects:write');
 		return await ctx.storage.generateUploadUrl();
 	}
 });
@@ -49,8 +50,9 @@ export const createDocument = mutation({
 		budgetItem: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const project = await requireDocumentProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 		await assertStage(ctx, project, args.stage);
 		assertAmountCents(args.amountCents);
 
@@ -75,13 +77,16 @@ export const updateDocument = mutation({
 		budgetItem: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const document = await requireDocument(ctx, orgId, args.documentId);
+		// The campaign lives on the document's project, so it has to be loaded
+		// here rather than only when the stage changes.
+		const project = await requireDocumentProject(ctx, orgId, document.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		const { documentId, ...updates } = args;
 
 		if (updates.stage !== undefined && updates.stage !== document.stage) {
-			const project = await requireDocumentProject(ctx, orgId, document.projectId);
 			await assertStage(ctx, project, updates.stage);
 		}
 		assertAmountCents(updates.amountCents);
@@ -115,8 +120,10 @@ export const deleteDocument = mutation({
 		documentId: v.id('documents')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const document = await requireDocument(ctx, orgId, args.documentId);
+		const project = await requireDocumentProject(ctx, orgId, document.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		// Convex storage has no cascade: the blob outlives the row unless it is
 		// deleted here.

@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { deleteContactCascade } from '../model/cascade';
 import {
 	addBackgroundCheckModel,
@@ -78,7 +78,7 @@ const contactFields = {
 export const createContact = mutation({
 	args: contactFields,
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		return await createContactModel(ctx, { ...args, orgId });
 	}
 });
@@ -98,7 +98,7 @@ export const updateContact = mutation({
 		preferredContact: v.optional(v.union(preferredContactValidator, v.null()))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireContact(ctx, orgId, args.contactId);
 
 		const {
@@ -166,13 +166,16 @@ export const updateContact = mutation({
 	}
 });
 
+// Granting or withdrawing a person's ability to sign in is member
+// management, not contact editing, so these three gate on members:manage
+// rather than contacts:write.
 export const linkAuthUser = mutation({
 	args: {
 		contactId: v.id('contacts'),
 		authUserId: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'members:manage');
 		await requireContact(ctx, orgId, args.contactId);
 		await assertAuthUserAvailable(ctx, orgId, args.authUserId, args.contactId);
 
@@ -186,7 +189,7 @@ export const unlinkAuthUser = mutation({
 		contactId: v.id('contacts')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'members:manage');
 		await requireContact(ctx, orgId, args.contactId);
 
 		await ctx.db.patch('contacts', args.contactId, { authUserId: undefined });
@@ -199,7 +202,7 @@ export const markInvited = mutation({
 		contactId: v.id('contacts')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'members:manage');
 		await requireContact(ctx, orgId, args.contactId);
 
 		await ctx.db.patch('contacts', args.contactId, { invitedAt: Date.now() });
@@ -212,7 +215,7 @@ export const deleteContact = mutation({
 		contactId: v.id('contacts')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireContact(ctx, orgId, args.contactId);
 
 		await deleteContactCascade(ctx, args.contactId);
@@ -231,7 +234,7 @@ export const addContactEmail = mutation({
 		blocked: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireContact(ctx, orgId, args.contactId);
 		return await addContactEmailModel(ctx, orgId, args);
 	}
@@ -245,7 +248,7 @@ export const updateContactEmail = mutation({
 		blocked: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		const { emailId, ...updates } = args;
 		await updateContactEmailModel(ctx, orgId, emailId, updates);
 		return emailId;
@@ -255,7 +258,7 @@ export const updateContactEmail = mutation({
 export const setPrimaryContactEmail = mutation({
 	args: { emailId: v.id('contactEmails') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await setPrimaryContactEmailModel(ctx, orgId, args.emailId);
 		return args.emailId;
 	}
@@ -264,7 +267,7 @@ export const setPrimaryContactEmail = mutation({
 export const deleteContactEmail = mutation({
 	args: { emailId: v.id('contactEmails') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await deleteContactEmailModel(ctx, orgId, args.emailId);
 		return null;
 	}
@@ -281,7 +284,7 @@ export const addContactPhone = mutation({
 		carrier: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireContact(ctx, orgId, args.contactId);
 		return await addContactPhoneModel(ctx, orgId, args);
 	}
@@ -295,7 +298,7 @@ export const updateContactPhone = mutation({
 		carrier: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		const { phoneId, ...updates } = args;
 		await updateContactPhoneModel(ctx, orgId, phoneId, updates);
 		return phoneId;
@@ -305,7 +308,7 @@ export const updateContactPhone = mutation({
 export const setPrimaryContactPhone = mutation({
 	args: { phoneId: v.id('contactPhones') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await setPrimaryContactPhoneModel(ctx, orgId, args.phoneId);
 		return args.phoneId;
 	}
@@ -314,7 +317,7 @@ export const setPrimaryContactPhone = mutation({
 export const deleteContactPhone = mutation({
 	args: { phoneId: v.id('contactPhones') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await deleteContactPhoneModel(ctx, orgId, args.phoneId);
 		return null;
 	}
@@ -335,7 +338,7 @@ export const addContactAddress = mutation({
 		isPrimary: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireContact(ctx, orgId, args.contactId);
 		return await addContactAddressModel(ctx, orgId, args);
 	}
@@ -353,7 +356,7 @@ export const updateContactAddress = mutation({
 		location: v.optional(contactLocationValidator)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		const { addressId, ...updates } = args;
 		await updateContactAddressModel(ctx, orgId, addressId, updates);
 		return addressId;
@@ -363,7 +366,7 @@ export const updateContactAddress = mutation({
 export const setPrimaryContactAddress = mutation({
 	args: { addressId: v.id('contactAddresses') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await setPrimaryContactAddressModel(ctx, orgId, args.addressId);
 		return args.addressId;
 	}
@@ -372,7 +375,7 @@ export const setPrimaryContactAddress = mutation({
 export const deleteContactAddress = mutation({
 	args: { addressId: v.id('contactAddresses') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await deleteContactAddressModel(ctx, orgId, args.addressId);
 		return null;
 	}
@@ -389,7 +392,7 @@ export const addBackgroundCheck = mutation({
 		note: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireContact(ctx, orgId, args.contactId);
 		return await addBackgroundCheckModel(ctx, orgId, args);
 	}
@@ -404,7 +407,7 @@ export const updateBackgroundCheck = mutation({
 		note: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		const { checkId, ...updates } = args;
 		await updateBackgroundCheckModel(ctx, orgId, checkId, updates);
 		return checkId;
@@ -414,7 +417,7 @@ export const updateBackgroundCheck = mutation({
 export const deleteBackgroundCheck = mutation({
 	args: { checkId: v.id('contactBackgroundChecks') },
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await deleteBackgroundCheckModel(ctx, orgId, args.checkId);
 		return null;
 	}

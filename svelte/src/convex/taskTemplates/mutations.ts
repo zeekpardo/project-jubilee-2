@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { statConfigId, type StatConfig, type StatSource } from '../../lib/domain/campaign-stats';
 
 // At most one active version per campaign, so activating one clears the rest.
@@ -150,7 +150,7 @@ export const createTaskTemplateVersion = mutation({
 		activate: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit', args.campaignId);
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
 		if (!campaign || campaign.orgId !== orgId) {
@@ -219,12 +219,13 @@ export const updateTaskTemplate = mutation({
 		effectiveFrom: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit');
 
 		const template = await ctx.db.get('taskTemplates', args.taskTemplateId);
 		if (!template || template.orgId !== orgId) {
 			throw new ConvexError('Task template not found');
 		}
+		await requireCapability(ctx, 'campaign:edit', template.campaignId);
 
 		assertUniqueKeys(args.items);
 
@@ -247,12 +248,13 @@ export const activateTaskTemplate = mutation({
 		taskTemplateId: v.id('taskTemplates')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit');
 
 		const template = await ctx.db.get('taskTemplates', args.taskTemplateId);
 		if (!template || template.orgId !== orgId) {
 			throw new ConvexError('Task template not found');
 		}
+		await requireCapability(ctx, 'campaign:edit', template.campaignId);
 
 		await deactivateOthers(ctx, template.campaignId, template._id);
 

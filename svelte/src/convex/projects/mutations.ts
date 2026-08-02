@@ -4,7 +4,7 @@ import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { canSetStage } from '../../lib/domain/stages';
 import { campaignStages, createProjectModel } from '../model/projects';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { deleteProjectCascade } from '../model/cascade';
 
 async function requireProject(
@@ -37,7 +37,7 @@ export const createProject = mutation({
 		videoUrl: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write', args.campaignId);
 		return await createProjectModel(ctx, { ...args, orgId });
 	}
 });
@@ -58,8 +58,9 @@ export const updateProject = mutation({
 		videoUrl: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const project = await requireProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		const { projectId, publicName, ...updates } = args;
 
@@ -98,8 +99,9 @@ export const setProjectStage = mutation({
 		stage: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const project = await requireProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		const stages = await campaignStages(ctx, project.campaignId);
 		const result = canSetStage(
@@ -122,8 +124,9 @@ export const setProjectPublished = mutation({
 		isPublished: v.boolean()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const project = await requireProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		// publishedAt records the first publish and is never cleared afterwards.
 		const patch: Partial<Doc<'projects'>> = { isPublished: args.isPublished };
@@ -142,8 +145,9 @@ export const setProjectGoalMet = mutation({
 		isGoalMet: v.boolean()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const project = await requireProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		await ctx.db.patch('projects', args.projectId, {
 			isGoalMet: args.isGoalMet,
@@ -158,8 +162,9 @@ export const deleteProject = mutation({
 		projectId: v.id('projects')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
-		await requireProject(ctx, orgId, args.projectId);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
+		const project = await requireProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		await deleteProjectCascade(ctx, args.projectId);
 		return null;

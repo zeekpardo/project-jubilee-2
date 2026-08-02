@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { deleteHouseholdCascade } from '../model/cascade';
 import {
 	assertHouseholdMemberUnique,
@@ -30,7 +30,7 @@ export const createHousehold = mutation({
 		primaryContactId: v.optional(v.id('contacts'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 
 		if (args.primaryContactId !== undefined) {
 			await requireContact(ctx, orgId, args.primaryContactId);
@@ -48,7 +48,7 @@ export const updateHousehold = mutation({
 		primaryContactId: v.optional(v.id('contacts'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireHousehold(ctx, orgId, args.householdId);
 
 		if (args.primaryContactId !== undefined) {
@@ -76,7 +76,7 @@ export const deleteHousehold = mutation({
 		householdId: v.id('households')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireHousehold(ctx, orgId, args.householdId);
 
 		await deleteHouseholdCascade(ctx, args.householdId);
@@ -92,7 +92,7 @@ export const addHouseholdMember = mutation({
 		pending: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		await requireHousehold(ctx, orgId, args.householdId);
 		await requireContact(ctx, orgId, args.contactId);
 		await assertHouseholdMemberUnique(ctx, args.householdId, args.contactId);
@@ -114,7 +114,7 @@ export const updateHouseholdMember = mutation({
 		pending: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		const member = await requireHouseholdMember(ctx, orgId, args.householdMemberId);
 
 		const patch: Partial<Omit<Doc<'householdMembers'>, '_id' | '_creationTime' | 'orgId'>> = {};
@@ -135,7 +135,7 @@ export const removeHouseholdMember = mutation({
 		householdMemberId: v.id('householdMembers')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'contacts:write');
 		const member = await requireHouseholdMember(ctx, orgId, args.householdMemberId);
 		const household = await requireHousehold(ctx, orgId, member.householdId);
 

@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 import { computeStats, evaluateStats, type EvaluatedStat, type ResolvedStat } from '../model/stats';
 import { resolveContactFieldDefs } from '../model/fields';
 import { loadPublicPolicy } from '../model/policy';
@@ -31,7 +31,10 @@ async function withImageUrls(ctx: QueryCtx, row: Doc<'campaigns'>): Promise<Doc<
 export const listCampaigns = query({
 	args: {},
 	handler: async (ctx) => {
-		const orgId = await activeOrgId(ctx);
+		// There is no standalone campaign-read capability — a campaign is the
+		// shell around a projects/pipeline workspace, so projects:read is what
+		// gates seeing it at all.
+		const orgId = await readableOrgId(ctx, 'projects:read');
 		if (!orgId) {
 			return [];
 		}
@@ -49,13 +52,22 @@ export const getCampaign = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		// Gated twice: once org-wide so a caller with no read access anywhere is
+		// turned away before the row is even loaded, then again scoped to the
+		// loaded campaign's own id, since args.campaignId cannot be trusted to
+		// name a campaign in the caller's org until it is loaded and checked.
+		const orgId = await readableOrgId(ctx, 'projects:read');
 		if (!orgId) {
 			return null;
 		}
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
 		if (!campaign || campaign.orgId !== orgId) {
+			return null;
+		}
+
+		const scopedOrgId = await readableOrgId(ctx, 'projects:read', campaign._id);
+		if (!scopedOrgId) {
 			return null;
 		}
 
@@ -75,7 +87,7 @@ export const getCampaign = query({
 export const listMemberDimensions = query({
 	args: { campaignId: v.id('campaigns') },
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return { householdRoles: [], relationships: [], contactFields: [] };
 		}
@@ -144,7 +156,7 @@ export const listMemberDimensions = query({
 export const previewStats = query({
 	args: { campaignId: v.id('campaigns') },
 	handler: async (ctx, args): Promise<EvaluatedStat[]> => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -175,7 +187,7 @@ export const getDashboardStats = query({
 		to: v.optional(v.number())
 	},
 	handler: async (ctx, args): Promise<ResolvedStat[]> => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -197,7 +209,10 @@ export const getCampaignBySlug = query({
 		slug: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		// Same double gate as getCampaign: the slug names no campaign until the
+		// row is loaded, so the first check is org-wide and the second is scoped
+		// to the campaign the slug actually resolved to.
+		const orgId = await readableOrgId(ctx, 'projects:read');
 		if (!orgId) {
 			return null;
 		}
@@ -206,6 +221,15 @@ export const getCampaignBySlug = query({
 			.query('campaigns')
 			.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', orgId).eq('slug', args.slug))
 			.unique();
-		return campaign ? await withImageUrls(ctx, campaign) : null;
+		if (!campaign) {
+			return null;
+		}
+
+		const scopedOrgId = await readableOrgId(ctx, 'projects:read', campaign._id);
+		if (!scopedOrgId) {
+			return null;
+		}
+
+		return await withImageUrls(ctx, campaign);
 	}
 });

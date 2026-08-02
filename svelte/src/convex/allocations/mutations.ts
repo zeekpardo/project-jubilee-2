@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import {
 	assertAllocatable,
 	assertNonNegativeCents,
@@ -20,7 +20,8 @@ export const createAllocation = mutation({
 		budgetItem: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		// Scoped to the campaign the allocation is being written into.
+		const { orgId } = await requireCapability(ctx, 'money:write', args.campaignId);
 		assertNonNegativeCents('amountCents', args.amountCents);
 
 		await requireCampaign(ctx, orgId, args.campaignId);
@@ -43,8 +44,9 @@ export const updateAllocation = mutation({
 		projectId: v.optional(v.id('projects'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		const allocation = await requireAllocation(ctx, orgId, args.allocationId);
+		await requireCapability(ctx, 'money:write', allocation.campaignId);
 
 		const patch: Partial<Omit<Doc<'allocations'>, '_id' | '_creationTime' | 'orgId'>> = {};
 
@@ -85,8 +87,9 @@ export const deleteAllocation = mutation({
 		allocationId: v.id('allocations')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write');
 		const allocation = await requireAllocation(ctx, orgId, args.allocationId);
+		await requireCapability(ctx, 'money:write', allocation.campaignId);
 
 		await ctx.db.delete('allocations', allocation._id);
 		return null;

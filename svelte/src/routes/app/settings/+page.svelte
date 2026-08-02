@@ -17,6 +17,7 @@
 	import CampaignGeneralCard from '$lib/features/campaigns/CampaignGeneralCard.svelte';
 	import CampaignPublicCard from '$lib/features/campaigns/CampaignPublicCard.svelte';
 	import CampaignMediaCard from '$lib/features/campaigns/CampaignMediaCard.svelte';
+	import CampaignEmbedCard from '$lib/features/campaigns/CampaignEmbedCard.svelte';
 	import PipelineStagesTab from '$lib/features/settings/PipelineStagesTab.svelte';
 	import CostTemplatesTab from '$lib/features/settings/CostTemplatesTab.svelte';
 	import TaskTemplatesTab from '$lib/features/settings/TaskTemplatesTab.svelte';
@@ -82,6 +83,7 @@
 					<div class="flex flex-col gap-6">
 						<CampaignPublicCard {campaign} {canWrite} {orgSlug} />
 						<CampaignMediaCard {campaign} {canWrite} />
+						<CampaignEmbedCard {campaign} {orgSlug} />
 					</div>
 				{/if}
 			</Tabs.Content>

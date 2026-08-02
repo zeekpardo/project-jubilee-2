@@ -17,6 +17,7 @@
 
 	// Feature
 	import CampaignMediaCard from '$lib/features/campaigns/CampaignMediaCard.svelte';
+	import CampaignEmbedCard from '$lib/features/campaigns/CampaignEmbedCard.svelte';
 	import CampaignGeneralCard from '$lib/features/campaigns/CampaignGeneralCard.svelte';
 	import CampaignPublicCard from '$lib/features/campaigns/CampaignPublicCard.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
@@ -64,6 +65,7 @@
 			<CampaignGeneralCard {campaign} {canWrite} />
 			<CampaignPublicCard {campaign} {canWrite} {orgSlug} />
 			<CampaignMediaCard {campaign} {canWrite} />
+			<CampaignEmbedCard {campaign} {orgSlug} />
 		{/if}
 	</div>
 </PageContainer>

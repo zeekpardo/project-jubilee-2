@@ -10,22 +10,32 @@
 	// own org-level default once one is in scope.
 	const theme = $derived((page.data.theme as string | undefined) ?? data.theme);
 
+	let wrapper = $state<HTMLDivElement | null>(null);
+
 	// An iframe cannot size itself to its content, so the host page needs the
-	// real document height to resize the <iframe> around it. '*' is correct
+	// real content height to resize the <iframe> around it. '*' is correct
 	// for targetOrigin because the widget is public and does not know its
 	// host — but that also means the payload must never carry anything beyond
 	// a type tag and a number: no record data, ever, crosses this postMessage.
+	//
+	// Measured on the wrapper, NOT document.documentElement: the document can
+	// never report less than the viewport it is in, so a widget shorter than
+	// its frame — the stats strip, most obviously — would keep reporting the
+	// frame's own height and could never shrink to fit.
 	$effect(() => {
-		function postHeight() {
+		const node = wrapper;
+		if (!node) return;
+
+		const postHeight = (): void => {
 			window.parent.postMessage(
-				{ type: 'jubilee-embed-height', height: document.documentElement.scrollHeight },
+				{ type: 'jubilee-embed-height', height: node.getBoundingClientRect().height },
 				'*'
 			);
-		}
+		};
 
 		postHeight();
 		const observer = new ResizeObserver(postHeight);
-		observer.observe(document.documentElement);
+		observer.observe(node);
 
 		return () => observer.disconnect();
 	});
@@ -40,6 +50,6 @@
 	without the surface it paints on is what breaks: dark text on the host
 	page's background bleeding through an unstyled iframe.
 -->
-<div data-theme={theme} class="bg-background text-foreground">
+<div bind:this={wrapper} data-theme={theme} class="bg-background text-foreground">
 	{@render children()}
 </div>

@@ -778,5 +778,16 @@
 	"publicSite_donateClosedNotice": "Online giving isn't connected yet — our team is still setting this up. Please check back soon.",
 	"publicSite_donateSecureNote": "Card details are entered on Stripe's secure checkout, never on this page.",
 	"publicSite_donateRemaining": "{amount} still needed",
-	"publicSite_embedViewFullProfile": "View full profile"
+	"publicSite_embedViewFullProfile": "View full profile",
+	"campaignEmbed_title": "Embed on your own site",
+	"campaignEmbed_body": "Paste a snippet into your website and it stays in sync with this campaign — no second copy of the data to maintain.",
+	"campaignEmbed_stats": "Impact stats",
+	"campaignEmbed_grid": "Record grid",
+	"campaignEmbed_record": "A single record",
+	"campaignEmbed_recordHint": "Replace {number} with the record you want to show.",
+	"campaignEmbed_copy": "Copy",
+	"campaignEmbed_copied": "Copied",
+	"campaignEmbed_scriptNote": "Include the script once per page, however many widgets you embed.",
+	"campaignEmbed_unpublished": "Publish this campaign before embedding it — the widgets show nothing until then.",
+	"campaignEmbed_noSlug": "Set your site address on the Public site settings page before embedding."
 }

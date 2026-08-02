@@ -54,6 +54,8 @@ export const countTasksByKey = query({
 
 		const counts: Record<string, number> = {};
 		for (const task of tasks) {
+			// Manual tasks carry no template key, so they count toward no item.
+			if (!task.key) continue;
 			counts[task.key] = (counts[task.key] ?? 0) + 1;
 		}
 		return counts;

@@ -97,6 +97,24 @@ export async function deleteContactCascade(
 		await ctx.db.patch('transactions', transaction._id, { contactId: undefined });
 	}
 
+	// An assignment is cleared for the same reason donor attribution above is:
+	// the work is still the campaign's work, only the person is gone. Deleting
+	// the task would erase a job that still has to be done — and, if it was
+	// ticked and tagged, silently move a published number.
+	//
+	// Read by org rather than by assignee: the field is optional and
+	// polymorphic, so no index over it would be useful to anything else, and a
+	// contact delete is rare enough not to earn one. The orgId prefix of
+	// by_orgId_and_status keeps this bounded to the tenant.
+	const assigned = await ctx.db
+		.query('tasks')
+		.withIndex('by_orgId_and_status', (q) => q.eq('orgId', contact.orgId))
+		.collect();
+	for (const task of assigned) {
+		if (task.assignee?.kind !== 'contact' || task.assignee.contactId !== contactId) continue;
+		await ctx.db.patch('tasks', task._id, { assignee: undefined });
+	}
+
 	const householdLinks = await ctx.db
 		.query('householdMembers')
 		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
@@ -183,6 +201,18 @@ export async function deleteCampaignCascade(
 		.collect();
 	for (const allocation of allocations) {
 		await ctx.db.delete('allocations', allocation._id);
+	}
+
+	// Tasks go by campaignId, NOT by project. A campaign-level task carries no
+	// projectId at all, so the per-project cascade below can never reach it and
+	// it would outlive the campaign that gave it meaning. Doing it here also
+	// means that cascade finds nothing left, the same as the allocations above.
+	const tasks = await ctx.db
+		.query('tasks')
+		.withIndex('by_campaignId_and_status', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const task of tasks) {
+		await ctx.db.delete('tasks', task._id);
 	}
 
 	const projects = await ctx.db

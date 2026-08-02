@@ -2,6 +2,7 @@ import { ConvexError } from 'convex/values';
 import type { MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
 import { DEFAULT_PIPELINE_STAGES } from '../../lib/domain/campaign-defaults';
+import { defaultStatConfigs } from '../../lib/domain/campaign-stats';
 
 export function slugify(value: string): string {
 	const slug = value
@@ -79,7 +80,12 @@ export async function createCampaignModel(
 		goalVerb: input.goalVerb,
 		goalTrigger: input.goalTrigger ?? 'manual',
 		isPublished: input.isPublished ?? false,
-		attributes: {}
+		attributes: {},
+		// Written at creation rather than left to the code-level fallback, so an
+		// admin can SEE what their campaign publishes and edit it, instead of
+		// discovering it on the donor page. Deliberately the campaign-agnostic
+		// minimum — see defaultStatConfigs.
+		publicStats: defaultStatConfigs({ hasBudget: (input.budgetShape ?? 'template') !== 'none' })
 	});
 
 	for (const stage of DEFAULT_PIPELINE_STAGES) {

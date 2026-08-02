@@ -23,6 +23,7 @@
 // ============================================================
 
 import { isProtectedFieldKey } from './field-definitions';
+import { DEFAULT_PUBLIC_POLICY, type PublicPolicy } from './public-policy';
 
 export type StatMetricKey =
 	| 'projects_freed'
@@ -116,14 +117,23 @@ export const STAT_METRICS: Record<StatMetricKey, StatMetric> = {
 		defaultLabel: (ctx) => `${ctx.objectLabelPlural} ${ctx.goalLabel}`,
 		format: 'count'
 	},
+	// Both reach metrics count only INSIDE goal-met records, which is a
+	// specific reading — right for a rescue programme, wrong for a campaign
+	// where everyone on a record was reached whether or not it hit its goal.
+	// The scope used to be invisible: a label reading "People Reached" over a
+	// number that silently excluded most of the roster. Deriving the label from
+	// the campaign's own vocabulary, as projects_freed already does, makes it
+	// say what it counts in any org's words. An admin who prefers the shorter
+	// phrase sets a label override; a campaign that wants the other reading
+	// configures a `member` stat with `among: all`.
 	people_reached: {
 		key: 'people_reached',
-		defaultLabel: 'People Reached',
+		defaultLabel: (ctx) => `People in ${ctx.objectLabelPlural} ${ctx.goalLabel}`,
 		format: 'count'
 	},
 	children_reached: {
 		key: 'children_reached',
-		defaultLabel: 'Children Reached',
+		defaultLabel: (ctx) => `Children in ${ctx.objectLabelPlural} ${ctx.goalLabel}`,
 		format: 'count'
 	},
 	total_raised: {
@@ -296,22 +306,39 @@ function memberFilterId(filter: MemberFilter | undefined): string {
 	}
 }
 
+/** What a new campaign's shape implies about its starting stats. */
+export interface DefaultStatOptions {
+	/** False for `budgetShape: 'none'` — a campaign that tracks no money. */
+	hasBudget?: boolean;
+}
+
 /**
- * What a campaign publishes when it has never configured anything: the three
- * counts this app shipped with, public only. Keeping the fallback here (rather
- * than backfilling every campaign row) is what lets the selection ship without
- * a migration — an unset `publicStats` keeps behaving exactly as before.
+ * What a campaign publishes before anyone configures it.
+ *
+ * Deliberately the campaign-AGNOSTIC minimum. It used to be the three counts
+ * this app shipped with, which assumed every campaign was a rescue programme:
+ * a conference campaign got "Children Reached" it never asked for, over a
+ * reading of "reached" it never chose. The goal count is the one number every
+ * campaign has — `goalLabel` is required at creation — and money follows only
+ * where money is tracked.
+ *
+ * Reach is not here on purpose. "How many people" is a real question with more
+ * than one right answer per campaign, so it is a choice an admin makes rather
+ * than one this function makes for them.
  */
-export function defaultStatConfigs(): StatConfig[] {
-	return (['projects_freed', 'people_reached', 'children_reached'] as const).map(
-		(metric, index) => ({
-			id: statConfigId({ kind: 'builtin', metric }),
-			order: index,
-			showOnPublic: true,
-			showOnDashboard: false,
-			source: { kind: 'builtin', metric } as StatSource
-		})
-	);
+export function defaultStatConfigs(options?: DefaultStatOptions): StatConfig[] {
+	const metrics: string[] = ['projects_freed'];
+	// Only where there is money to total. A campaign with budgetShape 'none'
+	// tracks no money, so a "Total Raised" tile would read a confident $0.00.
+	if (options?.hasBudget !== false) metrics.push('total_raised');
+
+	return metrics.map((metric, index) => ({
+		id: statConfigId({ kind: 'builtin', metric }),
+		order: index,
+		showOnPublic: true,
+		showOnDashboard: true,
+		source: { kind: 'builtin', metric } as StatSource
+	}));
 }
 
 /**
@@ -342,7 +369,12 @@ export function statConfigsForSurface(
 // a single record being published. So a public count below this floor is
 // dropped rather than rendered.
 
-export const SMALL_PUBLIC_COUNT_THRESHOLD = 5;
+/**
+ * The shipped floor, kept as the default rather than the rule: an org sets its
+ * own in `orgSettings.publicCountThreshold`. See lib/domain/public-policy.ts
+ * for why this is a per-org judgement.
+ */
+export const SMALL_PUBLIC_COUNT_THRESHOLD = DEFAULT_PUBLIC_POLICY.countThreshold;
 
 /**
  * Whether a computed value must be withheld from a PUBLIC surface. Internal
@@ -366,11 +398,12 @@ export const SMALL_PUBLIC_COUNT_THRESHOLD = 5;
 export function suppressesPublicValue(
 	source: StatSource,
 	format: StatFormat,
-	value: number
+	value: number,
+	threshold: number = SMALL_PUBLIC_COUNT_THRESHOLD
 ): boolean {
 	if (source.kind === 'builtin') return false;
 	if (format !== 'count') return false;
-	return value < SMALL_PUBLIC_COUNT_THRESHOLD;
+	return value < threshold;
 }
 
 // ------------------------------------------------------------------
@@ -383,7 +416,10 @@ export function suppressesPublicValue(
  * private or protected source is SKIPPED, not rendered); this is the earlier,
  * friendlier gate so an admin never saves something that will silently vanish.
  */
-export function statConfigError(config: StatConfig): string | null {
+export function statConfigError(
+	config: StatConfig,
+	policy: PublicPolicy = DEFAULT_PUBLIC_POLICY
+): string | null {
 	if (!config.id.trim()) return 'A stat needs an id';
 
 	switch (config.source.kind) {
@@ -396,7 +432,7 @@ export function statConfigError(config: StatConfig): string | null {
 			if (!key) return 'A field stat needs a field';
 			// Refused at WRITE time as well as dropped at read time — the same
 			// two-sided enforcement publicAttributeList already gets.
-			if (isProtectedFieldKey(key)) {
+			if (isProtectedFieldKey(key, policy.extraProtectedKeys)) {
 				return `"${key}" is a protected field key and can never be published`;
 			}
 			if (!STAT_AGGREGATES.includes(config.source.aggregate)) {
@@ -423,7 +459,7 @@ export function statConfigError(config: StatConfig): string | null {
 				if (!key) return 'A contact-field filter needs a field';
 				// Same refusal as a field stat: a protected key can never be
 				// published, so it must not even be storable.
-				if (isProtectedFieldKey(key)) {
+				if (isProtectedFieldKey(key, policy.extraProtectedKeys)) {
 					return `"${key}" is a protected field key and can never be published`;
 				}
 				return null;
@@ -489,10 +525,13 @@ export function memberStatLabel(
 }
 
 /** The first error across a whole selection, plus the duplicate-id check. */
-export function statConfigsError(configs: StatConfig[]): string | null {
+export function statConfigsError(
+	configs: StatConfig[],
+	policy: PublicPolicy = DEFAULT_PUBLIC_POLICY
+): string | null {
 	const seen = new Set<string>();
 	for (const config of configs) {
-		const error = statConfigError(config);
+		const error = statConfigError(config, policy);
 		if (error) return error;
 		if (seen.has(config.id)) return `Duplicate stat "${config.id}"`;
 		seen.add(config.id);

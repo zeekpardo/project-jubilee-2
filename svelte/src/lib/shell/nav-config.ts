@@ -12,6 +12,7 @@ import UserCog from '@lucide/svelte/icons/user-cog';
 import Settings from '@lucide/svelte/icons/settings';
 import Building2 from '@lucide/svelte/icons/building-2';
 import Globe from '@lucide/svelte/icons/globe';
+import ListChecks from '@lucide/svelte/icons/list-checks';
 
 export type NavItem = {
 	key: string;
@@ -41,6 +42,7 @@ export const CAMPAIGN_NAV: NavItem[] = [
 		capability: 'projects:read',
 		usesObjectLabel: true
 	},
+	{ key: 'tasks', href: '/app/tasks', icon: ListChecks, capability: 'projects:read' },
 	{ key: 'campaignContacts', href: '/app/contacts', icon: Contact, capability: 'contacts:read' },
 	{ key: 'budget', href: '/app/budget', icon: Wallet, capability: 'money:read' },
 	{ key: 'settings', href: '/app/settings', icon: Settings, capability: 'settings:manage' }
@@ -53,6 +55,7 @@ export const ADMIN_NAV: NavItem[] = [
 		icon: Megaphone,
 		capability: 'campaign:create'
 	},
+	{ key: 'adminTasks', href: '/app/admin/tasks', icon: ListChecks, capability: 'projects:read' },
 	{ key: 'members', href: '/app/admin/members', icon: UserCog, capability: 'members:manage' },
 	{ key: 'contacts', href: '/app/admin/contacts', icon: Contact, capability: 'contacts:read' },
 	{ key: 'households', href: '/app/admin/households', icon: Home, capability: 'contacts:read' },

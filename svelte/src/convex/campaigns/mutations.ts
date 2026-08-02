@@ -5,6 +5,7 @@ import { createCampaignModel } from '../model/campaigns';
 import { requireOrgId } from '../model/auth';
 import { deleteCampaignCascade } from '../model/cascade';
 import { statConfigsError, type StatConfig } from '../../lib/domain/campaign-stats';
+import { loadPublicPolicy } from '../model/policy';
 
 const statusValidator = v.union(v.literal('active'), v.literal('paused'), v.literal('archived'));
 const budgetShapeValidator = v.union(v.literal('flat'), v.literal('template'), v.literal('none'));
@@ -170,7 +171,8 @@ export const setPublicStats = mutation({
 			throw new ConvexError('Campaign not found');
 		}
 
-		const error = statConfigsError(args.stats as StatConfig[]);
+		const policy = await loadPublicPolicy(ctx, orgId);
+		const error = statConfigsError(args.stats as StatConfig[], policy);
 		if (error) {
 			throw new ConvexError(error);
 		}

@@ -42,7 +42,6 @@ import {
 	resolveStatLabel,
 	STAT_METRICS,
 	suppressesPublicValue,
-	SMALL_PUBLIC_COUNT_THRESHOLD,
 	type MemberFilter,
 	type StatConfig,
 	type StatFormat,
@@ -50,7 +49,9 @@ import {
 	type StatSurface
 } from '../../lib/domain/campaign-stats';
 import { isProtectedFieldKey, type FieldDefinition } from '../../lib/domain/field-definitions';
+import type { PublicPolicy } from '../../lib/domain/public-policy';
 import { resolveContactFieldDefs, resolveProjectFieldDefs } from './fields';
+import { loadPublicPolicy } from './policy';
 
 /** One computed stat, ready to render. */
 export type ResolvedStat = {
@@ -105,6 +106,8 @@ type StatScope = {
 	defs: Map<string, FieldDefinition>;
 	/** Contact-entity definitions, for a member stat filtering on one. */
 	contactDefs: Map<string, FieldDefinition>;
+	/** This org's count floor and its own protected keys. */
+	policy: PublicPolicy;
 };
 
 async function loadScope(ctx: QueryCtx, campaign: Doc<'campaigns'>): Promise<StatScope> {
@@ -128,13 +131,15 @@ async function loadScope(ctx: QueryCtx, campaign: Doc<'campaigns'>): Promise<Sta
 
 	const defs = await resolveProjectFieldDefs(ctx, campaign.orgId, campaign._id);
 	const contactDefs = await resolveContactFieldDefs(ctx, campaign.orgId, campaign._id);
+	const policy = await loadPublicPolicy(ctx, campaign.orgId);
 
 	return {
 		campaign,
 		projects,
 		projectIds: new Set(projects.map((project) => project._id as string)),
 		defs: new Map(defs.map((def) => [def.key, def])),
-		contactDefs: new Map(contactDefs.map((def) => [def.key, def]))
+		contactDefs: new Map(contactDefs.map((def) => [def.key, def])),
+		policy
 	};
 }
 
@@ -252,9 +257,11 @@ function freedProjects(scope: StatScope, window: StatWindow | undefined): Doc<'p
  * member stat over the same records can never disagree about who is attached
  * to what — and donors are excluded once, in one place.
  *
- * Counts LINKS, not distinct people: someone attached to two records was
- * reached by both. A member stat counts distinct people instead, which is the
- * right reading for "how many children" and the wrong one for "how much reach".
+ * Counted DISTINCT BY PERSON. Someone attached to two records is one person
+ * reached, not two: this is a headline figure about human beings, and the same
+ * child appearing twice because a family was split across records would
+ * overstate it. It is the reading a member stat already takes, so a configured
+ * "people in freed records" stat and this built-in agree by construction.
  */
 function reachCounts(
 	scope: StatScope,
@@ -264,8 +271,10 @@ function reachCounts(
 	const freedIds = new Set(freedProjects(scope, window).map((project) => project._id as string));
 	const reached = members.filter((member) => freedIds.has(member.projectId));
 	return {
-		people: reached.length,
-		children: reached.filter((member) => isChildMember(member)).length
+		people: new Set(reached.map((member) => member.contactId)).size,
+		children: new Set(
+			reached.filter((member) => isChildMember(member)).map((member) => member.contactId)
+		).size
 	};
 }
 
@@ -387,7 +396,7 @@ function everyBucketClearsThreshold(scope: StatScope, fieldKey: string): boolean
 		counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
 	}
 	for (const count of counts.values()) {
-		if (count < SMALL_PUBLIC_COUNT_THRESHOLD) return false;
+		if (count < scope.policy.countThreshold) return false;
 	}
 	return true;
 }
@@ -430,6 +439,11 @@ async function taskDoneProjectIds(
 	const projectIds = new Set<string>();
 	for (const task of rows) {
 		if (task.status !== 'done') continue;
+		// A campaign-level task has no record to count. The write path refuses to
+		// tag one, so this is belt-and-braces — but the set lookup below would
+		// silently exclude it anyway, and a guard that works by accident is one
+		// nobody knows they are relying on.
+		if (!task.projectId) continue;
 		if (!scope.projectIds.has(task.projectId as string)) continue;
 		if (!withinWindow(task.completedAt, window)) continue;
 		projectIds.add(task.projectId as string);
@@ -598,7 +612,10 @@ export async function evaluateStats(
 
 			// Checked in this order so the most fundamental reason wins: a
 			// protected key can never be published however the flags are set.
-			const issue: StatPublicIssue | null = isProtectedFieldKey(def.key)
+			const issue: StatPublicIssue | null = isProtectedFieldKey(
+				def.key,
+				scope.policy.extraProtectedKeys
+			)
 				? 'protected_key'
 				: !def.isPublic
 					? 'private_field'
@@ -680,7 +697,9 @@ export async function evaluateStats(
 	}
 
 	function gate(source: StatSource, format: StatFormat, value: number): StatPublicIssue | null {
-		return suppressesPublicValue(source, format, value) ? 'small_count' : null;
+		return suppressesPublicValue(source, format, value, scope.policy.countThreshold)
+			? 'small_count'
+			: null;
 	}
 }
 

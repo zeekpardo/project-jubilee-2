@@ -127,8 +127,13 @@ export async function assertKeyAvailable(
 // numbers, addresses, locations, ops notes) can never be marked public —
 // checked on both create and update, independent of the read-time filter in
 // publicAttributes.
-export function assertKeyNotProtectedIfPublic(key: string, isPublic: boolean | undefined): void {
-	if (isPublic && isProtectedFieldKey(key)) {
+export function assertKeyNotProtectedIfPublic(
+	key: string,
+	isPublic: boolean | undefined,
+	/** The org's own additions to the shared denylist. */
+	extraProtectedKeys: string[] = []
+): void {
+	if (isPublic && isProtectedFieldKey(key, extraProtectedKeys)) {
 		throw new ConvexError(`Field key cannot be made public: ${key}`);
 	}
 }

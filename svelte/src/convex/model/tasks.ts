@@ -66,6 +66,8 @@ export async function instantiateTasks(
 		.query('tasks')
 		.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
 		.collect();
+	// Manual tasks on the same project carry no key, so they contribute
+	// `undefined` here and can never collide with a template item.
 	const have = new Set(existing.map((task) => task.key));
 
 	let created = 0;
@@ -75,10 +77,17 @@ export async function instantiateTasks(
 			orgId: project.orgId,
 			projectId: project._id,
 			campaignId: project.campaignId,
+			// The discriminator, and what makes templateVersion/key/label
+			// read-only downstream: these came from the checklist, so editing them
+			// per-record would make records disagree about the same step.
+			source: 'template' as const,
 			templateVersion: template.version,
 			key: item.key,
 			label: item.label,
 			order: item.order,
+			// A checklist item is ordinary work until someone says otherwise.
+			// Urgency belongs to the situation, not to the template.
+			priority: 'normal' as const,
 			// Absent stays absent: an untagged item feeds no stat, and writing an
 			// empty string would put it in the by_campaignId_and_impactTag index
 			// under a tag nothing looks for.
@@ -100,5 +109,7 @@ export async function listProjectTasks(
 		.query('tasks')
 		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
 		.collect();
-	return tasks.sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
+	// Tie-break on key so a project's checklist has one stable order. Manual
+	// tasks have none, and sort ahead of template items sharing their `order`.
+	return tasks.sort((a, b) => a.order - b.order || (a.key ?? '').localeCompare(b.key ?? ''));
 }

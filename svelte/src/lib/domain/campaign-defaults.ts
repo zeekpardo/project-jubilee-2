@@ -75,18 +75,3 @@ export const DEFAULT_PIPELINE_STAGES: DefaultStage[] = [
 		isSystem: true
 	}
 ];
-
-export interface DefaultStat {
-	key: string;
-	order: number;
-	showOnDashboard: boolean;
-	showOnPublic: boolean;
-}
-
-/** The campaign-agnostic stats: the goal-met count (label derives from the
- * campaign's goal wording), total raised, and project count. */
-export const DEFAULT_CAMPAIGN_STATS: DefaultStat[] = [
-	{ key: 'families_freed', order: 1, showOnDashboard: true, showOnPublic: true },
-	{ key: 'total_raised', order: 2, showOnDashboard: true, showOnPublic: false },
-	{ key: 'projects_count', order: 3, showOnDashboard: true, showOnPublic: false }
-];

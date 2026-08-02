@@ -10,7 +10,9 @@ export const upsertOrgSettings = mutation({
 		slug: v.optional(v.string()),
 		theme: v.optional(v.string()),
 		publicName: v.optional(v.string()),
-		publicTagline: v.optional(v.string())
+		publicTagline: v.optional(v.string()),
+		publicCountThreshold: v.optional(v.number()),
+		protectedFieldKeys: v.optional(v.array(v.string()))
 	},
 	handler: async (ctx, args) => {
 		const orgId = await requireOrgId(ctx);
@@ -39,7 +41,9 @@ export const upsertOrgSettings = mutation({
 				slug: args.slug,
 				theme: args.theme,
 				publicName: args.publicName,
-				publicTagline: args.publicTagline
+				publicTagline: args.publicTagline,
+				publicCountThreshold: args.publicCountThreshold,
+				protectedFieldKeys: args.protectedFieldKeys
 			});
 		}
 

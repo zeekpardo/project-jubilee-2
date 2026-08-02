@@ -2,6 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { requireOrgId } from '../model/auth';
+import { loadPublicPolicy } from '../model/policy';
 import {
 	assertCategoryUsable,
 	assertKeyAvailable,
@@ -124,7 +125,8 @@ export const createFieldDefinition = mutation({
 			throw new ConvexError('Field key is required');
 		}
 		assertOptionsShape(args.type, args.options);
-		assertKeyNotProtectedIfPublic(key, args.isPublic);
+		const policy = await loadPublicPolicy(ctx, orgId);
+		assertKeyNotProtectedIfPublic(key, args.isPublic, policy.extraProtectedKeys);
 		await assertKeyAvailable(ctx, orgId, args.entity, args.scope, args.campaignId, key);
 
 		return await ctx.db.insert('customFieldDefinitions', {
@@ -164,7 +166,8 @@ export const updateFieldDefinition = mutation({
 		const field = await requireFieldDefinition(ctx, orgId, args.fieldId);
 
 		if (args.isPublic !== undefined) {
-			assertKeyNotProtectedIfPublic(field.key, args.isPublic);
+			const policy = await loadPublicPolicy(ctx, orgId);
+			assertKeyNotProtectedIfPublic(field.key, args.isPublic, policy.extraProtectedKeys);
 		}
 
 		const patch: Record<string, unknown> = {};

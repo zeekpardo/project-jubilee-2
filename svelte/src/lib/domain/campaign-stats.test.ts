@@ -74,9 +74,21 @@ describe('resolveStatLabel', () => {
 		expect(label).toBe('Students Enrolled');
 	});
 
-	it('uses the static default label for a non-goal metric', () => {
-		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx)).toBe('People Reached');
-		expect(resolveStatLabel(STAT_METRICS.children_reached, ctx)).toBe('Children Reached');
+	it('says what the reach metrics actually count, in the campaign vocabulary', () => {
+		// They count only INSIDE goal-met records. A bare "People Reached" hid
+		// that scope behind a label that promised the whole roster.
+		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx)).toBe('People in Families Freed');
+		expect(resolveStatLabel(STAT_METRICS.children_reached, ctx)).toBe('Children in Families Freed');
+		expect(
+			resolveStatLabel(STAT_METRICS.people_reached, {
+				objectLabelPlural: 'Students',
+				goalLabel: 'Enrolled'
+			})
+		).toBe('People in Students Enrolled');
+	});
+
+	it('uses a static default where the metric has no scope to state', () => {
+		expect(resolveStatLabel(STAT_METRICS.total_raised, ctx)).toBe('Total Raised');
 	});
 
 	it('an override wins over the default, trimmed', () => {
@@ -85,9 +97,10 @@ describe('resolveStatLabel', () => {
 	});
 
 	it('an empty or whitespace-only override falls back to the default', () => {
-		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx, '')).toBe('People Reached');
-		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx, '   ')).toBe('People Reached');
-		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx, null)).toBe('People Reached');
+		const fallback = 'People in Families Freed';
+		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx, '')).toBe(fallback);
+		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx, '   ')).toBe(fallback);
+		expect(resolveStatLabel(STAT_METRICS.people_reached, ctx, null)).toBe(fallback);
 	});
 });
 
@@ -120,13 +133,20 @@ describe('statConfigId', () => {
 });
 
 describe('resolveStatConfigs', () => {
-	it('falls back to the shipped three when a campaign has never configured any', () => {
+	it('falls back to the campaign-agnostic minimum, not a rescue programme', () => {
+		// Reach is deliberately absent: "how many people" has more than one
+		// right answer per campaign, so it is an admin's choice to make.
 		expect(resolveStatConfigs(undefined).map((row) => row.id)).toEqual([
 			'builtin:projects_freed',
-			'builtin:people_reached',
-			'builtin:children_reached'
+			'builtin:total_raised'
 		]);
 		expect(resolveStatConfigs(null)).toEqual(defaultStatConfigs());
+	});
+
+	it('drops the money tile for a campaign that tracks no money', () => {
+		expect(defaultStatConfigs({ hasBudget: false }).map((row) => row.id)).toEqual([
+			'builtin:projects_freed'
+		]);
 	});
 
 	it('treats an empty selection as "publish nothing", not as unset', () => {

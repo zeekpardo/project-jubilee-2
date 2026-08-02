@@ -174,8 +174,18 @@ export function publicFieldDefinitions(defs: FieldDefinition[]): FieldDefinition
 // and again where attributes are read for the public site
 // (publicAttributes below), so no past or future write path can leak one.
 
-/** Exact keys that are always withheld, whatever the field is labelled. */
-export const PROTECTED_FIELD_KEYS = ['site_ref', 'whatsapp_phone', 'managed_missions_link', 'note'];
+/**
+ * Exact keys that are always withheld, whatever the field is labelled, in
+ * every organization. These are SHARED because what they leak — where someone
+ * was held, how to reach them, what a caseworker wrote about them — is
+ * dangerous for anyone this app serves, not for one org in particular.
+ *
+ * An org's own keys go in `orgSettings.protectedFieldKeys` and are passed in
+ * as `extraKeys` below. `managed_missions_link` used to live here and does
+ * not any more: it named one organization's integration, and every other
+ * tenant inherited it as a rule. It moved to that org's own settings.
+ */
+export const PROTECTED_FIELD_KEYS = ['site_ref', 'whatsapp_phone', 'note'];
 
 // Beyond the exact keys above, anything shaped like a site reference or a way
 // to reach/find someone is withheld too, so a differently-named field can't
@@ -186,9 +196,15 @@ function normalizeFieldKey(key: string): string {
 	return key.trim().toLowerCase();
 }
 
-export function isProtectedFieldKey(key: string): boolean {
+/**
+ * `extraKeys` is an org's own additions, from its public policy. It can only
+ * ever ADD: an org may decide more is dangerous in its context, never that
+ * less is, because the shared list above protects people rather than tenants.
+ */
+export function isProtectedFieldKey(key: string, extraKeys: string[] = []): boolean {
 	const normalized = normalizeFieldKey(key);
 	if (PROTECTED_FIELD_KEYS.includes(normalized)) return true;
+	if (extraKeys.some((extra) => normalizeFieldKey(extra) === normalized)) return true;
 	return PROTECTED_KEY_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
@@ -198,9 +214,13 @@ export function isProtectedFieldKey(key: string): boolean {
  * a definition can never leak a stale value. A protected key is dropped even
  * if its definition is (incorrectly) marked public — see isProtectedFieldKey.
  */
-export function publicAttributes(defs: FieldDefinition[], attributes: Attributes): Attributes {
+export function publicAttributes(
+	defs: FieldDefinition[],
+	attributes: Attributes,
+	extraProtectedKeys: string[] = []
+): Attributes {
 	const out: Attributes = {};
-	for (const attribute of publicAttributeList(defs, attributes)) {
+	for (const attribute of publicAttributeList(defs, attributes, extraProtectedKeys)) {
 		out[attribute.key] = attribute.value;
 	}
 	return out;
@@ -227,11 +247,12 @@ export interface PublicAttribute {
  */
 export function publicAttributeList(
 	defs: FieldDefinition[],
-	attributes: Attributes
+	attributes: Attributes,
+	extraProtectedKeys: string[] = []
 ): PublicAttribute[] {
 	const out: PublicAttribute[] = [];
 	for (const def of publicFieldDefinitions(defs)) {
-		if (isProtectedFieldKey(def.key)) continue;
+		if (isProtectedFieldKey(def.key, extraProtectedKeys)) continue;
 		const value = attributes[def.key];
 		if (value === undefined || value === null || value === '') continue;
 		out.push({ key: def.key, label: def.label, type: def.type, value });

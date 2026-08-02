@@ -14,6 +14,7 @@
 	import SiteAddressCard from '$lib/features/public-site-admin/SiteAddressCard.svelte';
 	import ThemeCard from '$lib/features/public-site-admin/ThemeCard.svelte';
 	import StatSectionsCard from '$lib/features/public-site-admin/StatSectionsCard.svelte';
+	import PrivacyPolicyCard from '$lib/features/public-site-admin/PrivacyPolicyCard.svelte';
 	import CustomDomainsCard from '$lib/features/public-site-admin/CustomDomainsCard.svelte';
 	import * as m from '$lib/i18n/messages';
 
@@ -41,5 +42,6 @@
 	<SiteAddressCard {settings} canWrite={allowed} />
 	<ThemeCard {settings} canWrite={allowed} />
 	<StatSectionsCard {settings} canWrite={allowed} />
+	<PrivacyPolicyCard {settings} canWrite={allowed} />
 	<CustomDomainsCard />
 </PageContainer>

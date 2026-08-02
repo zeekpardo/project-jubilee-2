@@ -82,6 +82,7 @@ import {
 import { raisedForProject } from '../../lib/domain/reconciliation';
 import { isPersonReachedRole } from '../../lib/domain/campaign-stats';
 import { resolveProjectFieldDefs } from './fields';
+import { loadPublicPolicy } from './policy';
 import { computeStats, type ResolvedStat } from './stats';
 
 /**
@@ -208,6 +209,9 @@ export async function toPublicProject(
 	const targetCents = budget?.targetCents ?? null;
 
 	const defs = presolvedDefs ?? (await publicFieldDefs(ctx, project.orgId, project.campaignId));
+	// The org's own denylist additions, on top of the shared one. Loaded here
+	// rather than passed in so no caller can forget it.
+	const policy = await loadPublicPolicy(ctx, project.orgId);
 
 	// An uploaded photo lives in Convex storage and has to be resolved to a
 	// signed URL at read time; a pasted photoUrl is the fallback. Same order as
@@ -230,7 +234,7 @@ export async function toPublicProject(
 		goalLabel: campaign.goalLabel,
 		memberCount: memberLinks.length,
 		memberFirstNames,
-		attributes: publicAttributeList(defs, project.attributes),
+		attributes: publicAttributeList(defs, project.attributes, policy.extraProtectedKeys),
 		raisedCents,
 		targetCents,
 		progress: targetCents && targetCents > 0 ? Math.min(1, raisedCents / targetCents) : null

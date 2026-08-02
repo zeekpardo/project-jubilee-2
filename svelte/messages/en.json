@@ -873,5 +873,16 @@
 	"campaignStats_aggregateCountWhere": "How many records say “{value}”",
 	"campaignStats_allAdded": "Every built-in number is already on the list.",
 	"campaignStats_noFields": "No custom fields yet — add one under Custom fields.",
-	"campaignStats_noTags": "No checklist tags yet — tag an item on a checklist version below."
+	"campaignStats_noTags": "No checklist tags yet — tag an item on a checklist version below.",
+	"privacy_title": "Privacy rules",
+	"privacy_body": "How cautious your public site is with small numbers and sensitive field names. The defaults suit an organisation whose records are people.",
+	"privacy_threshold": "Hide public counts below",
+	"privacy_thresholdHelp": "A published count smaller than this is withheld. Small counts can identify someone — “1 record” next to a handful of published profiles gives them away.",
+	"privacy_thresholdInvalid": "Enter a whole number, 0 or more.",
+	"privacy_thresholdOffWarning": "Set to 0, no count is ever withheld. Reasonable if your records are wells or deliveries. If they are people, a count of 1 or 2 can identify them.",
+	"privacy_extraKeys": "Also never publish these field keys",
+	"privacy_extraKeysHelp": "One per line. Use this for anything sensitive in your own work that the shared list wouldn't guess. A field with one of these keys can never be marked public.",
+	"privacy_alwaysProtected": "Always protected, for every organisation:",
+	"privacy_patternKeys": "anything containing phone, address or location, or ending in _ref",
+	"privacy_extraKeysPlaceholder": "partner_ref\ncase_worker"
 }

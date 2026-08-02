@@ -42,7 +42,6 @@ import {
 	resolveStatLabel,
 	STAT_METRICS,
 	suppressesPublicValue,
-	SMALL_PUBLIC_COUNT_THRESHOLD,
 	type MemberFilter,
 	type StatConfig,
 	type StatFormat,
@@ -50,7 +49,9 @@ import {
 	type StatSurface
 } from '../../lib/domain/campaign-stats';
 import { isProtectedFieldKey, type FieldDefinition } from '../../lib/domain/field-definitions';
+import type { PublicPolicy } from '../../lib/domain/public-policy';
 import { resolveContactFieldDefs, resolveProjectFieldDefs } from './fields';
+import { loadPublicPolicy } from './policy';
 
 /** One computed stat, ready to render. */
 export type ResolvedStat = {
@@ -105,6 +106,8 @@ type StatScope = {
 	defs: Map<string, FieldDefinition>;
 	/** Contact-entity definitions, for a member stat filtering on one. */
 	contactDefs: Map<string, FieldDefinition>;
+	/** This org's count floor and its own protected keys. */
+	policy: PublicPolicy;
 };
 
 async function loadScope(ctx: QueryCtx, campaign: Doc<'campaigns'>): Promise<StatScope> {
@@ -128,13 +131,15 @@ async function loadScope(ctx: QueryCtx, campaign: Doc<'campaigns'>): Promise<Sta
 
 	const defs = await resolveProjectFieldDefs(ctx, campaign.orgId, campaign._id);
 	const contactDefs = await resolveContactFieldDefs(ctx, campaign.orgId, campaign._id);
+	const policy = await loadPublicPolicy(ctx, campaign.orgId);
 
 	return {
 		campaign,
 		projects,
 		projectIds: new Set(projects.map((project) => project._id as string)),
 		defs: new Map(defs.map((def) => [def.key, def])),
-		contactDefs: new Map(contactDefs.map((def) => [def.key, def]))
+		contactDefs: new Map(contactDefs.map((def) => [def.key, def])),
+		policy
 	};
 }
 
@@ -391,7 +396,7 @@ function everyBucketClearsThreshold(scope: StatScope, fieldKey: string): boolean
 		counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
 	}
 	for (const count of counts.values()) {
-		if (count < SMALL_PUBLIC_COUNT_THRESHOLD) return false;
+		if (count < scope.policy.countThreshold) return false;
 	}
 	return true;
 }
@@ -602,7 +607,10 @@ export async function evaluateStats(
 
 			// Checked in this order so the most fundamental reason wins: a
 			// protected key can never be published however the flags are set.
-			const issue: StatPublicIssue | null = isProtectedFieldKey(def.key)
+			const issue: StatPublicIssue | null = isProtectedFieldKey(
+				def.key,
+				scope.policy.extraProtectedKeys
+			)
 				? 'protected_key'
 				: !def.isPublic
 					? 'private_field'
@@ -684,7 +692,9 @@ export async function evaluateStats(
 	}
 
 	function gate(source: StatSource, format: StatFormat, value: number): StatPublicIssue | null {
-		return suppressesPublicValue(source, format, value) ? 'small_count' : null;
+		return suppressesPublicValue(source, format, value, scope.policy.countThreshold)
+			? 'small_count'
+			: null;
 	}
 }
 

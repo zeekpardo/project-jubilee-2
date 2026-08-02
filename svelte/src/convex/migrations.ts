@@ -138,11 +138,31 @@ export const seedPublicTaskStats = migrations.define({
 	}
 });
 
+// ------------------------------------------------------------------
+// Moving one org's protected key off the shared denylist
+// ------------------------------------------------------------------
+// PROTECTED_FIELD_KEYS carried `managed_missions_link` — the name of one
+// organization's integration — as a rule every tenant inherited. The shared
+// list is for what endangers the PEOPLE this app serves; a tenant's own keys
+// belong to that tenant. This copies it into every existing org's settings so
+// nothing it was protecting becomes publishable, then the shared list drops it.
+//
+// Additive and idempotent: an org that already lists the key is untouched.
+export const moveOrgProtectedKeys = migrations.define({
+	table: 'orgSettings',
+	migrateOne: (_ctx, settings) => {
+		const keys = settings.protectedFieldKeys ?? [];
+		if (keys.includes('managed_missions_link')) return;
+		return { protectedFieldKeys: [...keys, 'managed_missions_link'] };
+	}
+});
+
 /** Runs every migration this app has, in order. Safe to re-run. */
 export const runAll = migrations.runner([
 	internal.migrations.normaliseTaskTemplateItems,
 	// Reads isPublic, so it must run before the two that drop it.
 	internal.migrations.seedPublicTaskStats,
 	internal.migrations.dropChecklistIsPublic,
-	internal.migrations.dropTaskIsPublic
+	internal.migrations.dropTaskIsPublic,
+	internal.migrations.moveOrgProtectedKeys
 ]);

@@ -50,6 +50,7 @@ import type * as model_fields from "../model/fields.js";
 import type * as model_memberships from "../model/memberships.js";
 import type * as model_money from "../model/money.js";
 import type * as model_organizations_index from "../model/organizations/index.js";
+import type * as model_policy from "../model/policy.js";
 import type * as model_projects from "../model/projects.js";
 import type * as model_public from "../model/public.js";
 import type * as model_stats from "../model/stats.js";
@@ -134,6 +135,7 @@ declare const fullApi: ApiFromModules<{
   "model/memberships": typeof model_memberships;
   "model/money": typeof model_money;
   "model/organizations/index": typeof model_organizations_index;
+  "model/policy": typeof model_policy;
   "model/projects": typeof model_projects;
   "model/public": typeof model_public;
   "model/stats": typeof model_stats;

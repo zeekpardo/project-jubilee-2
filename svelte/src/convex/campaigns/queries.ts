@@ -5,6 +5,7 @@ import type { Doc } from '../_generated/dataModel';
 import { activeOrgId } from '../model/auth';
 import { computeStats, evaluateStats, type EvaluatedStat, type ResolvedStat } from '../model/stats';
 import { resolveContactFieldDefs } from '../model/fields';
+import { loadPublicPolicy } from '../model/policy';
 import { HOUSEHOLD_ROLES, isPersonReachedRole } from '../../lib/domain/campaign-stats';
 import { isProtectedFieldKey } from '../../lib/domain/field-definitions';
 
@@ -111,6 +112,7 @@ export const listMemberDimensions = query({
 		}
 
 		const contactDefs = await resolveContactFieldDefs(ctx, orgId, args.campaignId);
+		const policy = await loadPublicPolicy(ctx, orgId);
 
 		return {
 			// The enum is the full set; sorting the ones in use to the front would
@@ -119,7 +121,7 @@ export const listMemberDimensions = query({
 			relationships: [...relationships].sort((a, b) => a.localeCompare(b)),
 			contactFields: contactDefs
 				// Refused at write time anyway; not offering it is the friendlier gate.
-				.filter((def) => !isProtectedFieldKey(def.key))
+				.filter((def) => !isProtectedFieldKey(def.key, policy.extraProtectedKeys))
 				.map((def) => ({
 					key: def.key,
 					label: def.label,

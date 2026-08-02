@@ -125,6 +125,15 @@ const orgSettings = defineTable({
 	publicName: v.optional(v.string()),
 	publicTagline: v.optional(v.string()),
 
+	// The privacy dials this org owns. Both default to the shipped values —
+	// see lib/domain/public-policy.ts for why they are per-org at all.
+	// A public count below this is withheld; 0 disables suppression, which is
+	// a real choice for an org whose records are not people.
+	publicCountThreshold: v.optional(v.number()),
+	// Keys this org protects ON TOP of the shared denylist, never instead of
+	// it: the shared list protects the people this app serves, not the tenant.
+	protectedFieldKeys: v.optional(v.array(v.string())),
+
 	// The org page does NOT sum across campaigns: adding "families freed" to
 	// "attendees reached" produces a number that means nothing. Instead the
 	// admin picks which campaigns to surface, and each renders as its own

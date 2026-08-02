@@ -964,9 +964,7 @@ export const seedMilestoneTasks = internalMutation({
 					// goalMetAt when the project carries one, so a date-filtered
 					// dashboard places the completion at the same moment the
 					// record was freed rather than at seed time.
-					...(done
-						? { completedAt: project.goalMetAt ?? PLACEHOLDER_COMPLETED_AT }
-						: {})
+					...(done ? { completedAt: project.goalMetAt ?? PLACEHOLDER_COMPLETED_AT } : {})
 				});
 				inserted++;
 				if (done) completed++;

@@ -1,7 +1,9 @@
 import { createConvexHttpClient } from '@mmailaender/convex-better-auth-svelte/sveltekit';
+import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
 import { api } from '$convex/_generated/api';
 import { building } from '$app/environment';
+import { canAccessAdmin } from '$lib/domain/permissions';
 import { ACTIVE_CAMPAIGN_COOKIE } from '$lib/campaigns/active.svelte';
 import { SIDEBAR_COOKIE, resolveSidebarOpen } from '$lib/shell/sidebar.svelte';
 
@@ -30,6 +32,12 @@ export const load = (async ({ locals, cookies }) => {
 		client.query(api.access.queries.getMyAccess, {}),
 		client.query(api.access.queries.listMyCampaigns, {})
 	]);
+
+	// Decided here as well as in the layout's `{#if}`, because a portal member
+	// is the first role that can hold a session and reach this load. The client
+	// guard renders a refusal; this one never renders the shell at all, and
+	// sends them to the surface they do have.
+	if (!canAccessAdmin(access)) redirect(307, '/portal');
 
 	// A stale cookie must not select a campaign the caller has since lost access
 	// to, so it only counts when it appears in the list the server returned.

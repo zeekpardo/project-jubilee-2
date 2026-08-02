@@ -20,6 +20,14 @@ type LegacyChecklistItem = {
 	isPublic?: boolean;
 };
 
+// A `contacts` row mid-rollout: `updateDetail` is declared but not written
+// yet, and `transparency` has not been dropped. Doc<'contacts'> is the NARROW
+// shape and admits only the new name, so the backfill reads through this.
+type LegacyTransparencyContact = Doc<'contacts'> & {
+	/** Renamed: a mailing preference wearing the name of a permission. */
+	transparency?: 'summary' | 'full';
+};
+
 // A `tasks` row mid-rollout, during the widened step: the three new fields are
 // not written yet and `note` has not been dropped. Doc<'tasks'> is the NARROW
 // shape and admits neither, so the backfill reads through this.
@@ -217,6 +225,45 @@ export const dropTaskNote = migrations.define({
 	migrateOne: () => ({ note: undefined }) as Partial<Doc<'tasks'>>
 });
 
+// ------------------------------------------------------------------
+// contacts.transparency becomes contacts.updateDetail
+// ------------------------------------------------------------------
+// The field arrived with the retired `sponsors` table, carrying its name and
+// none of its behaviour. In the app it came from it decided whether two
+// transactional emails printed progress numbers, and nothing else; here it is
+// displayed, editable, and read by no branch at all.
+//
+// `summary | full` on a contact reads like an access level, and the next
+// person to design a portal would build the two-tier thing it implies. So the
+// values stay and the name goes: `updateDetail` says it is about what we send.
+//
+// Same widen -> migrate -> narrow rollout as the others:
+//
+//   1. Widen. Deploy `contacts` with BOTH `transparency` and `updateDetail`
+//      declared optional, so either shape validates.
+//   2. Migrate. `npx convex run migrations:run '{"fn":
+//      "migrations:renameTransparency"}'` — copies the value across, then
+//      `...:dropTransparency` removes the old column.
+//   3. Narrow. Deploy the final shape in schema.ts (what is committed now).
+export const renameTransparency = migrations.define({
+	table: 'contacts',
+	migrateOne: (_ctx, contact) => {
+		const row = contact as LegacyTransparencyContact;
+		// A value written after the widen deploy outranks the old column, and a
+		// row with neither is left entirely alone — the field is optional and
+		// "unset" is a real answer.
+		if (row.transparency === undefined || row.updateDetail !== undefined) return;
+		return { updateDetail: row.transparency };
+	}
+});
+
+export const dropTransparency = migrations.define({
+	table: 'contacts',
+	// Patching a field to undefined is how Convex deletes it. The cast is for
+	// the same reason as the shapes above: the field is gone from the schema.
+	migrateOne: () => ({ transparency: undefined }) as Partial<Doc<'contacts'>>
+});
+
 /** Runs every migration this app has, in order. Safe to re-run. */
 export const runAll = migrations.runner([
 	internal.migrations.normaliseTaskTemplateItems,
@@ -227,5 +274,8 @@ export const runAll = migrations.runner([
 	internal.migrations.moveOrgProtectedKeys,
 	// Reads `note`, so it must run before the one that drops it.
 	internal.migrations.backfillTaskDefaults,
-	internal.migrations.dropTaskNote
+	internal.migrations.dropTaskNote,
+	// Reads `transparency`, so it must run before the one that drops it.
+	internal.migrations.renameTransparency,
+	internal.migrations.dropTransparency
 ]);

@@ -1,6 +1,6 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 
 // Append-only: a rate-card change is a new version row, never an edit of an
 // existing one, so budgets keep the version they snapshotted.
@@ -12,7 +12,7 @@ export const createCostTemplateVersion = mutation({
 		effectiveFrom: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'money:write', args.campaignId);
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
 		if (!campaign || campaign.orgId !== orgId) {

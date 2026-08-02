@@ -2,7 +2,8 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { getAccess, readableOrgId } from '../model/access';
+import { can } from '../../lib/domain/permissions';
 
 /**
  * An uploaded photo is reachable only through a signed URL, and a list consumer
@@ -28,7 +29,7 @@ export const listProjects = query({
 		isPublished: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -99,13 +100,16 @@ export const getProject = query({
 		projectId: v.id('projects')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return null;
 		}
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
+		if (!project || project.orgId !== access.orgId) {
+			return null;
+		}
+		if (!can(access, 'projects:read', project.campaignId)) {
 			return null;
 		}
 
@@ -118,14 +122,23 @@ export const getProjectByNumber = query({
 		number: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return null;
 		}
+		const orgId = access.orgId;
 
-		return await ctx.db
+		const project = await ctx.db
 			.query('projects')
 			.withIndex('by_orgId_and_number', (q) => q.eq('orgId', orgId).eq('number', args.number))
 			.unique();
+		if (!project) {
+			return null;
+		}
+		if (!can(access, 'projects:read', project.campaignId)) {
+			return null;
+		}
+
+		return project;
 	}
 });

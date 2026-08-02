@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 
 async function householdMembers(
 	ctx: QueryCtx,
@@ -19,7 +19,7 @@ export const listHouseholds = query({
 		limit: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'contacts:read');
 		if (!orgId) {
 			return [];
 		}
@@ -44,7 +44,7 @@ export const getHousehold = query({
 		householdId: v.id('households')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'contacts:read');
 		if (!orgId) {
 			return null;
 		}

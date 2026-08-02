@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
-import { activeOrgId } from '../model/auth';
+import { getAccess } from '../model/access';
+import { can } from '../../lib/domain/permissions';
 
 export const listDocumentsForProject = query({
 	args: {
@@ -8,13 +9,16 @@ export const listDocumentsForProject = query({
 		stage: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return [];
 		}
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
+		if (!project || project.orgId !== access.orgId) {
+			return [];
+		}
+		if (!can(access, 'projects:read', project.campaignId)) {
 			return [];
 		}
 		const projectId = args.projectId;
@@ -39,13 +43,18 @@ export const getDocument = query({
 		documentId: v.id('documents')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return null;
 		}
 
 		const document = await ctx.db.get('documents', args.documentId);
-		if (!document || document.orgId !== orgId) {
+		if (!document || document.orgId !== access.orgId) {
+			return null;
+		}
+
+		const project = await ctx.db.get('projects', document.projectId);
+		if (!project || !can(access, 'projects:read', project.campaignId)) {
 			return null;
 		}
 

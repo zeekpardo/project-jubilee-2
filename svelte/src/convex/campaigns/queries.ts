@@ -2,7 +2,8 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { getAccess, readableOrgId } from '../model/access';
+import { can } from '../../lib/domain/permissions';
 import { computeStats, evaluateStats, type EvaluatedStat, type ResolvedStat } from '../model/stats';
 import { resolveContactFieldDefs } from '../model/fields';
 import { loadPublicPolicy } from '../model/policy';
@@ -31,7 +32,10 @@ async function withImageUrls(ctx: QueryCtx, row: Doc<'campaigns'>): Promise<Doc<
 export const listCampaigns = query({
 	args: {},
 	handler: async (ctx) => {
-		const orgId = await activeOrgId(ctx);
+		// There is no standalone campaign-read capability — a campaign is the
+		// shell around a projects/pipeline workspace, so projects:read is what
+		// gates seeing it at all.
+		const orgId = await readableOrgId(ctx, 'projects:read');
 		if (!orgId) {
 			return [];
 		}
@@ -49,13 +53,20 @@ export const getCampaign = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		// Gated twice, off ONE `getAccess`: once org-wide so a caller with no read
+		// access anywhere is turned away before the row is loaded, then again
+		// scoped to the campaign the id actually resolved to. Resolving access a
+		// second time would mean a second round of auth lookups per read.
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'projects:read')) {
 			return null;
 		}
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
-		if (!campaign || campaign.orgId !== orgId) {
+		if (!campaign || campaign.orgId !== access.orgId) {
+			return null;
+		}
+		if (!can(access, 'projects:read', campaign._id)) {
 			return null;
 		}
 
@@ -75,7 +86,7 @@ export const getCampaign = query({
 export const listMemberDimensions = query({
 	args: { campaignId: v.id('campaigns') },
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return { householdRoles: [], relationships: [], contactFields: [] };
 		}
@@ -144,7 +155,7 @@ export const listMemberDimensions = query({
 export const previewStats = query({
 	args: { campaignId: v.id('campaigns') },
 	handler: async (ctx, args): Promise<EvaluatedStat[]> => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -175,7 +186,7 @@ export const getDashboardStats = query({
 		to: v.optional(v.number())
 	},
 	handler: async (ctx, args): Promise<ResolvedStat[]> => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -197,15 +208,25 @@ export const getCampaignBySlug = query({
 		slug: v.string()
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		// Same double gate as getCampaign, and off the same single `getAccess`:
+		// the slug names no campaign until the row is loaded.
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'projects:read')) {
 			return null;
 		}
 
+		const orgId = access.orgId;
 		const campaign = await ctx.db
 			.query('campaigns')
 			.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', orgId).eq('slug', args.slug))
 			.unique();
-		return campaign ? await withImageUrls(ctx, campaign) : null;
+		if (!campaign) {
+			return null;
+		}
+		if (!can(access, 'projects:read', campaign._id)) {
+			return null;
+		}
+
+		return await withImageUrls(ctx, campaign);
 	}
 });

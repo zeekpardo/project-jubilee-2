@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
 import { createCampaignModel } from '../model/campaigns';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import { deleteCampaignCascade } from '../model/cascade';
 import { statConfigsError, type StatConfig } from '../../lib/domain/campaign-stats';
 import { loadPublicPolicy } from '../model/policy';
@@ -34,7 +34,7 @@ export const createCampaign = mutation({
 		isPublished: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:create');
 		return await createCampaignModel(ctx, { ...args, orgId });
 	}
 });
@@ -64,12 +64,13 @@ export const updateCampaign = mutation({
 		isPublished: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit');
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
 		if (!campaign || campaign.orgId !== orgId) {
 			throw new ConvexError('Campaign not found');
 		}
+		await requireCapability(ctx, 'campaign:edit', campaign._id);
 
 		const { campaignId, ...updates } = args;
 
@@ -164,12 +165,13 @@ export const setPublicStats = mutation({
 		)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:edit');
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
 		if (!campaign || campaign.orgId !== orgId) {
 			throw new ConvexError('Campaign not found');
 		}
+		await requireCapability(ctx, 'campaign:edit', campaign._id);
 
 		const policy = await loadPublicPolicy(ctx, orgId);
 		const error = statConfigsError(args.stats as StatConfig[], policy);
@@ -198,7 +200,7 @@ export const deleteCampaign = mutation({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'campaign:delete');
 
 		const campaign = await ctx.db.get('campaigns', args.campaignId);
 		if (!campaign || campaign.orgId !== orgId) {

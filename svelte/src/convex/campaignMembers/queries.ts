@@ -81,24 +81,43 @@ export const listCampaignMembers = query({
 	}
 });
 
-/** Campaigns a contact belongs to. */
+/**
+ * Campaigns a contact belongs to.
+ *
+ * Takes any contactId, so the gate is the whole protection: `contacts:read`,
+ * asked once per membership against that membership's OWN campaign. Asking
+ * per row rather than once org-wide matters because the argument names a
+ * person rather than a campaign — a leader assigned to one campaign would
+ * otherwise learn every other campaign a contact belongs to by passing an id.
+ *
+ * Neither document is spread. The membership row carries an `attributes`
+ * record this screen never reads, and the campaign document carries the whole
+ * campaign; both are trimmed to what `CampaignsTab.svelte` actually renders.
+ */
 export const listCampaignsForContact = query({
 	args: { contactId: v.id('contacts') },
 	handler: async (ctx, args) => {
 		const access = await getAccess(ctx);
 		if (!access.orgId) return [];
+		if (!can(access, 'contacts:read')) return [];
 
 		const links = await ctx.db
 			.query('campaignMemberships')
 			.withIndex('by_contactId', (q) => q.eq('contactId', args.contactId))
 			.collect();
 
-		const mine = links.filter((link) => link.orgId === access.orgId);
+		const mine = links.filter(
+			(link) => link.orgId === access.orgId && can(access, 'contacts:read', link.campaignId)
+		);
 		return await Promise.all(
-			mine.map(async (link) => ({
-				...link,
-				campaign: await ctx.db.get('campaigns', link.campaignId)
-			}))
+			mine.map(async (link) => {
+				const campaign = await ctx.db.get('campaigns', link.campaignId);
+				return {
+					_id: link._id,
+					role: link.role,
+					campaign: campaign ? { name: campaign.name } : null
+				};
+			})
 		);
 	}
 });

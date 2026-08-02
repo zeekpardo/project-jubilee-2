@@ -7,6 +7,7 @@ import { getAuthContext } from '$lib/auth/context.svelte';
 import {
 	can as canDo,
 	canAccessAdmin,
+	isAssignedRole,
 	visibleCampaignIds,
 	type Access,
 	type Capability,
@@ -69,6 +70,14 @@ export function useAccess(options?: UseAccessOptions) {
 		},
 		get isTeamLeader() {
 			return access.role === 'team_leader';
+		},
+		/**
+		 * Their reach IS their assignments — a campaign manager or a team leader.
+		 * An empty workspace means something different for these two than for an
+		 * admin: nobody has assigned them anything yet, rather than nothing exists.
+		 */
+		get isAssignedRole() {
+			return isAssignedRole(access.role);
 		},
 		can(capability: Capability, campaignId?: string | null) {
 			return canDo(access, capability, campaignId);

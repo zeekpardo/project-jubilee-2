@@ -3,6 +3,7 @@ import { internalMutation, mutation } from '../_generated/server';
 import { authComponent, createAuth } from '../auth';
 import { APIError } from 'better-auth/api';
 import { createOrganizationModel, updateOrganizationProfileModel } from '../model/organizations';
+import { requireCapability } from '../model/access';
 
 /**
  * Creates a new organization with the given name, slug, and optional logo
@@ -127,8 +128,14 @@ export const deleteOrganization = mutation({
 		organizationId: v.optional(v.string())
 	},
 	handler: async (ctx, args) => {
-		const user = await authComponent.safeGetAuthUser(ctx);
-		if (!user) throw new ConvexError('Not authenticated');
+		const { orgId } = await requireCapability(ctx, 'org:manage');
+
+		// The capability was resolved against the ACTIVE organization, so that is
+		// the only one it may delete. Without this, an owner of one org could
+		// name another org's id here and be checked against the wrong membership.
+		if (args.organizationId !== undefined && args.organizationId !== orgId) {
+			throw new ConvexError('Switch to an organization before deleting it');
+		}
 
 		const auth = createAuth(ctx);
 		const organization = await auth.api.getFullOrganization({
@@ -194,8 +201,7 @@ export const updateOrganizationProfile = mutation({
 		logoId: v.optional(v.id('_storage'))
 	},
 	handler: async (ctx, args) => {
-		const user = await authComponent.safeGetAuthUser(ctx);
-		if (!user) throw new ConvexError('Not authenticated');
+		await requireCapability(ctx, 'org:manage');
 
 		const auth = createAuth(ctx);
 		const organization = await auth.api.getFullOrganization({

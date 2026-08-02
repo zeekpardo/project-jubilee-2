@@ -1,3 +1,18 @@
+// ============================================================
+// One contact, joined out — for STAFF looking at somebody else
+// ============================================================
+// Every query here takes an arbitrary `contactId` and answers about that
+// person: their households, their giving, their campaigns. That is correct
+// for the surface it serves — a staff member opening a contact record — and
+// it is why each one gates on a staff capability before reading anything.
+//
+// DO NOT WRITE A PORTAL TWIN OF THESE BY ANALOGY. The shape here is "tell me
+// about this person, whoever they are"; a portal read is "tell me about ME",
+// and the difference is not a swapped capability but a missing argument. The
+// portal's own versions live in `model/portal.ts` and take no contactId at
+// all, deliberately, so no caller can pass one.
+// ============================================================
+
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import { getAccess } from '../model/access';

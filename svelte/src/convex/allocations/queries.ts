@@ -1,7 +1,8 @@
 import { v } from 'convex/values';
 import { query, type QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { getAccess, readableOrgId } from '../model/access';
+import { can } from '../../lib/domain/permissions';
 import { toAllocationLike, toTransactionLike } from '../model/money';
 import { raisedForProject } from '../../lib/domain/reconciliation';
 import { normalizeBudgetItem } from '../../lib/domain/budget-actuals';
@@ -11,7 +12,8 @@ export const listAllocationsForTransaction = query({
 		transactionId: v.id('transactions')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		// Transactions carry no campaign of their own, so this gates org-wide.
+		const orgId = await readableOrgId(ctx, 'money:read');
 		if (!orgId) {
 			return [];
 		}
@@ -33,13 +35,16 @@ export const listAllocationsForProject = query({
 		projectId: v.id('projects')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return [];
 		}
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
+		if (!project || project.orgId !== access.orgId) {
+			return [];
+		}
+		if (!can(access, 'money:read', project.campaignId)) {
 			return [];
 		}
 
@@ -55,15 +60,19 @@ export const getRaisedForProject = query({
 		projectId: v.id('projects')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return 0;
 		}
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
+		if (!project || project.orgId !== access.orgId) {
 			return 0;
 		}
+		if (!can(access, 'money:read', project.campaignId)) {
+			return 0;
+		}
+		const orgId = access.orgId;
 
 		const allocations = await ctx.db
 			.query('allocations')
@@ -107,15 +116,19 @@ export const getExpendituresForProject = query({
 		projectId: v.id('projects')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return [];
 		}
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
+		if (!project || project.orgId !== access.orgId) {
 			return [];
 		}
+		if (!can(access, 'money:read', project.campaignId)) {
+			return [];
+		}
+		const orgId = access.orgId;
 
 		const allocations = await ctx.db
 			.query('allocations')
@@ -188,15 +201,19 @@ export const getLedgerReceiptsForProject = query({
 		projectId: v.id('projects')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return [];
 		}
 
 		const project = await ctx.db.get('projects', args.projectId);
-		if (!project || project.orgId !== orgId) {
+		if (!project || project.orgId !== access.orgId) {
 			return [];
 		}
+		if (!can(access, 'money:read', project.campaignId)) {
+			return [];
+		}
+		const orgId = access.orgId;
 
 		const allocations = await ctx.db
 			.query('allocations')

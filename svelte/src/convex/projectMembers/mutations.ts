@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 import {
 	assertMemberAttributes,
 	assertProjectMemberUnique,
@@ -32,8 +32,9 @@ export const addProjectMember = mutation({
 		attributes: v.optional(memberAttributesValidator)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
-		await requireProject(ctx, orgId, args.projectId);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
+		const project = await requireProject(ctx, orgId, args.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 		await requireContact(ctx, orgId, args.contactId);
 		await assertProjectMemberUnique(ctx, args.projectId, args.contactId);
 		assertMemberAttributes(args.attributes);
@@ -57,8 +58,10 @@ export const updateProjectMember = mutation({
 		attributes: v.optional(memberAttributesValidator)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const member = await requireProjectMember(ctx, orgId, args.projectMemberId);
+		const project = await requireProject(ctx, orgId, member.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 		assertMemberAttributes(args.attributes);
 
 		const patch: Partial<Omit<Doc<'projectMembers'>, '_id' | '_creationTime' | 'orgId'>> = {};
@@ -80,8 +83,10 @@ export const removeProjectMember = mutation({
 		projectMemberId: v.id('projectMembers')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'projects:write');
 		const member = await requireProjectMember(ctx, orgId, args.projectMemberId);
+		const project = await requireProject(ctx, orgId, member.projectId);
+		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		await ctx.db.delete('projectMembers', member._id);
 		return null;

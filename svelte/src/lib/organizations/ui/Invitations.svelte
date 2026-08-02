@@ -18,6 +18,7 @@
 
 	// Types
 	import type { Role, ListInvitationsType } from '$lib/auth/types';
+	import { ROLES } from '$lib/domain/permissions';
 
 	// Props
 	let {
@@ -71,16 +72,15 @@
 				return invitation.email.toLowerCase().includes(searchQuery.toLowerCase());
 			})
 			.sort((a, b) => {
-				// Sort by role (owner first, then admin, then team leader, then member)
-				const roleOrder: Record<Role, number> = {
-					owner: 0,
-					admin: 1,
-					team_leader: 2,
-					member: 3
+				// Widest reach first. ROLES is already in that order, so a new role
+				// sorts correctly the day it is added rather than falling to the end.
+				const rank = (role: string) => {
+					const index = (ROLES as string[]).indexOf(role);
+					return index === -1 ? ROLES.length : index;
 				};
 
 				// Primary sort by role
-				const roleDiff = roleOrder[a.role as Role] - roleOrder[b.role as Role];
+				const roleDiff = rank(a.role) - rank(b.role);
 				if (roleDiff !== 0) return roleDiff;
 
 				// Secondary sort by email

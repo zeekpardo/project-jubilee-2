@@ -4,6 +4,7 @@ import {
 	assignableRoles,
 	can,
 	canAccessAdmin,
+	ROLES,
 	visibleCampaignIds,
 	type Access,
 	type Role
@@ -39,6 +40,29 @@ describe('admin', () => {
 	});
 });
 
+describe('campaign manager', () => {
+	const manager = access('campaign_manager', ['c1']);
+
+	it('runs its own campaigns, settings included', () => {
+		expect(can(manager, 'campaign:edit', 'c1')).toBe(true);
+		expect(can(manager, 'projects:write', 'c1')).toBe(true);
+		expect(can(manager, 'money:write', 'c1')).toBe(true);
+	});
+
+	it('stops at the campaigns it is assigned to', () => {
+		expect(can(manager, 'campaign:edit', 'c2')).toBe(false);
+		expect(can(manager, 'projects:read', 'c2')).toBe(false);
+	});
+
+	it('cannot create, delete or configure the org', () => {
+		expect(can(manager, 'campaign:create')).toBe(false);
+		expect(can(manager, 'campaign:delete')).toBe(false);
+		expect(can(manager, 'members:manage')).toBe(false);
+		expect(can(manager, 'settings:manage')).toBe(false);
+		expect(can(manager, 'org:manage')).toBe(false);
+	});
+});
+
 describe('team leader', () => {
 	const leader = access('team_leader', ['c1', 'c2']);
 
@@ -46,6 +70,11 @@ describe('team leader', () => {
 		expect(can(leader, 'projects:write', 'c1')).toBe(true);
 		expect(can(leader, 'projects:write', 'c2')).toBe(true);
 		expect(can(leader, 'projects:write', 'c3')).toBe(false);
+	});
+
+	it('cannot change the campaign itself, which is what separates it from a manager', () => {
+		expect(can(leader, 'campaign:edit', 'c1')).toBe(false);
+		expect(can(access('campaign_manager', ['c1']), 'campaign:edit', 'c1')).toBe(true);
 	});
 
 	it('cannot do org-wide things', () => {
@@ -66,6 +95,21 @@ describe('team leader', () => {
 		const unassigned = access('team_leader', []);
 		expect(canAccessAdmin(unassigned)).toBe(true);
 		expect(can(unassigned, 'projects:read', 'c1')).toBe(false);
+	});
+});
+
+describe('portal member', () => {
+	const portal = access('portal_member', ['c1']);
+
+	it('never reaches the admin app, however it was assigned', () => {
+		expect(canAccessAdmin(portal)).toBe(false);
+		expect(visibleCampaignIds(portal, ['c1'])).toEqual([]);
+	});
+
+	it('holds no capability at all — what it may see is an ownership question', () => {
+		expect(can(portal, 'projects:read', 'c1')).toBe(false);
+		expect(can(portal, 'contacts:read')).toBe(false);
+		expect(can(portal, 'money:read', 'c1')).toBe(false);
 	});
 });
 
@@ -90,8 +134,9 @@ describe('visibleCampaignIds', () => {
 		expect(visibleCampaignIds(access('admin'), all)).toEqual(all);
 	});
 
-	it('narrows a team leader to their assignments', () => {
+	it('narrows the assigned roles to their assignments', () => {
 		expect(visibleCampaignIds(access('team_leader', ['c2']), all)).toEqual(['c2']);
+		expect(visibleCampaignIds(access('campaign_manager', ['c3']), all)).toEqual(['c3']);
 	});
 
 	it('ignores an assignment to a campaign that no longer exists', () => {
@@ -110,12 +155,44 @@ describe('assignableRoles', () => {
 	});
 
 	it('does not let an admin create another admin', () => {
-		expect(assignableRoles('admin')).toEqual(['team_leader', 'member']);
+		expect(assignableRoles('admin')).toEqual([
+			'campaign_manager',
+			'team_leader',
+			'portal_member',
+			'member'
+		]);
 	});
 
 	it('gives lower roles nothing to assign', () => {
+		expect(assignableRoles('campaign_manager')).toEqual([]);
 		expect(assignableRoles('team_leader')).toEqual([]);
+		expect(assignableRoles('portal_member')).toEqual([]);
 		expect(assignableRoles('member')).toEqual([]);
 		expect(assignableRoles(null)).toEqual([]);
+	});
+});
+
+describe('the grant table itself', () => {
+	it('answers every capability from a written grant, not from a role short-circuit', () => {
+		// The shape this replaced: `can()` early-returned true for owner and then
+		// for admin before consulting any list, so a capability added to the type
+		// was held by both the moment it existed. Now each role answers from its
+		// own row, and a capability nobody was granted is held by nobody.
+		expect(ROLES.filter((role) => can(access(role, ['c1']), 'billing:manage'))).toEqual(['owner']);
+		expect(ROLES.filter((role) => can(access(role, ['c1']), 'campaign:edit', 'c1'))).toEqual([
+			'owner',
+			'admin',
+			'campaign_manager'
+		]);
+		expect(ROLES.filter((role) => can(access(role, ['c1']), 'settings:manage'))).toEqual([
+			'owner',
+			'admin'
+		]);
+	});
+
+	it('separates reaching the admin app from holding capabilities', () => {
+		expect(canAccessAdmin(access('campaign_manager'))).toBe(true);
+		expect(canAccessAdmin(access('team_leader'))).toBe(true);
+		expect(canAccessAdmin(access('portal_member'))).toBe(false);
 	});
 });

@@ -1,8 +1,12 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 import { fieldEntityValidator, resolveForRecord } from '../model/customFields';
+
+// Custom fields describe how a record is displayed, not a surface of their
+// own, so every query here gates on `projects:read` — whoever may read a
+// record needs its field definitions too.
 
 function byOrderThenName(a: Doc<'customFieldCategories'>, b: Doc<'customFieldCategories'>): number {
 	return a.order - b.order || a.name.localeCompare(b.name);
@@ -21,7 +25,7 @@ export const listCategories = query({
 		campaignId: v.optional(v.id('campaigns'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -57,7 +61,7 @@ export const listFieldDefinitions = query({
 		campaignId: v.optional(v.id('campaigns'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -79,7 +83,7 @@ export const resolveFields = query({
 		campaignId: v.optional(v.id('campaigns'))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}

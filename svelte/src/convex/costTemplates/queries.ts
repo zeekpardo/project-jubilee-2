@@ -1,13 +1,14 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
-import { activeOrgId } from '../model/auth';
+import { getAccess, readableOrgId } from '../model/access';
+import { can } from '../../lib/domain/permissions';
 
 export const listCostTemplates = query({
 	args: {
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'money:read', args.campaignId);
 		if (!orgId) {
 			return [];
 		}
@@ -30,13 +31,18 @@ export const getCostTemplate = query({
 		costTemplateId: v.id('costTemplates')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
-		if (!orgId) {
+		// The campaign is only knowable once the row is loaded, so this gates
+		// twice: org membership first, then the template's own campaignId.
+		const access = await getAccess(ctx);
+		if (!access.orgId) {
 			return null;
 		}
 
 		const costTemplate = await ctx.db.get('costTemplates', args.costTemplateId);
-		if (!costTemplate || costTemplate.orgId !== orgId) {
+		if (!costTemplate || costTemplate.orgId !== access.orgId) {
+			return null;
+		}
+		if (!can(access, 'money:read', costTemplate.campaignId)) {
 			return null;
 		}
 
@@ -50,7 +56,7 @@ export const getLatestCostTemplate = query({
 		campaignId: v.id('campaigns')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'money:read', args.campaignId);
 		if (!orgId) {
 			return null;
 		}

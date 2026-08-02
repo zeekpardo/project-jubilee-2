@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { activeOrgId } from '../model/auth';
+import { readableOrgId } from '../model/access';
 import { transactionTypeValidator, remainderFor } from '../model/money';
 import { reconciliation } from '../../lib/domain/reconciliation';
 
@@ -39,7 +39,7 @@ export const listTransactions = query({
 		limit: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'money:read');
 		if (!orgId) {
 			return [];
 		}
@@ -62,7 +62,7 @@ export const getTransaction = query({
 		transactionId: v.id('transactions')
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'money:read');
 		if (!orgId) {
 			return null;
 		}
@@ -79,7 +79,7 @@ export const getTransaction = query({
 export const getReconciliation = query({
 	args: {},
 	handler: async (ctx) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'money:read');
 		if (!orgId) {
 			return reconciliation([], []);
 		}
@@ -109,7 +109,7 @@ export const listUnallocated = query({
 		type: v.optional(transactionTypeValidator)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await activeOrgId(ctx);
+		const orgId = await readableOrgId(ctx, 'money:read');
 		if (!orgId) {
 			return [];
 		}

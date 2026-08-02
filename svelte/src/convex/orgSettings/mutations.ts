@@ -1,7 +1,7 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
-import { requireOrgId } from '../model/auth';
+import { requireCapability } from '../model/access';
 
 export const upsertOrgSettings = mutation({
 	args: {
@@ -15,7 +15,7 @@ export const upsertOrgSettings = mutation({
 		protectedFieldKeys: v.optional(v.array(v.string()))
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 
 		const existing = await ctx.db
 			.query('orgSettings')
@@ -79,7 +79,7 @@ export const setPublicStatSections = mutation({
 		)
 	},
 	handler: async (ctx, args) => {
-		const orgId = await requireOrgId(ctx);
+		const { orgId } = await requireCapability(ctx, 'settings:manage');
 
 		const seen = new Set<string>();
 		for (const section of args.sections) {

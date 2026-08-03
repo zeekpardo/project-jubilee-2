@@ -7,6 +7,7 @@ import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc } from '../_generated/dataModel';
 import {
+	orgIdForSlug,
 	publicCampaignStats,
 	publicFieldDefs,
 	toPublicCampaign,
@@ -31,15 +32,15 @@ async function resolvePublishedCampaign(
 	orgSlug: string,
 	campaignSlug: string
 ): Promise<Doc<'campaigns'> | null> {
-	const settings = await ctx.db
-		.query('orgSettings')
-		.withIndex('by_slug', (q) => q.eq('slug', orgSlug))
-		.first();
-	if (!settings) return null;
+	// `orgIdForSlug` is these same three lines, lifted into model/public.ts once
+	// the signed-in site needed the identical lookup. Two copies of "which org is
+	// this" drifting apart is how one org ends up shadowing another's site.
+	const orgId = await orgIdForSlug(ctx, orgSlug);
+	if (!orgId) return null;
 
 	const campaign = await ctx.db
 		.query('campaigns')
-		.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', settings.orgId).eq('slug', campaignSlug))
+		.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', orgId).eq('slug', campaignSlug))
 		.first();
 	if (!campaign || !campaign.isPublished) return null;
 	return campaign;

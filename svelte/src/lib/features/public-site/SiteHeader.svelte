@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/i18n/messages';
+	import SiteAccountMenu from './SiteAccountMenu.svelte';
 
 	// `homeHref` is a prop (not hardcoded '/') because the public site is
 	// multi-campaign: the wordmark should go to the org root or the current
@@ -40,14 +41,11 @@
 		</a>
 
 		<nav aria-label={m.publicSite_navLabel()} class="flex items-center gap-5 sm:gap-7">
-			<!-- Newsletter is out of scope for this slice; sign-in is the only
-			     other public-site link the reference header keeps. -->
-			<a
-				href="/signin"
-				class="text-muted-foreground/80 hover:text-foreground focus-visible:ring-ring rounded-md text-xs font-medium tracking-wide transition-colors focus-visible:ring-2 focus-visible:outline-none"
-			>
-				{m.publicSite_signIn()}
-			</a>
+			<!-- Newsletter is out of scope for this slice; the account slot is the
+			     only other public-site entry the reference header keeps. It reads the
+			     signed-in viewer from context itself, which keeps this header free of
+			     identity props and free of anything that must not be server-rendered. -->
+			<SiteAccountMenu />
 		</nav>
 	</div>
 </header>

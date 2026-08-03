@@ -46,9 +46,39 @@
 		onSignIn?: () => void;
 		redirectTo?: string;
 		class?: string;
+		/**
+		 * When given, offer only these email methods, still intersected with what
+		 * AUTH_CONSTANTS enables. A caller can narrow the offer but can never widen
+		 * it: a method disabled globally stays disabled even when requested here,
+		 * so this prop cannot be used to smuggle a provider back on.
+		 *
+		 * Omitting it must stay exactly equivalent to today, because /signin (staff)
+		 * relies on the unrestricted behaviour.
+		 */
+		/**
+		 * Suppress the card's own title and description on the email step.
+		 *
+		 * For a page that has already introduced itself. The card titles itself
+		 * "Sign in into {brandName}" from AUTH_CONSTANTS, which is the PLATFORM's
+		 * name — correct on /signin, and wrong beneath an org-branded heading on a
+		 * donor's own charity's site, where it announces a product the donor has
+		 * never heard of directly under the charity they came for.
+		 *
+		 * Deliberately narrow: the "Check your email" step keeps its header either
+		 * way, because that one is not a title, it is the instruction telling
+		 * someone the link is on its way.
+		 */
+		methods?: EmailAuthMethod[];
+		hideHeader?: boolean;
 	}
 
-	let { onSignIn, redirectTo: redirectParam, class: className }: SignInProps = $props();
+	let {
+		onSignIn,
+		redirectTo: redirectParam,
+		class: className,
+		methods: allowedMethods,
+		hideHeader = false
+	}: SignInProps = $props();
 
 	// State
 	let currentStep = $state<AuthStep>('email');
@@ -74,8 +104,26 @@
 		if (authConstants.providers.password) methods.push('password');
 		if (authConstants.providers.emailOTP && authConstants.sendEmails) methods.push('emailOTP');
 		if (authConstants.providers.magicLink && authConstants.sendEmails) methods.push('magicLink');
-		availableEmailMethods = methods;
+		// The `methods` prop only ever removes from what AUTH_CONSTANTS already
+		// allowed. Filtering the computed list, rather than building a different
+		// one, is what guarantees the omitted-prop path is unchanged and that a
+		// globally disabled provider can never be requested back into existence.
+		availableEmailMethods = allowedMethods
+			? methods.filter((method) => allowedMethods.includes(method))
+			: methods;
 	});
+
+	/**
+	 * A caller asked for methods, and every one of them is disabled globally, so
+	 * there is nothing to render in the email step. Showing the bare email field
+	 * with no button under it looks like a broken form and leaves the visitor
+	 * typing into a dead end, so we say so instead. Deliberately scoped to the
+	 * restricted case: with the prop omitted, an empty list still renders exactly
+	 * what it renders today (social providers only, or an empty card).
+	 */
+	const restrictedToNothing = $derived(
+		allowedMethods !== undefined && availableEmailMethods.length === 0
+	);
 
 	// Legal links (handle empty/null/undefined gracefully)
 	const termsUrl = $derived((authConstants.terms ?? '').trim());
@@ -356,10 +404,12 @@
 				</Button>
 			</Card.Content>
 		{:else}
-			<Card.Header>
-				<Card.Title class="text-lg">{getStepTitle()}</Card.Title>
-				<Card.Description>{getStepDescription()}</Card.Description>
-			</Card.Header>
+			{#if !hideHeader}
+				<Card.Header>
+					<Card.Title class="text-lg">{getStepTitle()}</Card.Title>
+					<Card.Description>{getStepDescription()}</Card.Description>
+				</Card.Header>
+			{/if}
 
 			<Card.Content class="flex flex-col gap-6">
 				<!-- Social Sign In -->
@@ -372,7 +422,11 @@
 				/>
 
 				<!-- Email-based Auth Methods -->
-				{#if availableEmailMethods.length > 0}
+				{#if restrictedToNothing}
+					<p class="text-muted-foreground text-sm leading-relaxed">
+						Sign-in by email is unavailable right now. Please contact support.
+					</p>
+				{:else if availableEmailMethods.length > 0}
 					{#if currentStep === 'email'}
 						<EmailStep
 							{email}

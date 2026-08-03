@@ -5,10 +5,28 @@
 	import { resolve } from '$app/paths';
 	import SiteHeader from '$lib/features/public-site/SiteHeader.svelte';
 	import SiteFooter from '$lib/features/public-site/SiteFooter.svelte';
+	import { useSiteViewer } from '$lib/features/site/viewer.svelte';
+	import { setSiteViewerContext } from '$lib/features/site/context.svelte';
 
 	let { data, children } = $props();
 
 	const homeHref = $derived(resolve('/(site)/[orgSlug]', { orgSlug: data.orgProfile.slug }));
+
+	// Who is looking, for the whole public subtree. This is established here and
+	// only here so that a header, a donation form and a project page all read one
+	// subscription and can never disagree about whether someone is signed in.
+	//
+	// It resolves in the BROWSER. `+layout.server.ts` caches this route publicly
+	// (`s-maxage=300`), so nothing personal may be added to that load or read
+	// during SSR: a CDN would hand the first donor's name to every later visitor.
+	// Nothing about the anonymous render changes — the greeting arrives after
+	// hydration or not at all.
+	//
+	// The `(embed)` group does NOT inherit this layout, and must not. Embeds run
+	// inside someone else's page, where a recognized donor's name would be
+	// personal data rendered on a third-party domain.
+	const siteViewer = useSiteViewer(() => data.orgProfile.slug);
+	setSiteViewerContext(siteViewer);
 
 	// `data` here is only this layout's load merged with ITS ancestors — a
 	// descendant campaign page's overridden theme never flows back up through

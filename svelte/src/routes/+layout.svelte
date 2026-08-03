@@ -11,8 +11,6 @@
 
 	import { Toaster } from '$lib/primitives/ui/sonner';
 	import AuthProvider from '$lib/auth/ui/AuthProvider.svelte';
-	import UserProfileHost from '$lib/users/ui/UserProfileHost.svelte';
-	import OrganizationProfileHost from '$lib/organizations/ui/OrganizationProfileHost.svelte';
 	import { themeState } from '$lib/theme';
 
 	let { children, data } = $props();
@@ -32,14 +30,17 @@
 	<!--
 		The shell lives in `/app`: the sidebar owns the full height and the header
 		sits inside the content column, so the root layout only provides context.
+
+		The account and organization profile dialogs live in `/app` for the same
+		reason, and for a stronger one. This layout wraps every route group, so
+		mounting them here put the signed-in person's name, email, linked
+		accounts, API keys and "Delete account" — plus the organization's slug and
+		settings — into the DOM of the public donor site and of a donor's
+		`/{orgSlug}/me` pages. A donor's identity on this site is their `contacts`
+		row; the Better Auth account behind it is a credentials record they should
+		never be shown, let alone offered controls for.
 	-->
 	<div class="flex min-h-[100dvh] flex-col">
 		{@render children()}
 	</div>
-
-	<UserProfileHost initialData={data.initialData} />
-
-	{#if AUTH_CONSTANTS.organizations}
-		<OrganizationProfileHost initialData={data.initialData} />
-	{/if}
 </AuthProvider>

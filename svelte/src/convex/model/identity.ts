@@ -216,7 +216,72 @@ export async function revokePortalAccess(
 }
 
 /**
+ * The one contact holding this address as something other than their primary,
+ * or null when the address names nobody — or more than one person.
+ *
+ * `contacts.emailLower` is a projection of the PRIMARY `contactEmails` row, so
+ * matching on it alone asks whether the person signed in with the one address
+ * the org happens to have promoted. A donor invited at their work address who
+ * later signs in with the personal address the same org has on file matched
+ * nothing, and because `revokePortalAccess` clears `authUserId`, every later
+ * attempt re-ran the same failing claim: the lockout had no self-service way
+ * out, and the person was handed the org's public home page with no
+ * explanation of why.
+ *
+ * REFUSES RATHER THAN PICKS when two contacts hold the address. Only the
+ * primary is unique within an org, and it is `assertEmailAvailable` that makes
+ * it so — a test against `contacts.emailLower` that the model layer runs only
+ * when a row is or becomes primary. A secondary address is guarded by
+ * `assertContactEmailAvailable`, which is unique(contactId, addressLower) and
+ * therefore says nothing about other contacts. Two spouses each carrying the
+ * household address alongside their own is ordinary data this schema permits,
+ * which is why the collision returns null instead of throwing: a throw would
+ * take the portal down for every household that shares an address, to punish
+ * them for a state nothing forbids.
+ *
+ * The projection is maintained FROM a `contactEmails` row, so this lookup sees
+ * primary addresses too. A secondary that collides with somebody else's
+ * primary therefore fails the same test, without a second query to find it.
+ */
+async function contactForAdditionalAddress(
+	ctx: QueryCtx,
+	orgId: string,
+	addressLower: string
+): Promise<Doc<'contacts'> | null> {
+	const rows = await ctx.db
+		.query('contactEmails')
+		.withIndex('by_orgId_and_addressLower', (q) =>
+			q.eq('orgId', orgId).eq('addressLower', addressLower)
+		)
+		.collect();
+	if (rows.length === 0) return null;
+	if (new Set(rows.map((row) => row.contactId)).size > 1) return null;
+
+	// A BLOCKED address may not prove identity, and this is the one judgement
+	// call here rather than a rule read off the schema. `blocked` is a single
+	// boolean covering both a hard bounce and an unsubscribe, so the row cannot
+	// tell us which it was, and the bounce is the case that decides it: a bounce
+	// is the org's OWN evidence that the address stopped reaching this person,
+	// and a work address handed on to their successor is exactly that. It also
+	// defeats every other guard below, because the contact really is in this
+	// org, really is unlinked and really was invited. Better Auth proves the
+	// person signing in controls the mailbox today; it cannot prove the mailbox
+	// is still theirs. Refusing costs a genuine unsubscriber nothing they do not
+	// already have — it is the behaviour they get today — and staff can clear
+	// the flag or promote the address. Widening wrongly costs somebody else
+	// their giving, their household and their medical notes.
+	if (rows.some((row) => row.blocked === true)) return null;
+
+	return await ctx.db.get('contacts', rows[0].contactId);
+}
+
+/**
  * First sign-in: bind the account to the contact it was invited as.
+ *
+ * Matches the session's address against the contact's PRIMARY address, and
+ * then — only if that found nobody — against every other address the org holds
+ * for a contact. See `contactForAdditionalAddress` for why the primary alone
+ * silently locked people out, and for the one case the wider lookup refuses.
  *
  * Claims an UNLINKED contact only. Without that condition one account could
  * take over another person's already-linked contact by signing in with an
@@ -246,11 +311,28 @@ export async function claimPortalContact(
 		.unique();
 	if (linked) return linked._id;
 
-	const contact = await ctx.db
+	const byPrimary = await ctx.db
 		.query('contacts')
 		.withIndex('by_orgId_and_emailLower', (q) => q.eq('orgId', orgId).eq('emailLower', emailLower))
 		.unique();
+
+	// The wider lookup runs ONLY when the primary matched nobody. A primary that
+	// matched and then failed a guard below is an answer about the person who
+	// owns this address; looking past it for a second person holding the same one
+	// is precisely the widening onto somebody else that this function exists to
+	// refuse.
+	const contact = byPrimary ?? (await contactForAdditionalAddress(ctx, orgId, emailLower));
 	if (!contact) return null;
+
+	// One copy of the guards, applied to whichever lookup found the contact. They
+	// are written once for that reason: a widened lookup that quietly skips one
+	// is a worse bug than the lockout it was added to fix.
+	//
+	// The org test is redundant on the primary path, whose index is keyed by org.
+	// It is not redundant on the other, which reaches the contact through a child
+	// row: a `contactEmails.orgId` that had drifted from its parent's must
+	// resolve to nobody rather than to a person in another org.
+	if (contact.orgId !== orgId) return null;
 	if (contact.authUserId !== undefined) return null;
 	if (contact.portalAccess !== 'invited') return null;
 

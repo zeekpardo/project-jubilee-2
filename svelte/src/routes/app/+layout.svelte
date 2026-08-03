@@ -9,6 +9,9 @@
 	import { createCrumbTitle, setCrumbTitleContext } from '$lib/shell/crumb-title.svelte';
 	import AppSidebar from '$lib/shell/AppSidebar.svelte';
 	import AppBreadcrumbs from '$lib/shell/AppBreadcrumbs.svelte';
+	import UserProfileHost from '$lib/users/ui/UserProfileHost.svelte';
+	import OrganizationProfileHost from '$lib/organizations/ui/OrganizationProfileHost.svelte';
+	import { AUTH_CONSTANTS } from '$convex/auth.constants';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import { Button } from '$lib/primitives/ui/button';
 	import { Separator } from '$lib/primitives/ui/separator';
@@ -123,4 +126,19 @@
 			</main>
 		</div>
 	</div>
+
+	<!--
+		Both profile editors are keyed off `?dialog=` rather than a context, so a
+		host only has to be mounted somewhere on the page the opener is on. Every
+		opener is in this shell — `NavUser` in the sidebar, and the admin
+		organization and members pages — so this is the narrowest place they can
+		live. They sit inside this branch, not beside the `{#if}`, because a
+		caller who fails `canAccessAdmin` is shown a refusal and must not be handed
+		account or organization controls along with it.
+	-->
+	<UserProfileHost initialData={data.initialData} />
+
+	{#if AUTH_CONSTANTS.organizations}
+		<OrganizationProfileHost initialData={data.initialData} />
+	{/if}
 {/if}

@@ -102,7 +102,17 @@
 
 	let createOrganizationOpen = $state(false);
 
-	/** Both profile editors are hosted in the root layout and keyed off `?dialog=`. */
+	/**
+	 * Both profile editors are hosted in the `/app` layout and keyed off
+	 * `?dialog=`. They used to sit in the ROOT layout, which put an account
+	 * dialog — linked accounts, API keys, delete account — into the DOM of every
+	 * public donor page. A donor's identity here is their contact row; the Better
+	 * Auth account is credentials, and not something to hand them a panel for.
+	 *
+	 * A host only has to be mounted on the same page as its opener, since the
+	 * search param is the whole channel. Every opener is under `/app`, so nothing
+	 * was stranded by the move.
+	 */
 	function openHostedDialog(key: string): void {
 		const url = new URL(page.url);
 		if (url.searchParams.get('dialog') === key) return;

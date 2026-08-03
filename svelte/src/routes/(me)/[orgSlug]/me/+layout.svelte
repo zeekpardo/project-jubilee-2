@@ -10,6 +10,7 @@
 	import { resolve } from '$app/paths';
 	import SiteHeader from '$lib/features/public-site/SiteHeader.svelte';
 	import SiteFooter from '$lib/features/public-site/SiteFooter.svelte';
+	import MeTabs from '$lib/features/me/MeTabs.svelte';
 	import { useSiteViewer } from '$lib/features/site/viewer.svelte';
 	import { setSiteViewerContext } from '$lib/features/site/context.svelte';
 	import * as m from '$lib/i18n/messages';
@@ -61,13 +62,17 @@
 		{/if}
 
 		<!--
-			The navigation between these pages belongs here, as `MeTabs`, in the step
-			after this one. The old portal carried its own sticky header with the tab
-			row inside it; that header is what `SiteHeader` replaces, so rebuilding
-			the tabs into this shell now only to replace them next would be the same
-			work done twice. Until then these pages are reachable by URL and by the
-			links they already carry between one another.
+			The navigation between these pages sits under the greeting rather than
+			inside `SiteHeader`. That header is shared with the public site, where
+			these five pages do not exist and where most visitors have no record to
+			see; hanging a personal tab row off it would put a donor's Giving link
+			on every campaign page an anonymous reader loads.
+
+			It takes the slug from the loaded profile, the same source as `homeHref`
+			above, so the tabs and the wordmark can never disagree about which org
+			this address belongs to.
 		-->
+		<MeTabs orgSlug={data.orgProfile.slug} />
 
 		{@render children()}
 	</main>

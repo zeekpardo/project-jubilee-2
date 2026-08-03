@@ -86,6 +86,35 @@ import { loadPublicPolicy } from './policy';
 import { computeStats, type ResolvedStat } from './stats';
 
 /**
+ * The org a public URL is talking about, resolved from its slug alone.
+ *
+ * `orgSettings.slug` is the globally unique handle; every other slug in this
+ * app — campaigns especially — is unique only per org, which is why the public
+ * surface must name the org first. The same three lines already sat at the top
+ * of `resolvePublishedCampaign`; they are lifted here because the signed-in
+ * site now needs the identical lookup, and two copies of "which org is this"
+ * drifting apart is how one org ends up shadowing another's public site.
+ *
+ * The returned orgId is a LOOKUP KEY, not a public field. It is the one
+ * internal identifier this module hands back, and it exists so a caller can
+ * scope a read; nothing on the exposed list above changes, and this string must
+ * never be copied into a response.
+ *
+ * Null for an unknown slug — never a throw. An anonymous page load for an org
+ * that does not exist is a 404's worth of nothing, not an error dialog.
+ * `.first()` rather than `.unique()` for the same reason: slug uniqueness is a
+ * convention enforced at write time, and a visitor should not be the one who
+ * discovers it was broken.
+ */
+export async function orgIdForSlug(ctx: QueryCtx, orgSlug: string): Promise<string | null> {
+	const settings = await ctx.db
+		.query('orgSettings')
+		.withIndex('by_slug', (q) => q.eq('slug', orgSlug))
+		.first();
+	return settings?.orgId ?? null;
+}
+
+/**
  * Public names are ADMIN-ENTERED, never derived. Taking the first token of a
  * name leaks the surname for "Bhatti, Ahmed", for every name written without a
  * separator, and for every surname-first culture. There is no rule that works

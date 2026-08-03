@@ -3,14 +3,19 @@
 // ============================================================
 // Two audiences in one file, and they gate differently.
 //
-// The portal member's own writes resolve the viewer from the session and touch
-// nothing but their own row. `updatePortalProfile` takes no contactId, for the
-// same reason nothing in portal/queries.ts does.
+// The portal member's own writes take `orgSlug`, resolve the org from it and
+// the person from the session, and touch nothing but their own row.
+// `updatePortalProfile` takes no contactId, for the same reason nothing in
+// portal/queries.ts does: a slug says which org's page you are on, never who
+// you are.
 //
 // The admin's writes — inviting someone, withdrawing it — gate on
-// `members:manage`. Granting a person the ability to sign in is member
-// management, not contact editing, and it is the write that creates the first
-// org member who is not trusted staff.
+// `members:manage` and take NO slug, deliberately. They are staff acting inside
+// their own org, where the session's active organization is the correct and
+// only source of the org: an admin's authority is a fact about their
+// membership, not about which URL they are looking at, and letting a slug
+// choose the org for a capability-gated write would be asking org A's role to
+// authorize a write against org B.
 // ============================================================
 
 import { ConvexError, v } from 'convex/values';
@@ -20,37 +25,45 @@ import {
 	claimPortalContact,
 	offerPortalAccess,
 	requireInvitableContact,
-	resolvePortalViewer,
+	resolveSiteViewer,
 	revokePortalAccess
 } from '../model/identity';
-import { getAccess } from '../model/access';
+import { orgIdForSlug } from '../model/public';
 import { authComponent } from '../auth';
 import { PORTAL_EDITABLE_PROFILE_FIELDS } from '../model/portal';
 
 /**
- * Bind the signed-in account to the contact it was invited as.
+ * Bind the signed-in account to the contact it was invited as, AT THE ORG THE
+ * URL NAMES.
  *
- * Called by the portal layout on load rather than by a sign-in hook: the claim
- * needs an ACTIVE ORGANIZATION to scope the lookup, and that is only settled
- * once the invitation has been accepted and a session carries it. Running it
- * per load is safe because the claim is a compare-and-set on an unlinked
- * contact — the second call finds the contact already linked and returns it
- * unchanged.
+ * The org comes from `orgSlug` and not from the session's active organization,
+ * and here that is not merely tidiness: this write LINKS an account to a
+ * contact row by matching email addresses. Claiming against the session's org
+ * while standing on another org's page would bind the caller to whichever
+ * contact happens to share their address in the wrong org — handing them that
+ * person's giving, household and notes, permanently, in a single write. The
+ * lookup and the page must name the same org or the link is a guess.
  *
- * Returns whether the caller now has a portal identity, so the layout can
- * decide between the portal and a "nothing here for you" page without a second
- * round trip.
+ * Called by the layout on load rather than by a sign-in hook, because a claim
+ * needs a session and an org together and that pairing is only settled once the
+ * page knows which org it is. Running it per load is safe: the claim is a
+ * compare-and-set on an UNLINKED contact, so the second call finds the contact
+ * already linked and returns it unchanged.
+ *
+ * Returns whether the caller now has a portal identity at this org, so the
+ * layout can decide between the portal and a "nothing here for you" page
+ * without a second round trip.
  */
 export const claimPortalAccess = mutation({
-	args: {},
-	handler: async (ctx) => {
-		const access = await getAccess(ctx);
-		if (!access.orgId || !access.userId) return { claimed: false };
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args) => {
+		const orgId = await orgIdForSlug(ctx, args.orgSlug);
+		if (!orgId) return { claimed: false };
 
 		const user = await authComponent.safeGetAuthUser(ctx);
 		if (!user) return { claimed: false };
 
-		const contactId = await claimPortalContact(ctx, access.orgId, access.userId, user.email);
+		const contactId = await claimPortalContact(ctx, orgId, user._id, user.email);
 		return { claimed: contactId !== null };
 	}
 });
@@ -71,6 +84,7 @@ const clearable = v.optional(v.union(v.string(), v.null()));
 
 export const updatePortalProfile = mutation({
 	args: {
+		orgSlug: v.string(),
 		phone: clearable,
 		addressLine1: clearable,
 		addressLine2: clearable,
@@ -84,7 +98,7 @@ export const updatePortalProfile = mutation({
 		)
 	},
 	handler: async (ctx, args) => {
-		const viewer = await resolvePortalViewer(ctx);
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) throw new ConvexError('No portal access');
 
 		const patch: Record<string, string | undefined> = {};

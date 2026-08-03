@@ -2,6 +2,7 @@
 	import { useQuery } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import * as m from '$lib/i18n/messages';
@@ -9,8 +10,12 @@
 	const { api } = getAuthContext();
 	const auth = useAuth();
 
+	// The org comes from the URL, not the session: the same person can be asked
+	// for something by two orgs, and each list belongs to one address.
+	const orgSlug = $derived(page.params.orgSlug);
+
 	const tasksResponse = useQuery(api.portal.queries.listPortalTasks, () =>
-		auth.isAuthenticated ? {} : 'skip'
+		auth.isAuthenticated && orgSlug ? { orgSlug } : 'skip'
 	);
 	const tasks = $derived(tasksResponse.data);
 
@@ -39,7 +44,9 @@
 	</p>
 </header>
 
-{#if tasks}
+<!-- `orgSlug` is in the test only so the record links below can be resolved
+     against it; without one there is no query and so no tasks either. -->
+{#if tasks && orgSlug}
 	{#if tasks.truncated}
 		<p class="text-muted-foreground mt-4 text-xs">{m.portal_tasksTruncated()}</p>
 	{/if}
@@ -71,7 +78,10 @@
 						<span>{formatDue(task.dueOn)}</span>
 						{#if task.recordNumber}
 							<a
-								href={resolve('/(portal)/portal/records/[number]', { number: task.recordNumber })}
+								href={resolve('/(me)/[orgSlug]/me/records/[number]', {
+									orgSlug,
+									number: task.recordNumber
+								})}
 								class="text-primary hover:underline"
 							>
 								{task.recordName ?? task.recordNumber}

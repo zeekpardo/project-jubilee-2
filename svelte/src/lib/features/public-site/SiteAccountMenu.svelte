@@ -19,11 +19,6 @@
 
 	const loginHref = $derived(resolve('/(site)/[orgSlug]/login', { orgSlug: site.orgSlug }));
 
-	// Phase 3 relocates the donor portal under the org slug as `/{orgSlug}/me`.
-	// That route does not exist yet, so this points at the portal that works
-	// today and moves when the relocation lands.
-	const portalHref = resolve('/(portal)/portal');
-
 	// Public-site HTML is cached by the CDN and served to every visitor alike,
 	// so no personal detail may appear in it. `hydrated` is only set from an
 	// effect, which never runs on the server and runs after hydration on the
@@ -81,10 +76,20 @@
 				<Menu.Separator />
 
 				<!-- Rendered as a real anchor so it can be opened in a new tab and
-				     read as a link; the menu machine follows the href on Enter. -->
+				     read as a link; the menu machine follows the href on Enter.
+
+				     Scoped to the org whose page this header is on, not to the
+				     session's active org: the same signed-in person can hold a record
+				     at more than one org, and "Me" has to mean their record HERE. The
+				     menu only appears at all when `site.viewer` resolved against this
+				     same slug, so the two can never name different orgs. Resolved at
+				     the attribute rather than in a `$derived` because that is the only
+				     form `svelte/no-navigation-without-resolve` recognises. -->
 				<Menu.Item value="__site-me">
 					{#snippet asChild(props)}
-						<a href={portalHref} {...props()}>{m.publicSite_accountMe()}</a>
+						<a href={resolve('/(me)/[orgSlug]/me', { orgSlug: site.orgSlug })} {...props()}>
+							{m.publicSite_accountMe()}
+						</a>
 					{/snippet}
 				</Menu.Item>
 

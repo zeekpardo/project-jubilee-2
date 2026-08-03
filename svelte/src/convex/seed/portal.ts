@@ -8,11 +8,15 @@
  * conjuring a login — nothing here creates a user, sets a password, or sends
  * mail.
  *
- * Binding your own staff account is the intended use. `resolvePortalViewer`
- * lets staff through to their own portal deliberately (see its docstring: the
- * surface is a property of the route, not of the person), so an owner who runs
- * this can open /portal as themselves and see a real donor view without
- * a second account and without giving up /app.
+ * Binding your own staff account is the intended use, and it is now the ONLY
+ * way a staff member reaches their own pages. `resolvePortalViewer` used to let
+ * staff through without a contact row; it is gone, and `resolveSiteViewer`
+ * grants no such exemption — the org there comes from the URL while a role
+ * comes from the session, and asking org A's role about org B's page is exactly
+ * the confusion that resolver exists to prevent. So an owner who wants to see a
+ * real donor view at `/{orgSlug}/me` runs this first. Without it they have no
+ * record at that org and are redirected to its public home, the same as anyone
+ * else — which is the point, not a regression.
  *
  * WHAT IT TOUCHES, and why each is reversible by `clearPortalMember`:
  *   - the contact: authUserId, portalAccess, invitedAt

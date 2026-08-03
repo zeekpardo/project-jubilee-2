@@ -37,6 +37,13 @@ export const load = (async ({ locals, cookies }) => {
 	// is the first role that can hold a session and reach this load. The client
 	// guard renders a refusal; this one never renders the shell at all, and
 	// sends them to the surface they do have.
+	//
+	// Still `/portal` now that those pages live at `/{orgSlug}/me`, and
+	// deliberately: `/portal` is a redirector that resolves the caller's own org
+	// slug, and it is the only thing that can answer honestly when the org never
+	// claimed one. Naming the destination directly from here would mean
+	// resolving the slug a second time and re-deciding the slug-less case, in a
+	// load that exists to keep non-staff out of the admin shell.
 	if (!canAccessAdmin(access)) redirect(307, '/portal');
 
 	// A stale cookie must not select a campaign the caller has since lost access

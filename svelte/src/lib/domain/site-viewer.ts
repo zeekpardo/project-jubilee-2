@@ -66,11 +66,12 @@ export interface SiteViewerDecision<C extends SiteViewerContact> {
  * never written and a field explicitly set to 'invited' are different states in
  * the schema even though they are the same answer here.
  *
- * This is where the surface parts company with `resolvePortalViewer`, which
- * admits staff without an 'active' row through `canAccessAdmin`. That exemption
- * reads a role out of the SESSION's organization, and the org here came from a
- * URL; asking org A's role about org B's page is the cross-tenant confusion the
- * slug lookup exists to prevent.
+ * NO STAFF EXEMPTION. The session-scoped resolver this replaced admitted staff
+ * without an 'active' row through `canAccessAdmin`, and that exemption did not
+ * survive the move: it reads a role out of the SESSION's organization while the
+ * org here came from a URL, and asking org A's role about org B's page is the
+ * cross-tenant confusion the slug lookup exists to prevent. A staff member who
+ * wants to see their own pages is claimed and linked like anyone else.
  */
 export function decideSiteViewer<C extends SiteViewerContact>(
 	input: SiteViewerInputs<C>

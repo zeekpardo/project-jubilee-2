@@ -2,6 +2,7 @@
 	import { useQuery, useConvexClient } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
+	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import { createListCollection } from '@ark-ui/svelte/select';
 
@@ -15,8 +16,13 @@
 	const auth = useAuth();
 	const client = useConvexClient();
 
+	// The org comes from the URL, not the session. It matters most here of
+	// anywhere: this form WRITES, and the row it corrects is the one this org
+	// holds about them, not whichever org the session happens to be active in.
+	const orgSlug = $derived(page.params.orgSlug);
+
 	const profileResponse = useQuery(api.portal.queries.getPortalProfile, () =>
-		auth.isAuthenticated ? {} : 'skip'
+		auth.isAuthenticated && orgSlug ? { orgSlug } : 'skip'
 	);
 	const profile = $derived(profileResponse.data);
 
@@ -72,10 +78,11 @@
 
 	async function handleSubmit(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
-		if (saving) return;
+		if (saving || !orgSlug) return;
 		saving = true;
 		try {
 			await client.mutation(api.portal.mutations.updatePortalProfile, {
+				orgSlug,
 				phone: phone.trim() || null,
 				addressLine1: addressLine1.trim() || null,
 				addressLine2: addressLine2.trim() || null,

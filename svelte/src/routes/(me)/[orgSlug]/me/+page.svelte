@@ -2,6 +2,7 @@
 	import { useQuery } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { formatCents } from '$lib/features/money/format';
 	import * as m from '$lib/i18n/messages';
@@ -9,29 +10,34 @@
 	const { api } = getAuthContext();
 	const auth = useAuth();
 
+	// Every read on these pages names the org from the URL rather than from the
+	// session. The same person can hold a record at more than one org, and the
+	// address is the only thing that says which one they are looking at.
+	const orgSlug = $derived(page.params.orgSlug);
+
 	const overviewResponse = useQuery(api.portal.queries.getPortalOverview, () =>
-		auth.isAuthenticated ? {} : 'skip'
+		auth.isAuthenticated && orgSlug ? { orgSlug } : 'skip'
 	);
 	const overview = $derived(overviewResponse.data);
 
 	const figures = $derived(
-		overview
+		overview && orgSlug
 			? [
 					{
 						key: 'giving',
-						href: resolve('/(portal)/portal/giving'),
+						href: resolve('/(me)/[orgSlug]/me/giving', { orgSlug }),
 						value: formatCents(overview.giving.lifetimeCents),
 						label: m.portal_lifetimeGiving()
 					},
 					{
 						key: 'gifts',
-						href: resolve('/(portal)/portal/giving'),
+						href: resolve('/(me)/[orgSlug]/me/giving', { orgSlug }),
 						value: overview.giving.giftCount.toLocaleString('en-US'),
 						label: m.portal_giftCount()
 					},
 					{
 						key: 'records',
-						href: resolve('/(portal)/portal/records'),
+						href: resolve('/(me)/[orgSlug]/me/records', { orgSlug }),
 						value: overview.recordCount.toLocaleString('en-US'),
 						label: m.portal_recordCount()
 					}

@@ -1,22 +1,37 @@
 // ============================================================
 // Reading the portal
 // ============================================================
-// Every handler that RETURNS PORTAL DATA starts with `resolvePortalViewer`,
-// which takes no arguments and resolves the viewer from the session. Nothing
-// in this file accepts an identity, and nothing may be added that does: the
-// one rule the reference app's portal got right, and stated in the same words,
-// is that a function must never take an id the caller could have chosen.
+// Every handler here takes `orgSlug` and starts with `resolveSiteViewer`, which
+// reads the ORG off that slug and the PERSON off the session. It used to read
+// both off the session, through `resolvePortalViewer`, and that was correct
+// only while the portal lived at its own `/portal` URL. Under `/{orgSlug}/me`
+// the URL names the org, so a session-derived org would serve a person signed
+// in at org A their org A giving, profile and records while they stand on org
+// B's page — every field real, all of them for the wrong org. The slug is now
+// the only thing that decides which org a read is about.
 //
-// `getPortalSituation` is the single handler that resolves no viewer, because
-// its whole job is to explain why there isn't one. It returns no portal data —
-// only a state, the caller's own email, and the org's public name — and it is
-// keyed on the caller's own account throughout. Its docstring carries the
-// enumeration argument in full; read it before adding a second exception.
+// A SLUG IS NOT AN IDENTITY, and the difference is the whole design. It says
+// which org's page is open, exactly as an anonymous visitor's URL does; it
+// never says who is looking. Nothing in this file accepts an id that names a
+// person, and nothing may be added that does: the one rule the reference app's
+// portal got right, and stated in the same words, is that a function must never
+// take an id the caller could have chosen. Passing someone else's slug widens
+// nothing — it moves you to an org where you are, in all likelihood, nobody.
+//
+// EVERY HANDLER RESOLVES A VIEWER. There used to be one exception,
+// `getPortalSituation`, which resolved none because its job was explaining to a
+// signed-in person why they had no portal here. The page it fed is gone: at
+// `/portal` the URL was reached only by someone the app had already sent there,
+// but `/{orgSlug}/me` is public and guessable, so a page that explained itself
+// would answer "does this org know this email" for anyone who signed in and
+// tried. The layout redirects to the org's public home instead, and the query
+// went with the page rather than staying as a public function nothing calls.
+// Its enumeration reasoning is in the history if that page is ever wanted back.
 //
 // A missing viewer is an EMPTY result, never an error. Access can be withdrawn
 // while a subscription is live, and the surface emptying out is the correct
-// response to that — the check is in `resolvePortalViewer` and happens on
-// every read, not once at sign-in.
+// response to that — the check is in `resolveSiteViewer` and happens on every
+// read, not once at sign-in.
 //
 // What each handler is allowed to return is decided in `model/portal.ts`, in
 // its header. This file joins and bounds; it does not project.
@@ -27,9 +42,9 @@ import { query } from '../_generated/server';
 import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { authComponent } from '../auth';
-import { getAccess } from '../model/access';
 import { normalizeEmail } from '../model/contacts';
-import { resolvePortalViewer, type PortalViewer } from '../model/identity';
+import { resolveSiteViewer, type SiteViewer } from '../model/identity';
+import { orgIdForSlug } from '../model/public';
 import {
 	PORTAL_RECORD_MAX,
 	portalConnections,
@@ -80,7 +95,7 @@ const EMPTY_GIVING = {
  */
 async function buildRecords(
 	ctx: QueryCtx,
-	viewer: PortalViewer,
+	viewer: SiteViewer,
 	connections: Map<Id<'projects'>, PortalConnection>
 ): Promise<PortalRecord[]> {
 	const campaigns = new Map<string, Doc<'campaigns'>>();
@@ -113,9 +128,9 @@ async function buildRecords(
  * greeting and the summary always render together.
  */
 export const getPortalOverview = query({
-	args: {},
-	handler: async (ctx) => {
-		const viewer = await resolvePortalViewer(ctx);
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args) => {
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return null;
 
 		const connections = await portalConnections(ctx, viewer);
@@ -128,100 +143,11 @@ export const getPortalOverview = query({
 	}
 });
 
-/**
- * Why this account has no portal, for the page that has to say so.
- *
- * `resolvePortalViewer` answers one bit — viewer or not — which is right for
- * every read but leaves the refusal page with four different situations and
- * one sentence to cover them: signed in as the wrong person, invited but not
- * yet claimed, access withdrawn, or never invited at all. They want different
- * words and different actions, so this names which one it is.
- *
- * THE ENUMERATION LINE. Every branch below is keyed on the caller's OWN
- * account — their user id, or the verified email their session already
- * carries. Telling someone "your address matches a record here" discloses
- * them to themselves and nobody else. Nothing here may ever take an address
- * as an argument: that would turn this into a "does this person give to you"
- * oracle for anyone who can sign up. The email lookup is the same one
- * `claimPortalContact` already performs on every load, so this adds no
- * surface that was not already reachable.
- *
- * Returned rather than thrown, and total rather than partial — `active` is
- * unreachable through the layout that calls this, but a query that answers
- * "you are fine" for a viewer is easier to reason about than one with a hole
- * in it.
- */
-export const getPortalSituation = query({
-	args: {},
-	handler: async (ctx) => {
-		const access = await getAccess(ctx);
-		const user = await authComponent.safeGetAuthUser(ctx);
-		const email = user?.email ?? null;
-
-		if (!access.orgId || !access.userId) {
-			return { state: 'unknown' as const, email, orgName: null };
-		}
-
-		const settings = await ctx.db
-			.query('orgSettings')
-			.withIndex('by_orgId', (q) => q.eq('orgId', access.orgId!))
-			.unique();
-		const orgName = settings?.publicName?.trim() || null;
-
-		const linked = await ctx.db
-			.query('contacts')
-			.withIndex('by_orgId_and_authUserId', (q) =>
-				q.eq('orgId', access.orgId!).eq('authUserId', access.userId!)
-			)
-			.unique();
-		if (linked) {
-			return {
-				state: linked.portalAccess === 'revoked' ? ('revoked' as const) : ('active' as const),
-				email,
-				orgName
-			};
-		}
-
-		// Revocation cuts the account link, so a revoked person is found by
-		// address rather than by id — and only by their own.
-		//
-		// Which means `revoked` is only reachable when the contact's address
-		// still matches the address they sign in with. For anyone who arrived
-		// through an invitation that is the same address by construction. For a
-		// contact linked some other way — a seed, a hand-run mutation — it is
-		// not, and they fall through to `unknown`. That degrades to a vaguer
-		// message and never to a wrong one, which is the right way round; the
-		// alternative is keeping `authUserId` through a revocation, and cutting
-		// that link is the entire point of revoking.
-		const emailLower = normalizeEmail(email ?? undefined);
-		if (emailLower) {
-			const byEmail = await ctx.db
-				.query('contacts')
-				.withIndex('by_orgId_and_emailLower', (q) =>
-					q.eq('orgId', access.orgId!).eq('emailLower', emailLower)
-				)
-				.unique();
-			// A contact already linked to a DIFFERENT account is not this caller's
-			// to hear about, so it falls through to `unknown` with everyone else.
-			if (byEmail && byEmail.authUserId === undefined) {
-				if (byEmail.portalAccess === 'revoked') {
-					return { state: 'revoked' as const, email, orgName };
-				}
-				if (byEmail.portalAccess === 'invited') {
-					return { state: 'invited' as const, email, orgName };
-				}
-			}
-		}
-
-		return { state: 'unknown' as const, email, orgName };
-	}
-});
-
 /** Their donations, newest first, with the per-record split of each. */
 export const listPortalGiving = query({
-	args: {},
-	handler: async (ctx) => {
-		const viewer = await resolvePortalViewer(ctx);
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args) => {
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return EMPTY_GIVING;
 		return await portalGiving(ctx, viewer);
 	}
@@ -229,9 +155,9 @@ export const listPortalGiving = query({
 
 /** The records they are connected to, as public cards, filtered by connection. */
 export const listPortalRecords = query({
-	args: {},
-	handler: async (ctx) => {
-		const viewer = await resolvePortalViewer(ctx);
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args) => {
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return [];
 		return await buildRecords(ctx, viewer, await portalConnections(ctx, viewer));
 	}
@@ -246,9 +172,9 @@ export const listPortalRecords = query({
  * The portal is not a second route to the public site.
  */
 export const getPortalRecord = query({
-	args: { number: v.string() },
+	args: { orgSlug: v.string(), number: v.string() },
 	handler: async (ctx, args) => {
-		const viewer = await resolvePortalViewer(ctx);
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return null;
 
 		const project = await ctx.db
@@ -283,9 +209,9 @@ export const getPortalRecord = query({
  * a to-do list.
  */
 export const listPortalTasks = query({
-	args: {},
-	handler: async (ctx) => {
-		const viewer = await resolvePortalViewer(ctx);
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args) => {
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return { tasks: [], truncated: false };
 
 		const scanned = await ctx.db
@@ -328,9 +254,9 @@ export const listPortalTasks = query({
 
 /** Their own details, as the profile page shows them. */
 export const getPortalProfile = query({
-	args: {},
-	handler: async (ctx) => {
-		const viewer = await resolvePortalViewer(ctx);
+	args: { orgSlug: v.string() },
+	handler: async (ctx, args) => {
+		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return null;
 		return toPortalProfile(viewer.contact);
 	}

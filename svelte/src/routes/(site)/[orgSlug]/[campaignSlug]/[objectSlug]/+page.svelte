@@ -5,6 +5,7 @@
 	import StatRow from '$lib/features/public-site/StatRow.svelte';
 	import ProjectCard from '$lib/features/public-site/ProjectCard.svelte';
 	import ArticleBody from '$lib/features/public-site/ArticleBody.svelte';
+	import YourGivingNote from '$lib/features/public-site/YourGivingNote.svelte';
 
 	let { data } = $props();
 	const campaign = $derived(data.campaign);
@@ -88,6 +89,12 @@
 				{campaign.summary}
 			</p>
 		{/if}
+
+		<!-- Directly under the header, where it reads as the returning supporter's
+		     half of the campaign's own summary. No `projectNumber`, so the backend
+		     sums this person's giving across the whole campaign; for every other
+		     reader it renders nothing and the hero is the one that was cached. -->
+		<YourGivingNote class="mt-6" orgSlug={data.orgProfile.slug} campaignSlug={campaign.slug} />
 
 		<div class="mt-10 sm:mt-12">
 			<StatRow stats={statRowStats} />

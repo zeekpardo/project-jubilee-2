@@ -7,6 +7,7 @@
 	import ArticleBody from '$lib/features/public-site/ArticleBody.svelte';
 	import InterestForm from '$lib/features/public-site/InterestForm.svelte';
 	import DonationForm from '$lib/features/public-site/DonationForm.svelte';
+	import YourGivingNote from '$lib/features/public-site/YourGivingNote.svelte';
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import ProjectHeroMedia from '$lib/features/public-site/ProjectHeroMedia.svelte';
 	import { formatCents } from '$lib/features/money/format';
@@ -191,6 +192,19 @@
 					goalLabel={project.goalLabel}
 				/>
 			</div>
+
+			<!-- Under the record's own numbers and above the ask, because that is
+			     where someone deciding whether to give again is already looking.
+			     Renders nothing at all unless the visitor is signed in and has
+			     given to this record, so for every other reader the aside is
+			     byte-for-byte the one that was cached. -->
+			<YourGivingNote
+				class="mt-4"
+				orgSlug={data.orgProfile.slug}
+				campaignSlug={campaign.slug}
+				projectNumber={project.number}
+				objectLabel={campaign.objectLabel}
+			/>
 
 			<!-- Two genuinely different asks: giving goes to Stripe, a pledge is an
 			     enquiry our team follows up by hand. -->

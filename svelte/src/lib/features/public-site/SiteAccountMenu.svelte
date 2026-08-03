@@ -17,13 +17,19 @@
 	const site = getSiteViewerContext();
 	const { authClient } = getAuthContext();
 
-	const loginHref = $derived(resolve('/(site)/[orgSlug]/login', { orgSlug: site.orgSlug }));
-
 	// Public-site HTML is cached by the CDN and served to every visitor alike,
 	// so no personal detail may appear in it. `hydrated` is only set from an
 	// effect, which never runs on the server and runs after hydration on the
 	// client, so the server markup and the first client render both show the
 	// anonymous state and identity is filled in afterwards.
+	//
+	// The disable below is load-bearing, not noise. `prefer-writable-derived`
+	// ships a FIXER, and its fix rewrites this into a `$derived` — which
+	// evaluates during SSR, puts the donor's name into the cached response, and
+	// hands it to whoever asks for that URL next. A stray `eslint --fix` would
+	// therefore turn a lint tidy-up into a cross-visitor data leak, silently and
+	// with a green build. The rule is switched off here so it cannot.
+	// eslint-disable-next-line svelte/prefer-writable-derived
 	let hydrated = $state(false);
 	$effect(() => {
 		hydrated = true;
@@ -100,7 +106,13 @@
 		</Portal>
 	</Menu.Root>
 {:else}
-	<a href={loginHref} class={headerLinkClass}>
+	<!--
+		`resolve()` is called at the attribute rather than through a binding
+		because `svelte/no-navigation-without-resolve` only recognises it there —
+		it traces an identifier back to its declarator and a `$derived(...)` init
+		fails that trace. The Me link above already does the same.
+	-->
+	<a href={resolve('/(site)/[orgSlug]/login', { orgSlug: site.orgSlug })} class={headerLinkClass}>
 		{m.publicSite_signIn()}
 	</a>
 {/if}

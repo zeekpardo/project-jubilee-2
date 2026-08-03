@@ -12,7 +12,16 @@ import { getAuthContext } from '$lib/auth/context.svelte';
  * and an id in the browser is an argument waiting to be accepted by the next
  * mutation that takes one "because the client already has it".
  */
-export type SiteGreeting = { firstName: string; displayName: string };
+export type SiteGreeting = {
+	firstName: string;
+	displayName: string;
+	/**
+	 * Whether this person has an admin dashboard AT THIS ORG. Decided on the
+	 * server by comparing the session's active organization with the one the URL
+	 * names — never inferred in the browser, where only the slug is known.
+	 */
+	canAdminister: boolean;
+};
 
 export type SiteViewerState = {
 	readonly isLoading: boolean;

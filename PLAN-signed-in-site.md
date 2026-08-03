@@ -13,7 +13,7 @@ phase only.
 
 ## Key risks
 
-**1. Cache poisoning.** [(site)/+layout.server.ts:32](svelte/src/routes/(site)/+layout.server.ts:32)
+**1. Cache poisoning.** [(site)/+layout.server.ts:32](<svelte/src/routes/(site)/+layout.server.ts:32>)
 sets `cache-control: public, max-age=60, s-maxage=300`. Personalized bytes on a publicly cached
 route means a CDN can serve one donor's name and giving history to the next visitor. This is the
 most dangerous part of the feature and the reason personalization is **client-only** (§4).
@@ -34,18 +34,18 @@ site can iframe is a donor-identity harvesting vector. `(embed)` stays permanent
 
 ## Decisions
 
-| Question | Answer |
-| --- | --- |
-| Multi-org | Not yet — but org resolves from the URL slug from day one, so it's additive later |
-| What signed-in adds | Same public content + signed-in chrome + their own giving in context |
-| Unpublished records / protected fields | **No.** The wall's guarantees are unchanged |
-| Surface | Merged, Church Center style — the portal moves under the org slug |
-| Personalization transport | Client-side reactive Convex query |
-| Sign-in | Org-scoped `/{orgSlug}/login`, magic link by email |
-| Anonymous giving | Still fully supported; sign-in is a shortcut, never a gate |
-| Cross-org visitor | Treated as anonymous |
-| Me page tabs | Real routes |
-| Giving in context | Amount + date, on project and campaign pages |
+| Question                               | Answer                                                                            |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| Multi-org                              | Not yet — but org resolves from the URL slug from day one, so it's additive later |
+| What signed-in adds                    | Same public content + signed-in chrome + their own giving in context              |
+| Unpublished records / protected fields | **No.** The wall's guarantees are unchanged                                       |
+| Surface                                | Merged, Church Center style — the portal moves under the org slug                 |
+| Personalization transport              | Client-side reactive Convex query                                                 |
+| Sign-in                                | Org-scoped `/{orgSlug}/login`, magic link by email                                |
+| Anonymous giving                       | Still fully supported; sign-in is a shortcut, never a gate                        |
+| Cross-org visitor                      | Treated as anonymous                                                              |
+| Me page tabs                           | Real routes                                                                       |
+| Giving in context                      | Amount + date, on project and campaign pages                                      |
 
 ---
 
@@ -58,15 +58,31 @@ site can iframe is a donor-identity harvesting vector. `(embed)` stays permanent
 /{orgSlug}/login                         org-branded magic link       anonymous
 /{orgSlug}/me                            Me overview                  SIGNED IN
 /{orgSlug}/me/giving                     giving history               SIGNED IN
-/{orgSlug}/me/stories                    records they're part of      SIGNED IN
+/{orgSlug}/me/records                    records they're part of      SIGNED IN
 /{orgSlug}/me/tasks                      their tasks                  SIGNED IN
-/{orgSlug}/me/household                  household members            SIGNED IN
-/{orgSlug}/me/profile                    contact details              SIGNED IN
-/{orgSlug}/me/preferences                notification + contact prefs SIGNED IN
+/{orgSlug}/me/profile                    contact details + prefs      SIGNED IN
 /{orgSlug}/me/payment-methods            saved cards                  SIGNED IN — Stripe-gated
 ```
 
-`/portal/*` is retired; its four existing routes relocate under `/{orgSlug}/me/*`.
+The path segment is `records`; the TAB reads "Stories" (`portal_navRecords`). The label was the part
+worth getting right, and renaming the URL bought nothing.
+
+Two routes this plan originally listed do not exist, both dropped during Phase 3 for reasons the
+codebase supplied rather than the plan:
+
+- **`/me/household`** — `model/portal.ts` rule 3 forbids returning any other person's row, its
+  NEVER-EXPOSED list naming "not another member of their own record" specifically, and the module
+  notes that a portal session lives on a phone that can be taken. A household tab would be that
+  rule's first exception. Deferred pending a privacy review; the `households` and `householdMembers`
+  tables are untouched.
+- **`/me/preferences`** — there was nothing to put on it. `transparency` does not exist; it was
+  renamed `updateDetail`, whose schema comment says the old name "reads like a permission and is not
+  one". It and `preferredContact` are both already editable in the Profile tab.
+
+`/portal` is NOT retired. It survives as a server-only redirector, because `orgSettings.slug` is
+optional: an org that never claimed one has no `/{orgSlug}/me` to send anyone to, and
+`app/+layout.server.ts` sends its non-admins here. It resolves the slug via `getMyOrgSlug` and
+forwards; 404 for a slug-less org, the only answer that cannot loop.
 
 **Why the move is required, not cosmetic.** `/portal` resolves org from the session. A person who
 one day belongs to two orgs cannot express which one in that URL. Putting the Me page under the slug
@@ -84,13 +100,11 @@ src/routes/(me)/[orgSlug]/me/…     authenticated. Not in any public allowlist.
 Route groups don't appear in URLs, so this reads as one surface to the user while
 `isPublicSite(routeId)` stays exactly as fail-closed as it is today.
 
-> **Verify before building anything else.** Two route groups both declaring a `[orgSlug]` segment is
-> the one structural assumption here that could fail. Different final paths should be fine — the
-> conflict rule is about two files resolving to the *same* URL — but confirm with a trivial spike.
->
-> **Fallback if SvelteKit objects:** keep one `(site)` group and add an explicit `isGatedSitePath`
-> matcher in `hooks.server.ts` for `/[^/]+/me`. This is strictly worse — it's an allowlist with a
-> hole punched in it rather than a structural guarantee — so only take it if the spike fails.
+> **VERIFIED.** Two route groups can both declare a `[orgSlug]` segment. A spike built
+> `(me)/[orgSlug]/me/` alongside `(site)/[orgSlug]/`, and both `svelte-kit sync` and a full
+> production build completed with no route conflict. The conflict rule is about two files resolving
+> to the _same_ URL, which these do not. The fallback this section once described — one `(site)`
+> group with a hole punched in the allowlist — was not needed and is not the design.
 
 `/{orgSlug}/login` stays in `(site)`: it must be reachable while signed out.
 
@@ -100,16 +114,15 @@ Route groups don't appear in URLs, so this reads as one surface to the user whil
 
 **No new tables.** Everything needed exists.
 
-| Field | Table | Role |
-| --- | --- | --- |
-| `authUserId` | `contacts` | The account↔contact link. Already uniquely indexed per org |
-| `portalAccess` | `contacts` | `invited` / `active` / `revoked` |
-| `emailLower` | `contacts` | Claim-by-email on first sign-in |
-| `slug` | `orgSettings` | Org resolution from URL. Globally unique |
-| `contactId` | `transactions` | Giving history |
-| `campaignId`, `projectId` | `allocations` | Giving *in context* |
-| `preferredContact`, `transparency` | `contacts` | Preferences tab — fields exist, no UI today |
-| `householdId` | `householdMembers` | Household tab — tables exist, no portal surface today |
+| Field                              | Table          | Role                                                                                                     |
+| ---------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| `authUserId`                       | `contacts`     | The account↔contact link. Already uniquely indexed per org                                               |
+| `portalAccess`                     | `contacts`     | `invited` / `active` / `revoked`                                                                         |
+| `emailLower`                       | `contacts`     | Claim-by-email on first sign-in                                                                          |
+| `slug`                             | `orgSettings`  | Org resolution from URL. Globally unique                                                                 |
+| `contactId`                        | `transactions` | Giving history                                                                                           |
+| `campaignId`, `projectId`          | `allocations`  | Giving _in context_                                                                                      |
+| `preferredContact`, `updateDetail` | `contacts`     | Donor preferences — already editable in Profile. `transparency` does not exist; this is its current name |
 
 `unique(orgId, authUserId)` — one contact per account **per org** — is already the multi-org-ready
 shape. Nothing to migrate.
@@ -126,9 +139,9 @@ membership check, no special case: the lookup returns nothing and the page rende
 ```ts
 /** The signed-in person as the PUBLIC SITE sees them: scoped by URL, not by session. */
 export type SiteViewer = {
-  orgId: string;           // from orgSettings.slug — NEVER from the session
-  userId: string;          // from the session — NEVER from an argument
-  contact: Doc<'contacts'>;
+	orgId: string; // from orgSettings.slug — NEVER from the session
+	userId: string; // from the session — NEVER from an argument
+	contact: Doc<'contacts'>;
 };
 ```
 
@@ -152,16 +165,16 @@ which is precisely this feature's shape.
 
 **Reuse unchanged:**
 
-| Thing | Where | Use |
-| --- | --- | --- |
-| `portalGiving(ctx, viewer)` | `model/portal.ts:193` | Giving tab, and the basis for in-context |
-| `portalConnections(...)` | `model/portal.ts:308` | Stories tab |
-| `toPortalRecord(...)` | `model/portal.ts:403` | Story detail |
-| `toPortalProfile(...)` | `model/portal.ts:115` | Profile tab |
-| `toPublicProject` / `toPublicCampaign` | `model/public.ts` | Public pages, untouched |
-| `PortalNoAccess.svelte` | `(portal)/portal/` | Relocates with the rest |
-| `formatCents` | `$lib/features/money/format` | Never format money inline |
-| `useQuery(api.x, () => cond ? args : 'skip')` | app-wide | The gating idiom for every viewer read |
+| Thing                                         | Where                        | Use                                      |
+| --------------------------------------------- | ---------------------------- | ---------------------------------------- |
+| `portalGiving(ctx, viewer)`                   | `model/portal.ts:193`        | Giving tab, and the basis for in-context |
+| `portalConnections(...)`                      | `model/portal.ts:308`        | Stories tab                              |
+| `toPortalRecord(...)`                         | `model/portal.ts:403`        | Story detail                             |
+| `toPortalProfile(...)`                        | `model/portal.ts:115`        | Profile tab                              |
+| `toPublicProject` / `toPublicCampaign`        | `model/public.ts`            | Public pages, untouched                  |
+| `PortalNoAccess.svelte`                       | `(portal)/portal/`           | Relocates with the rest                  |
+| `formatCents`                                 | `$lib/features/money/format` | Never format money inline                |
+| `useQuery(api.x, () => cond ? args : 'skip')` | app-wide                     | The gating idiom for every viewer read   |
 
 **The one genuinely new primitive:**
 
@@ -181,10 +194,7 @@ which is precisely this feature's shape.
  * signed-out visitor, no contact in this org, or revoked access all return null
  * — one anonymous outcome, no partial states.
  */
-export async function resolveSiteViewer(
-  ctx: QueryCtx,
-  orgSlug: string
-): Promise<SiteViewer | null>;
+export async function resolveSiteViewer(ctx: QueryCtx, orgSlug: string): Promise<SiteViewer | null>;
 ```
 
 `portalGiving` and friends take `{ orgId, userId, contact }`, so a `SiteViewer` satisfies them
@@ -195,8 +205,8 @@ one number. Add a focused query returning a small aggregate for the record being
 
 ```ts
 export const getMyGivingForRecord = query({
-  args: { orgSlug: v.string(), campaignSlug: v.string(), projectNumber: v.optional(v.string()) },
-  // -> { totalCents, giftCount, lastGiftOn } | null
+	args: { orgSlug: v.string(), campaignSlug: v.string(), projectNumber: v.optional(v.string()) }
+	// -> { totalCents, giftCount, lastGiftOn } | null
 });
 ```
 
@@ -209,12 +219,12 @@ No Zustand, no TanStack. State here is Svelte context plus Convex reactivity.
 **New context** — `createSiteViewerContext` / `setSiteViewerContext` / `getSiteViewerContext`,
 matching the existing triple in `src/lib/access/context.svelte.ts`.
 
-| | |
-| --- | --- |
-| **Single responsibility** | Who the viewer is *for the org whose page we're on*, and nothing else |
-| **Owns** | `viewer \| null`, `isLoading`, the org slug it resolved against |
-| **Does NOT own** | Staff capabilities (`getAccessContext()` — leave alone, it's a different question), theme/campaign context, any public page data |
-| **Must not affect** | The anonymous render path. A signed-out visitor's HTML is byte-identical to today's |
+|                           |                                                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Single responsibility** | Who the viewer is _for the org whose page we're on_, and nothing else                                                            |
+| **Owns**                  | `viewer \| null`, `isLoading`, the org slug it resolved against                                                                  |
+| **Does NOT own**          | Staff capabilities (`getAccessContext()` — leave alone, it's a different question), theme/campaign context, any public page data |
+| **Must not affect**       | The anonymous render path. A signed-out visitor's HTML is byte-identical to today's                                              |
 
 **Cache invalidation:** Convex subscriptions are reactive — a gift recorded by the Stripe webhook
 updates the Me page live with no invalidation call. There is no query key file in this stack.
@@ -256,8 +266,11 @@ server-render personal data because they are never cached and never anonymous.
 
 (me)/[orgSlug]/me/+layout.svelte         NEW shell, same header
 ├── MeTabs.svelte                        NEW · <a> links, not buttons
-└── giving | stories | tasks | household | profile | preferences | payment-methods
+└── giving | records | tasks | profile | payment-methods
 ```
+
+Note the account menu and `MeTabs` both ship; `YourGivingNote` and the `DonationForm` changes are
+what Phase 4 still owes.
 
 ### Scroll
 
@@ -269,11 +282,11 @@ scrolls is the overflow bug this codebase has avoided so far.
 
 **DonationForm** — field order unchanged. Two additions:
 
-| State | Behavior |
-| --- | --- |
+| State     | Behavior                                                                             |
+| --------- | ------------------------------------------------------------------------------------ |
 | Anonymous | Exactly as today, plus a quiet "Sign in for faster giving" link above the name field |
-| Signed in | `name` and `email` prefilled from the contact, editable, with "Not you?" to clear |
-| Signed in | Gift carries `contactId` so history is exact rather than email-matched |
+| Signed in | `name` and `email` prefilled from the contact, editable, with "Not you?" to clear    |
+| Signed in | Gift carries `contactId` so history is exact rather than email-matched               |
 
 Prefill fills the **initial** value only — it must never overwrite something the donor has typed.
 Key the form on `viewer?.contact._id` so switching identity remounts rather than merging state.
@@ -293,15 +306,15 @@ stay bounded by `PORTAL_EDITABLE_PROFILE_FIELDS`.
 
 ### States
 
-| Scenario | What the user sees |
-| --- | --- |
-| Anonymous, any public page | Today's page exactly, plus a "Sign in" link in the header |
-| Signed in, viewer loading | Public page renders immediately; account slot holds a small skeleton. Never blocks content |
-| Signed in, no gifts to this record | `YourGivingNote` renders nothing |
-| Me page, no giving yet | "You haven't given yet" + a link to the org's campaigns |
-| Me page, no stories | "You're not connected to any stories yet" |
-| Viewer query fails | Fall back to the anonymous view silently. A broken personalization query must never break a public donation page |
-| `/me` at an org with no contact | **307 → `/{orgSlug}/`** |
+| Scenario                           | What the user sees                                                                                               |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Anonymous, any public page         | Today's page exactly, plus a "Sign in" link in the header                                                        |
+| Signed in, viewer loading          | Public page renders immediately; account slot holds a small skeleton. Never blocks content                       |
+| Signed in, no gifts to this record | `YourGivingNote` renders nothing                                                                                 |
+| Me page, no giving yet             | "You haven't given yet" + a link to the org's campaigns                                                          |
+| Me page, no stories                | "You're not connected to any stories yet"                                                                        |
+| Viewer query fails                 | Fall back to the anonymous view silently. A broken personalization query must never break a public donation page |
+| `/me` at an org with no contact    | **307 → `/{orgSlug}/`**                                                                                          |
 
 ---
 
@@ -319,57 +332,59 @@ giving" from a project page lands back on that project page with the form prefil
 generic home page. `hooks.server.ts` already has the `withRedirect` helper for this shape.
 
 **The claim step moves.** `claimPortalContact(ctx, orgId, userId, email)` runs today in
-[(portal)/portal/+layout.server.ts](svelte/src/routes/(portal)/portal/+layout.server.ts) with
+[(portal)/portal/+layout.server.ts](<svelte/src/routes/(portal)/portal/+layout.server.ts>) with
 `orgId` from the session's active org. It now takes `orgId` **from the slug**, and runs on first
 load of any `(me)` route. Its compare-and-set on an unlinked contact is unchanged — this is a change
-of *source*, not of logic.
+of _source_, not of logic.
 
 ---
 
 ## 7. Edge cases
 
-| Case | Behavior |
-| --- | --- |
-| **Signed in at org A, browsing org B** | Anonymous at B. `resolveSiteViewer` returns null; no chrome, no prefill, no giving note. Giving still works, as a stranger |
-| **`/{orgSlug}/me` at a non-member org** | 307 to `/{orgSlug}/`. Reveals nothing about whether an account exists |
-| **Unknown org slug** | 404, as today. Identical for signed-in and anonymous |
-| **Access revoked mid-session** | `portalAccess === 'revoked'` is checked on **every read**, so the next query drops them to anonymous. No sign-out needed |
-| **Contact deleted while signed in** | Viewer resolves null → anonymous. `model/cascade.ts` already clears `transactions.contactId` on contact delete, so the ledger survives |
-| **Staff member on the public site** | Resolves through the same path. Staff who are also contacts see their own giving; staff who aren't see nothing. Capabilities are irrelevant here — this surface grants nothing |
-| **Anonymous gift, later signs in** | Gift stays unattributed unless the email matches at claim time. Explicitly **not** building a claim-my-past-gifts flow now |
-| **Same email, two orgs** | Two separate contacts, two separate `authUserId` links, one account. Already legal under `unique(orgId, authUserId)` — this is the multi-org seam |
-| **Embed routes** | Never personalized. No account menu, no giving note, no viewer context. Enforced by the context living in `(site)`'s layout, which `(embed)` does not inherit |
-| **Navigating away mid-profile-edit** | Existing portal behavior, unchanged |
-| **Prefill vs typed input** | Prefill sets initial value only. Form keyed on contact id so identity change remounts |
-| **Bulk operations** | None. Every write on this surface is the viewer's own single record |
+| Case                                    | Behavior                                                                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Signed in at org A, browsing org B**  | Anonymous at B. `resolveSiteViewer` returns null; no chrome, no prefill, no giving note. Giving still works, as a stranger                                                     |
+| **`/{orgSlug}/me` at a non-member org** | 307 to `/{orgSlug}/`. Reveals nothing about whether an account exists                                                                                                          |
+| **Unknown org slug**                    | 404, as today. Identical for signed-in and anonymous                                                                                                                           |
+| **Access revoked mid-session**          | `portalAccess === 'revoked'` is checked on **every read**, so the next query drops them to anonymous. No sign-out needed                                                       |
+| **Contact deleted while signed in**     | Viewer resolves null → anonymous. `model/cascade.ts` already clears `transactions.contactId` on contact delete, so the ledger survives                                         |
+| **Staff member on the public site**     | Resolves through the same path. Staff who are also contacts see their own giving; staff who aren't see nothing. Capabilities are irrelevant here — this surface grants nothing |
+| **Anonymous gift, later signs in**      | Gift stays unattributed unless the email matches at claim time. Explicitly **not** building a claim-my-past-gifts flow now                                                     |
+| **Same email, two orgs**                | Two separate contacts, two separate `authUserId` links, one account. Already legal under `unique(orgId, authUserId)` — this is the multi-org seam                              |
+| **Embed routes**                        | Never personalized. No account menu, no giving note, no viewer context. Enforced by the context living in `(site)`'s layout, which `(embed)` does not inherit                  |
+| **Navigating away mid-profile-edit**    | Existing portal behavior, unchanged                                                                                                                                            |
+| **Prefill vs typed input**              | Prefill sets initial value only. Form keyed on contact id so identity change remounts                                                                                          |
+| **Bulk operations**                     | None. Every write on this surface is the viewer's own single record                                                                                                            |
 
 ---
 
 ## 8. Implementation order
 
-**Phase 1 — the seam** *(nothing user-visible)*
-1. Spike the two-route-group question (§1). Resolve before anything else.
-2. `resolveSiteViewer(ctx, orgSlug)` in `model/identity.ts`, plus its unit tests — including the
-   signed-in-at-A-browsing-B case.
-3. `getSiteViewer` and `getMyGivingForRecord` queries.
+**Phase 1 — the seam** — DONE (PR #9)
 
-**Phase 2 — recognition**
-4. Site viewer context + `SiteAccountMenu`, client-only.
-5. `/{orgSlug}/login`, org-branded, magic link, with `redirectTo`.
+1. ~~Spike the two-route-group question~~ — verified, see §1.
+2. ~~`resolveSiteViewer(ctx, orgSlug)`~~ — plus `decideSiteViewer` in `lib/domain/` with 12 cases.
+   The rule requires `portalAccess === 'active'`, not merely not-revoked: every write pairs the two,
+   so a row that is linked but not active is two writes disagreeing.
+3. ~~`getSiteViewer` and `getMyGivingForRecord`~~ — in `convex/site/queries.ts`, projections in
+   `convex/model/site.ts`. `getSiteViewer` returns `{ firstName, displayName }` and deliberately no
+   `contactId`: an id in the browser is an argument waiting to be accepted.
 
-**Phase 3 — the Me page**
-6. Relocate `/portal/*` → `/{orgSlug}/me/*` under the `(me)` group. Move `claimPortalContact` to
-   slug-sourced org. No behavior change beyond the URL.
-7. `MeTabs`, and the new household and preferences tabs.
+**Phase 2 — recognition** — DONE (PR #10) 4. ~~Site viewer context + `SiteAccountMenu`~~ — the signed-in branch is gated behind a flag set
+inside an `$effect`, so the cached HTML and the first client render are identical anonymous
+markup. 5. ~~`/{orgSlug}/login`~~ — plus `safeRedirectTo` in `lib/domain/` with 17 cases. The strip of
+`\t\n\r` runs BEFORE the protocol-relative check, because browsers strip those themselves.
+Two optional props on `SignIn.svelte` (`methods`, `hideHeader`), both defaulting to prior
+behaviour.
 
-**Phase 4 — giving**
-8. `YourGivingNote` on project and campaign pages.
-9. `DonationForm` prefill + sign-in shortcut.
+**Phase 3 — the Me page** — DONE (PRs #11, #12) 6. ~~Relocate `/portal/*` → `/{orgSlug}/me/*`~~ — and **`resolvePortalViewer` was deleted**, which
+turned out to be the point. Nine functions take `orgSlug`; one resolver remains and it can only
+be scoped by a URL. `/portal` survives as a redirector (§1). Turning someone away from an org's
+pages now sends them to that org's login, not the platform's. 7. ~~`MeTabs`~~ — five tabs, no new i18n. Household and preferences dropped; see §1 for why.
 
-**Phase 5 — Stripe-gated** *(blocked)*
-10. Auto-attribute `contactId` on the gift — needs [PLAN-stripe.md](PLAN-stripe.md) step 4.
-11. Saved payment methods tab — needs step 7.
-12. Recurring management from the Me page — needs step 7.
+**Phase 4 — giving** — NEXT 8. `YourGivingNote` on project and campaign pages, reading `getMyGivingForRecord` (already built). 9. `DonationForm` prefill + sign-in shortcut.
+
+**Phase 5 — Stripe-gated** _(blocked)_ 10. Auto-attribute `contactId` on the gift — needs [PLAN-stripe.md](PLAN-stripe.md) step 4. 11. Saved payment methods tab — needs step 7. 12. Recurring management from the Me page — needs step 7.
 
 Phases 1–4 have **no Stripe dependency** and deliver the whole recognition experience. Phase 5 can
 only start once online giving exists.
@@ -386,6 +401,29 @@ only start once online giving exists.
   slug everywhere, and `unique(orgId, authUserId)` already permits the shape
 - **Claim past anonymous gifts**
 - **Personalize embeds**
+- **Show a household.** Dropped in Phase 3 rather than deferred casually: it would be the first
+  exception to `model/portal.ts` rule 3, on a surface whose own header notes that a portal session
+  lives on a phone that can be taken. It needs a privacy review, not a sprint
+- **Give staff an implicit portal.** `resolvePortalViewer` let an admin in without a contact row;
+  `resolveSiteViewer` does not, because that exemption read a role from the SESSION's org while the
+  contact comes from the URL's. An admin who wants to see their own pages is claimed and linked like
+  anyone else — `seed/portal.ts` is how you do that on a dev deployment
+
+---
+
+## 10. Left open
+
+- **`login` and `me` are reserved campaign slugs.** `/{orgSlug}/login` and `/{orgSlug}/me` match
+  before `/{orgSlug}/[campaignSlug]` (verified in the built manifest), so a campaign slugged either
+  is silently shadowed. Campaign-slug validation is where a guard belongs; filed separately
+- **`givingForRecord` scans 500 gifts with no `truncated` flag**, so a donor past that sees an
+  understated total. Donor-first scanning is deliberate — starting from `allocations.by_projectId`
+  would read every supporter's giving to a popular record to find one person's
+- **No `convex-test`.** Deviates from `guidelines.md`, on evidence: Better Auth is a local component
+  install whose adapter transitively imports the app's whole auth and email stack, so faking a
+  session means registering two components. The decisions live in `lib/domain/` and are tested there
+- **Adding a Convex module requires `npx convex codegen`.** Neither `tsc -p src/convex/tsconfig.json`
+  (which excludes `_generated`) nor svelte-check catches a stale API map until something imports it
 
 ---
 

@@ -99,6 +99,26 @@
 					{/snippet}
 				</Menu.Item>
 
+				<!-- Staff only, and only staff OF THIS ORG — the server decides that
+				     by comparing the session's active organization against the one
+				     this page's slug names, because /app is session-scoped and a
+				     dashboard link that quietly meant a different organization would
+				     be the wrong offer rather than a broken one.
+
+				     /app takes no parameters, but it still goes through resolve()
+				     at the attribute like every other link here: the rule asks for
+				     it regardless of arity, and one shape for all navigation is
+				     easier to keep right than a rule about which links are exempt. -->
+				{#if viewer.canAdminister}
+					<Menu.Item value="__site-dashboard">
+						{#snippet asChild(props)}
+							<a href={resolve('/app')} {...props()}>
+								{m.publicSite_accountDashboard()}
+							</a>
+						{/snippet}
+					</Menu.Item>
+				{/if}
+
 				<Menu.Item value="__site-sign-out" onSelect={() => void signOut()}>
 					{m.publicSite_accountSignOut()}
 				</Menu.Item>

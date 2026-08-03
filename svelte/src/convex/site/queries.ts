@@ -29,6 +29,8 @@
 
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
+import { canAccessAdmin } from '../../lib/domain/permissions';
+import { getAccess } from '../model/access';
 import { resolveSiteViewer } from '../model/identity';
 import {
 	givingForRecord,
@@ -51,7 +53,23 @@ export const getSiteViewer = query({
 	handler: async (ctx, args): Promise<SiteGreeting | null> => {
 		const viewer = await resolveSiteViewer(ctx, args.orgSlug);
 		if (!viewer) return null;
-		return toSiteGreeting(viewer.contact);
+
+		// THE ORG MATCH IS THE POINT. `getAccess` reports the role held in Better
+		// Auth's ACTIVE organization, which this whole surface otherwise refuses
+		// to consult — the viewer above came from the URL. Both are read here
+		// precisely so they can be compared, and the answer is yes only when they
+		// name the same org.
+		//
+		// Without that comparison the menu would offer a dashboard to someone who
+		// administers a DIFFERENT org than the page they are reading, which is
+		// reachable today: one person can be a donor here and staff elsewhere.
+		// `/app` is session-scoped, so the link would have worked and taken them
+		// somewhere else entirely — an offer that is not wrong so much as about
+		// another organization, made on this one's page.
+		const access = await getAccess(ctx);
+		const canAdminister = access.orgId === viewer.orgId && canAccessAdmin(access);
+
+		return toSiteGreeting(viewer.contact, canAdminister);
 	}
 });
 

@@ -722,6 +722,7 @@
 	"publicSite_homeAriaLabel": "{orgName} — home",
 	"publicSite_accountMenuLabel": "Your account",
 	"publicSite_accountMe": "Me",
+	"publicSite_accountDashboard": "Dashboard",
 	"publicSite_accountSignOut": "Sign out",
 	"publicSite_accountSignedInAs": "Signed in as {name}",
 	"publicSite_accountSignOutFailed": "We couldn't sign you out. Please try again.",

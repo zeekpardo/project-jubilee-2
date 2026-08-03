@@ -80,6 +80,17 @@ export type SiteGreeting = {
 	firstName: string;
 	/** For the account menu, where a fuller name says WHICH account is signed in. */
 	displayName: string;
+	/**
+	 * Whether to offer this person a way back into the admin app FOR THIS ORG.
+	 *
+	 * A capability the viewer holds over themselves, not a fact about anyone
+	 * else, which is why it may cross this boundary at all. It says only "you
+	 * have a dashboard here" — no role, no capability list, nothing another
+	 * person could be inferred from.
+	 *
+	 * The org match is the whole of it; see `getSiteViewer` for why.
+	 */
+	canAdminister: boolean;
 };
 
 /**
@@ -105,11 +116,12 @@ export type SiteGreeting = {
  * publishing a name ABOUT someone on a record; this is the person reading their
  * own greeting, and they are entitled to the name they actually go by.
  */
-export function toSiteGreeting(contact: Doc<'contacts'>): SiteGreeting {
+export function toSiteGreeting(contact: Doc<'contacts'>, canAdminister: boolean): SiteGreeting {
 	const last = contact.lastName?.trim();
 	return {
 		firstName: contact.firstName,
-		displayName: last ? `${contact.firstName} ${last}` : contact.firstName
+		displayName: last ? `${contact.firstName} ${last}` : contact.firstName,
+		canAdminister
 	};
 }
 

@@ -11,28 +11,33 @@
 // needed it. The portal needs the same link for a different reason, and a
 // module named for one feature is a poor home for the other's foundation.
 //
-// NEVER FROM AN ARGUMENT. `resolvePortalViewer` takes no id: it resolves the
-// viewer from the session and nothing else. Every portal read starts here, and
-// a portal function that accepts a `contactId` may only do so to assert it
-// equals the one this returned — at which point the argument is redundant,
-// which is the point.
+// ONE RESOLVER, AND IT CAN ONLY BE SCOPED BY A URL. `resolveSiteViewer` is the
+// single way to find out who is looking, on the public site and in the person's
+// own `/{orgSlug}/me` alike. There was a second one, `resolvePortalViewer`, that
+// took no argument and read the org out of Better Auth's active organization.
+// It is gone: once the URL names the org, a session-derived org is a cross-tenant
+// leak. A person signed in at org A opening org B's page would have been served
+// their org A giving, profile and records under org B's URL, every field real
+// and all of them for the wrong org. Deleting it is what makes that unwritable
+// rather than merely discouraged.
 //
-// `resolveSiteViewer` takes one argument, and the distinction is worth being
-// exact about: an org SLUG says which org's page is being looked at, the same
-// thing an anonymous visitor's URL says. It never says who the viewer is. The
-// PERSON still comes from the session alone, so no argument to anything here
-// can name a person, and passing a different slug widens nothing — it only
-// moves you to an org where you are, in all likelihood, nobody.
+// NEVER FROM AN ARGUMENT — the PERSON, that is. `resolveSiteViewer` takes one
+// argument and the distinction is worth being exact about: an org SLUG says
+// which org's page is being looked at, the same thing an anonymous visitor's URL
+// says. It never says who the viewer is. The person comes from the session
+// alone, so no argument to anything here can name one, and passing a different
+// slug widens nothing — it only moves you to an org where you are, in all
+// likelihood, nobody. A function that accepts a `contactId` may only do so to
+// assert it equals the one this returned, at which point the argument is
+// redundant, which is the point.
 // ============================================================
 
 import { ConvexError } from 'convex/values';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { TaskViewer } from '../../lib/features/tasks/types';
-import { canAccessAdmin } from '../../lib/domain/permissions';
 import { decideSiteViewer } from '../../lib/domain/site-viewer';
 import { authComponent } from '../auth';
-import { getAccess } from './access';
 import { assertAuthUserAvailable, normalizeEmail } from './contacts';
 import { orgIdForSlug } from './public';
 
@@ -77,54 +82,9 @@ export async function resolvePersonIdentity(
 	return seed;
 }
 
-/** The signed-in person, as the portal sees them. */
-export type PortalViewer = {
-	orgId: string;
-	userId: string;
-	contact: Doc<'contacts'>;
-};
-
 /**
- * Who is looking at the portal, resolved from the session alone.
- *
- * Returns null — never throws — for every way of not being a portal viewer:
- * no session, no active org, no contact linked to this account, or access
- * withdrawn. A portal query then returns its own empty value, the same way a
- * staff query does when the capability is missing.
- *
- * `revoked` is checked HERE, on every read, rather than at sign-in. An access
- * decision made once at the door stays wrong for the life of the session, and
- * withdrawing a donor's access is exactly the case where "at once" matters.
- *
- * Staff pass without an `active` row on purpose. A person can be both an
- * employee and a donor — `unique(orgId, authUserId)` allows exactly one
- * contact per account per org — and which surface someone is looking at is a
- * property of the ROUTE, not of the person. Staff visiting the portal see
- * their own giving; they are not thereby granted anything, because everything
- * the portal returns is already their own row. A revocation still stops them,
- * which is why that check comes first.
- */
-export async function resolvePortalViewer(ctx: QueryCtx): Promise<PortalViewer | null> {
-	const access = await getAccess(ctx);
-	if (!access.orgId || !access.userId) return null;
-
-	const contact = await ctx.db
-		.query('contacts')
-		.withIndex('by_orgId_and_authUserId', (q) =>
-			q.eq('orgId', access.orgId!).eq('authUserId', access.userId!)
-		)
-		.unique();
-	if (!contact) return null;
-
-	if (contact.portalAccess === 'revoked') return null;
-	if (contact.portalAccess !== 'active' && !canAccessAdmin(access)) return null;
-
-	return { orgId: access.orgId, userId: access.userId, contact };
-}
-
-/**
- * The signed-in person as the PUBLIC SITE sees them: scoped by URL, not by
- * session.
+ * The signed-in person as a URL-SCOPED SURFACE sees them: the public site, and
+ * the person's own pages under `/{orgSlug}/me`. Scoped by URL, not by session.
  */
 export type SiteViewer = {
 	/** From `orgSettings.slug` — NEVER from the session's active organization. */
@@ -135,17 +95,28 @@ export type SiteViewer = {
 };
 
 /**
- * Who is looking at THIS ORG'S public site.
+ * The name `model/portal.ts` knows this shape by.
  *
- * The sibling of `resolvePortalViewer`, and different in exactly one way that
- * matters: the org comes from the URL slug. Composing (org from the URL) with
- * (person from the session) is what makes "a visitor from another org is simply
- * anonymous" fall out for free — there is no membership test to write and no
- * cross-org special case, because the contacts lookup below finds nothing and
- * the page renders the way it does for anybody else.
+ * Its projection functions were written against the session-scoped viewer, and
+ * their signatures need no edit because the shape never changed: one org, one
+ * account, and the contact row that links them. What changed is where the org
+ * comes from, and that is this module's business rather than the projection's —
+ * a projection that only ever returns the viewer's own row cannot tell, and
+ * should not have to.
+ */
+export type PortalViewer = SiteViewer;
+
+/**
+ * Who is looking at THIS ORG'S page.
  *
- * `getAccess` IS NOT CALLED HERE, and that omission is the whole reason this
- * function exists rather than a slug argument on the portal one. getAccess
+ * The org comes from the URL slug, and that is the one thing about this
+ * function to hold on to. Composing (org from the URL) with (person from the
+ * session) is what makes "a visitor from another org is simply anonymous" fall
+ * out for free — there is no membership test to write and no cross-org special
+ * case, because the contacts lookup below finds nothing and the page renders the
+ * way it does for anybody else.
+ *
+ * `getAccess` IS NOT CALLED HERE, and that omission is the whole point. getAccess
  * resolves the ACTIVE ORGANIZATION out of Better Auth, so a person signed in at
  * org A and browsing org B's page would come back holding their org A identity
  * while standing on org B's URL. That is the cross-tenant leak, and it is
@@ -167,13 +138,14 @@ export type SiteViewer = {
  * testing exhaustively. Do not re-decide anything here; add the case there,
  * where it is covered.
  *
- * This is also where the surface parts company with `resolvePortalViewer`,
- * which admits staff without an 'active' row via `canAccessAdmin`. That
- * exemption reads a role out of the SESSION's organization while the contact
- * here came from the URL's, and asking org A's role about org B's page is the
- * confusion resolving orgId from the slug exists to prevent. It would buy
- * nothing either: the LINK is the credential, and everything this viewer
- * unlocks is their own row.
+ * NO STAFF EXEMPTION, which is where this parts company with the session-scoped
+ * resolver it replaced: that one admitted staff without an 'active' row via
+ * `canAccessAdmin`. The exemption reads a role out of the SESSION's
+ * organization while the contact here came from the URL's, and asking org A's
+ * role about org B's page is the confusion resolving orgId from the slug exists
+ * to prevent. It would buy nothing either: the LINK is the credential, and
+ * everything this viewer unlocks is their own row. A staff member who wants to
+ * see their own giving is claimed and linked like anyone else.
  */
 export async function resolveSiteViewer(
 	ctx: QueryCtx,
@@ -188,11 +160,11 @@ export async function resolveSiteViewer(
 	const user = await authComponent.safeGetAuthUser(ctx);
 	if (!user) return null;
 
-	// `.unique()` rather than `.first()`, matching resolvePortalViewer: two
-	// contacts holding one account in one org breaks `unique(orgId, authUserId)`,
-	// and quietly picking whichever came back first would pick one of a person's
-	// two identities by coin flip. The public surface is not the place to be
-	// quietly more forgiving than the portal about the same invariant.
+	// `.unique()` rather than `.first()`: two contacts holding one account in one
+	// org breaks `unique(orgId, authUserId)`, and quietly picking whichever came
+	// back first would pick one of a person's two identities by coin flip. A
+	// broken invariant is worth the throw, because the alternative is a page that
+	// shows the wrong half of someone and says nothing about it.
 	const contact = await ctx.db
 		.query('contacts')
 		.withIndex('by_orgId_and_authUserId', (q) => q.eq('orgId', orgId).eq('authUserId', user._id))

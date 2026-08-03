@@ -43,6 +43,18 @@ const isPublicSite = (routeId: string | null): boolean => routeId?.startsWith('/
  */
 const isEmbed = (routeId: string | null): boolean => routeId?.startsWith('/(embed)') ?? false;
 
+/**
+ * A person's own pages under `/{orgSlug}/me` (see src/routes/(me)).
+ *
+ * NOT public — this group is deliberately outside the two matchers above, and
+ * that separation is the reason `(me)` is its own route group rather than a
+ * folder inside `(site)`: the matchers wave a whole group through by prefix, so
+ * an authenticated page living in `(site)` would be waved through with it.
+ * What this is for is narrower — knowing that an unauthenticated visitor to one
+ * of these URLs can be sent somewhere better than the platform sign-in page.
+ */
+const isOwnPages = (routeId: string | null): boolean => routeId?.startsWith('/(me)') ?? false;
+
 /* --------------------------------------------------------- */
 /* ---------------------- auth helpers --------------------- */
 /* --------------------------------------------------------- */
@@ -76,7 +88,17 @@ const requireAuth: Handle = async ({ event, resolve }) => {
 
 	/* ---------- 2. All other routes require authentication ---------- */
 	if (!sessionCookie) {
-		throw redirect(307, withRedirect('/signin', event));
+		// Someone turned away from an org's own pages should sign in under that
+		// org's name rather than the platform's. `/{orgSlug}/login` is the same
+		// Better Auth flow wearing the charity's branding, and a donor who
+		// followed a link from a campaign has no idea what this platform is
+		// called — landing on its sign-in page reads like the wrong website.
+		//
+		// Falls back to `/signin` whenever the route did not name an org, which
+		// covers `/app` and everything else. `withRedirect` carries the original
+		// path either way, so the trip through sign-in is invisible.
+		const orgSlug = isOwnPages(event.route.id) ? event.params.orgSlug : undefined;
+		throw redirect(307, withRedirect(orgSlug ? `/${orgSlug}/login` : '/signin', event));
 	}
 
 	return resolve(event);

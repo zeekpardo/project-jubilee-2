@@ -2,6 +2,7 @@
 	import { useQuery } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { formatCents } from '$lib/features/money/format';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
@@ -10,8 +11,12 @@
 	const { api } = getAuthContext();
 	const auth = useAuth();
 
+	// The org comes from the URL, not the session: one person can give to more
+	// than one org, and only the address says whose giving this is.
+	const orgSlug = $derived(page.params.orgSlug);
+
 	const givingResponse = useQuery(api.portal.queries.listPortalGiving, () =>
-		auth.isAuthenticated ? {} : 'skip'
+		auth.isAuthenticated && orgSlug ? { orgSlug } : 'skip'
 	);
 	const giving = $derived(givingResponse.data);
 
@@ -31,7 +36,9 @@
 	</p>
 </header>
 
-{#if giving}
+<!-- `orgSlug` is in the test only so the record links below can be resolved
+     against it; without one there is no query and so no `giving` either. -->
+{#if giving && orgSlug}
 	{#if giving.truncated}
 		<p class="text-muted-foreground mt-4 text-xs">{m.portal_givingTruncated()}</p>
 	{/if}
@@ -77,7 +84,8 @@
 								<li class="flex items-baseline justify-between gap-4 text-sm">
 									{#if allocation.number}
 										<a
-											href={resolve('/(portal)/portal/records/[number]', {
+											href={resolve('/(me)/[orgSlug]/me/records/[number]', {
+												orgSlug,
 												number: allocation.number
 											})}
 											class="text-foreground hover:text-primary transition-colors"

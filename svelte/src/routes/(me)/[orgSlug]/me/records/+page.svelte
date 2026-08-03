@@ -2,6 +2,7 @@
 	import { useQuery } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
+	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import ProjectCard from '$lib/features/public-site/ProjectCard.svelte';
@@ -10,8 +11,12 @@
 	const { api } = getAuthContext();
 	const auth = useAuth();
 
+	// The org comes from the URL, not the session: a person connected to records
+	// at two orgs must see one org's at a time, and only the address says which.
+	const orgSlug = $derived(page.params.orgSlug);
+
 	const recordsResponse = useQuery(api.portal.queries.listPortalRecords, () =>
-		auth.isAuthenticated ? {} : 'skip'
+		auth.isAuthenticated && orgSlug ? { orgSlug } : 'skip'
 	);
 	const records = $derived(recordsResponse.data ?? []);
 </script>
@@ -27,7 +32,7 @@
 	</p>
 </header>
 
-{#if records.length === 0}
+{#if records.length === 0 || !orgSlug}
 	<div class="mt-8">
 		<EmptyState title={m.portal_recordsEmpty()} />
 	</div>
@@ -38,7 +43,10 @@
 				<ProjectCard
 					project={record.card}
 					objectLabel={record.campaign.objectLabel}
-					href={resolve('/(portal)/portal/records/[number]', { number: record.card.number })}
+					href={resolve('/(me)/[orgSlug]/me/records/[number]', {
+						orgSlug,
+						number: record.card.number
+					})}
 				/>
 				{#if record.connection.belongsTo || record.connection.supports}
 					<p class="text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 text-xs">

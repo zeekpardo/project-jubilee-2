@@ -16,9 +16,13 @@
 	const { api } = getAuthContext();
 	const auth = useAuth();
 
+	// Both halves of the address are arguments now: the slug says which org's
+	// records are being asked about, the number which one of them.
+	const orgSlug = $derived(page.params.orgSlug);
+
 	const recordResponse = useQuery(api.portal.queries.getPortalRecord, () => {
 		const number = page.params.number;
-		return auth.isAuthenticated && number ? { number } : 'skip';
+		return auth.isAuthenticated && orgSlug && number ? { orgSlug, number } : 'skip';
 	});
 	const record = $derived(recordResponse.data);
 
@@ -81,12 +85,14 @@
 	<title>{record ? title : m.portal_recordNotFound()}</title>
 </svelte:head>
 
-{#if !record}
+<!-- `orgSlug` is in the test only so the link back can be resolved against it;
+     without one there is no query and so no record either. -->
+{#if !record || !orgSlug}
 	<EmptyState title={m.portal_recordNotFound()} />
 {:else}
 	<article>
 		<a
-			href={resolve('/(portal)/portal/records')}
+			href={resolve('/(me)/[orgSlug]/me/records', { orgSlug })}
 			class="text-muted-foreground hover:text-primary text-sm font-medium transition-colors"
 		>
 			&larr; {m.portal_navRecords()}

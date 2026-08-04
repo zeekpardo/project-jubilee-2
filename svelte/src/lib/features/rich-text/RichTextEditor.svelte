@@ -1,6 +1,6 @@
 <script lang="ts">
 	// ============================================================
-	// Rich text editor — markdown in, markdown out
+	// Rich text editor — markdown in, markdown out, edited in place
 	// ============================================================
 	// A generic authoring control, and deliberately nothing more. It takes
 	// markdown, hands markdown back, and knows nothing about what the prose is
@@ -10,9 +10,14 @@
 	// the caller's, which is why the only hole punched through it is
 	// `onUploadImage`.
 	//
+	// THERE IS NO WRITE/PREVIEW SPLIT. One surface, showing the shape the words
+	// will have when a stranger reads them, because a split pane asks an author
+	// to hold two representations in their head and trust that the right one is
+	// what donors get. Blocks are inserted by typing `/`.
+	//
 	// Its output is markdown for `$lib/domain/rich-text.ts` and for nothing else.
-	// Two platform directives extend what markdown can say, and this editor is
-	// the thing that writes them:
+	// Two platform directives extend what markdown can say, and the round trip
+	// for both lives in `./platform-directives.ts`:
 	//
 	//   ::image{id=<storageId> alt=""}
 	//   ::video{url="https://…"}
@@ -22,30 +27,77 @@
 	//   - It does not sanitize. Nothing typed here ever reaches a reader from
 	//     this component; the security boundary is `renderRichText`, and a
 	//     second, weaker set of rules here would only give someone a reason to
-	//     trust the wrong one. See `sanitizer: false` below for why the editor's
-	//     own preview is safe regardless.
-	//   - It does not resolve a storage id to a URL. See `insertImage`.
-	//   - It does not judge a video URL. `toVideoEmbed` already owns that
-	//     decision and is tested against `javascript:` and friends; a second
-	//     opinion here would be a second thing to keep in agreement with it, and
-	//     the disagreement is where the hole would be.
+	//     trust the wrong one.
+	//   - It does not offer strikethrough, task lists or tables. That is why the
+	//     commonmark preset is used alone and `@milkdown/preset-gfm` is not:
+	//     `del`, checkboxes and `table` are absent from the renderer's allowed
+	//     tag list, so those controls would produce markup that silently
+	//     disappears the moment the post is published. A control that appears to
+	//     work and does nothing is worse than an absent one.
+	//   - It does not resolve a storage id to a URL ITSELF, and never writes one
+	//     into the body. A caller may pass `resolveImageUrl` so that saved photos
+	//     are drawn rather than stubbed, but that answer is display-only and dies
+	//     with the component. See `insertImage` and `previewUrlFor`.
+	//   - It does not judge a video URL. `toVideoEmbed` in the domain layer
+	//     already owns that decision and is tested against `javascript:` and
+	//     friends; a second opinion here would be a second thing to keep in
+	//     agreement with it, and the disagreement is where the hole would be.
 	//   - It does not save, validate or debounce. `value` is bindable and that
 	//     is the whole contract.
 	//
 	// It also has no top-level side effects — nothing here touches `window` or
 	// `document` at module scope — so a consumer can keep the editor's bytes off
-	// a public page with `{#await import('$lib/features/rich-text/…')}`. Carta,
-	// shiki and this stylesheet are a large chunk that donors should never have
-	// to download. Adding module-scope work would quietly take that option away.
+	// a public page with `{#await import('$lib/features/rich-text/…')}`. Milkdown,
+	// ProseMirror and this stylesheet are a large chunk that donors should never
+	// have to download. Adding module-scope work would quietly take that option
+	// away.
 	// ============================================================
 
-	import { Carta, MarkdownEditor } from 'carta-md';
-	// Carta's own stylesheet, imported rather than reimplemented. The rules
-	// below override its six custom properties with this app's design tokens
-	// instead of fighting its selectors. As a module import it travels inside
-	// whichever chunk imports this component, so it stays lazy too.
-	import 'carta-md/default.css';
+	import {
+		Editor,
+		defaultValueCtx,
+		editorViewCtx,
+		editorViewOptionsCtx,
+		rootCtx,
+		remarkStringifyOptionsCtx
+	} from '@milkdown/kit/core';
+	import {
+		commonmark,
+		createCodeBlockCommand,
+		wrapInBlockquoteCommand,
+		wrapInBulletListCommand,
+		wrapInHeadingCommand,
+		wrapInOrderedListCommand
+	} from '@milkdown/kit/preset/commonmark';
+	import { clipboard } from '@milkdown/kit/plugin/clipboard';
+	import { cursor } from '@milkdown/kit/plugin/cursor';
+	import { history } from '@milkdown/kit/plugin/history';
+	import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
+	import { trailing } from '@milkdown/kit/plugin/trailing';
+	import { SlashProvider, slashFactory } from '@milkdown/kit/plugin/slash';
+	// `$prose` cannot be imported here — Svelte reserves the `$` prefix — which
+	// is why the placeholder lives in its own module.
+	import { callCommand, replaceAll } from '@milkdown/kit/utils';
+	import { TextSelection } from '@milkdown/kit/prose/state';
+	import type { EditorState } from '@milkdown/kit/prose/state';
+	import type { EditorView } from '@milkdown/kit/prose/view';
+	import type { CmdKey } from '@milkdown/kit/core';
+	// ProseMirror's own stylesheet. Imported rather than reimplemented, and as a
+	// module import it travels inside whichever chunk imports this component, so
+	// it stays lazy along with everything else here.
+	import '@milkdown/kit/prose/view/style/prosemirror.css';
+	import '@milkdown/kit/prose/gapcursor/style/gapcursor.css';
+
 	import { toast } from 'svelte-sonner';
+	import CodeIcon from '@lucide/svelte/icons/code';
+	import Heading1Icon from '@lucide/svelte/icons/heading-1';
+	import Heading2Icon from '@lucide/svelte/icons/heading-2';
+	import Heading3Icon from '@lucide/svelte/icons/heading-3';
+	import ImageIcon from '@lucide/svelte/icons/image';
+	import ListIcon from '@lucide/svelte/icons/list';
+	import ListOrderedIcon from '@lucide/svelte/icons/list-ordered';
+	import QuoteIcon from '@lucide/svelte/icons/quote';
+	import VideoIcon from '@lucide/svelte/icons/video';
 
 	import { Button } from '$lib/primitives/ui/button';
 	import * as Dialog from '$lib/primitives/ui/dialog';
@@ -53,12 +105,14 @@
 	import { Label } from '$lib/primitives/ui/label';
 	import * as m from '$lib/i18n/messages';
 
-	import PhotoToolbarIcon from './PhotoToolbarIcon.svelte';
-	import VideoToolbarIcon from './VideoToolbarIcon.svelte';
+	import { PLATFORM_IMAGE, PLATFORM_VIDEO, platformDirectivePlugins } from './platform-directives';
+	import { placeholderPlugin } from './placeholder';
+	import { filterSlashItems, matchSlashQuery } from './slash-query';
 
 	let {
 		value = $bindable(''),
 		onUploadImage,
+		resolveImageUrl,
 		disabled = false,
 		placeholder = '',
 		id
@@ -72,9 +126,24 @@
 		 * is inserted.
 		 */
 		onUploadImage: (file: File) => Promise<string>;
+		/**
+		 * Turns a storage id from an already-saved body back into a URL, so an
+		 * author editing an old post sees the photographs rather than a row of
+		 * placeholder cards.
+		 *
+		 * Optional, and absent by default: a caller that has not got the URLs to
+		 * hand keeps working and keeps showing cards. What it returns is used for
+		 * display and NOTHING ELSE — see `previewUrlFor` below, and the note on
+		 * `ImageUrlResolver`, for why a resolved URL must never reach the body.
+		 *
+		 * It is consulted while a node renders, which in practice means while the
+		 * editor is being created. A resolver that only starts answering later
+		 * will not turn cards that have already been drawn into photographs.
+		 */
+		resolveImageUrl?: (storageId: string) => string | undefined;
 		disabled?: boolean;
 		placeholder?: string;
-		/** Put on the textarea, so a caller's `<Label for>` points at something. */
+		/** Put on the editing surface, so a caller's `<Label for>` points at it. */
 		id?: string;
 	} = $props();
 
@@ -84,118 +153,234 @@
 	// of after a phone has spent two minutes pushing a 40 MB photo over 4G.
 	const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-	const IMAGE_ICON_ID = 'platformImage';
-	const VIDEO_ICON_ID = 'platformVideo';
-
 	// Scopes the dialog's field id to this instance, so two editors on one page
 	// do not both claim the same `for`/`id` pair.
 	const uid = $props.id();
 
+	let hostEl = $state<HTMLElement | null>(null);
+	let slashMenuEl = $state<HTMLElement | null>(null);
 	let fileInput = $state<HTMLInputElement | null>(null);
+	let editor = $state<Editor | null>(null);
 	let uploading = $state(false);
 	let videoDialogOpen = $state(false);
 	let videoUrl = $state('');
-
-	// One Carta instance per editor. It owns the textarea, the undo history and
-	// the toolbar, so sharing one between two editors would braid two documents
-	// together. Built once at init and never rebuilt: everything that can change
-	// while the editor is on screen is passed to `<MarkdownEditor>` as a prop
-	// instead, because rebuilding this would throw away the author's undo stack.
-	const carta = new Carta({
-		// Safe, and worth spelling out because `false` on an option with this
-		// name reads like a mistake. Carta builds its preview with `remarkRehype`
-		// and passes it no options, so `allowDangerousHtml` stays at its false
-		// default and raw HTML typed into the box is dropped before it can reach
-		// the preview's innerHTML — the same primary guarantee
-		// `$lib/domain/rich-text.ts` is built on. NEVER pass `rehypeOptions`
-		// here: that is the single change that would turn this preview into a way
-		// for a pasted snippet to run script in an admin's own session.
-		sanitizer: false,
-		// Removed because `renderRichText` throws their output away: `del` and
-		// task-list checkboxes are not in its allowed tag list, so these buttons
-		// would produce markup that silently vanishes on the published page. A
-		// control that appears to work and does nothing is worse than an absent
-		// one. Quote, code and numbered list stay — `blockquote`, `pre` and `ol`
-		// all survive the schema.
-		disableIcons: ['strikethrough', 'taskList'],
-		extensions: [
-			{
-				icons: [
-					{
-						id: IMAGE_ICON_ID,
-						label: m.updates_addImage(),
-						component: PhotoToolbarIcon,
-						action: () => openImagePicker()
-					},
-					{
-						id: VIDEO_ICON_ID,
-						label: m.updates_addVideo(),
-						component: VideoToolbarIcon,
-						action: () => openVideoDialog()
-					}
-				]
-			}
-		]
-	});
-
-	// Derived rather than baked into the Carta instance above, because Carta's
-	// toolbar prefers a label from here over the one on the icon: a `$derived`
-	// re-reads the paraglide message when the locale changes, whereas the
-	// instance is built once and would hold whichever language happened to be
-	// active at mount.
-	//
-	// Quote, code and numbered list are absent because there are no message keys
-	// for them yet, so they keep Carta's built-in English until there are. That
-	// is a gap to close, not a decision.
-	const labels = $derived({
-		iconsLabels: {
-			heading: m.richText_heading(),
-			bold: m.richText_bold(),
-			italic: m.richText_italic(),
-			bulletedList: m.richText_bulletList(),
-			link: m.richText_link(),
-			[IMAGE_ICON_ID]: m.updates_addImage(),
-			[VIDEO_ICON_ID]: m.updates_addVideo()
-		}
-	});
+	let slashQuery = $state('');
+	let slashOpen = $state(false);
+	let activeIndex = $state(0);
 
 	/**
-	 * Inserts a snippet as a paragraph of its own.
+	 * Blob URLs for photos uploaded during this sitting, so the author sees the
+	 * picture they just chose rather than a grey box.
 	 *
-	 * A leaf directive is only a directive when it starts a line, so dropping
-	 * `::image{…}` at the caret mid-sentence would publish the literal text of
-	 * the directive instead of a photo. The padding is computed from what is
-	 * actually either side of the caret so that inserting twice in a row does not
-	 * pile up blank lines.
+	 * Per instance and revoked on teardown. NOTHING IN HERE REACHES THE SAVED
+	 * BODY — see `platform-directives.ts`, where the serializer reads only the
+	 * node's `id` attribute.
+	 *
+	 * A plain Map rather than a SvelteMap, which is what the lint rule below is
+	 * asking for. Nothing in the Svelte template ever reads this: its only
+	 * consumer is the node spec's `toDOM`, which ProseMirror calls while
+	 * rendering its own DOM, outside Svelte's reactive graph entirely. Making it
+	 * reactive would create signals nobody subscribes to, and would invite the
+	 * belief that writing to it redraws something — which it does not. The
+	 * redraw comes from the transaction that inserts the node, and the entry is
+	 * always written before that transaction is dispatched.
 	 */
-	function insertBlock(snippet: string): void {
-		const input = carta.input;
-		if (!input || disabled) return;
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const previewUrls = new Map<string, string>();
 
-		// The caret is read NOW rather than when the toolbar button was pressed.
-		// An upload takes seconds, the author can keep typing the whole time, and
-		// an index captured beforehand would by then point into the middle of a
-		// word they wrote while waiting.
-		const position = input.getSelection().end;
-		const before = input.textarea.value.slice(0, position);
-		const after = input.textarea.value.slice(position);
+	/**
+	 * The one resolver the node spec sees, from the two sources this component
+	 * has.
+	 *
+	 * The session blob wins. A photo uploaded a moment ago is bytes the browser
+	 * already holds, whereas the caller's resolver is answering from a query that
+	 * was loaded before the upload happened and so cannot know about it yet.
+	 * Asking the caller first would draw a card over a photo the author is
+	 * looking at.
+	 */
+	function previewUrlFor(storageId: string): string | undefined {
+		return previewUrls.get(storageId) ?? resolveImageUrl?.(storageId);
+	}
 
-		const lead =
-			before === '' || before.endsWith('\n\n') ? '' : before.endsWith('\n') ? '\n' : '\n\n';
-		const trail =
-			after === '' ? '\n' : after.startsWith('\n\n') ? '' : after.startsWith('\n') ? '\n' : '\n\n';
+	/**
+	 * The markdown this component last handed the parent.
+	 *
+	 * The editor writes on every keystroke and the parent writes back, so without
+	 * a record of what we just emitted the echo looks like an outside edit and
+	 * reloads the document underneath the author — losing the caret, the undo
+	 * stack, and whatever they typed in between.
+	 */
+	let lastEmitted = $state('');
 
-		input.insertAt(position, `${lead}${snippet}${trail}`);
+	type SlashItem = {
+		id: string;
+		label: string;
+		keywords: string[];
+		icon: typeof ImageIcon;
+		run: () => void;
+	};
 
-		// `insertAt` writes `textarea.value` straight through, which fires no
-		// input event, so Svelte's binding has not heard about any of this yet.
-		// `update()` is what tells Carta to read the textarea back out into the
-		// bound value; without it the author sees their line and the parent still
-		// holds the old markdown — and the next keystroke would overwrite it.
-		const caret = position + lead.length + snippet.length;
-		input.textarea.setSelectionRange(caret, caret);
-		input.update();
-		input.textarea.focus();
+	const slashItems = $derived<SlashItem[]>([
+		{
+			id: 'h1',
+			label: `${m.richText_heading()} 1`,
+			keywords: ['h1', 'title', '#'],
+			icon: Heading1Icon,
+			run: () => runCommand(wrapInHeadingCommand.key, 1)
+		},
+		{
+			id: 'h2',
+			label: `${m.richText_heading()} 2`,
+			keywords: ['h2', '##'],
+			icon: Heading2Icon,
+			run: () => runCommand(wrapInHeadingCommand.key, 2)
+		},
+		{
+			id: 'h3',
+			label: `${m.richText_heading()} 3`,
+			keywords: ['h3', '###'],
+			icon: Heading3Icon,
+			run: () => runCommand(wrapInHeadingCommand.key, 3)
+		},
+		{
+			id: 'bulletList',
+			label: m.richText_bulletList(),
+			keywords: ['bullet', 'unordered', '-'],
+			icon: ListIcon,
+			run: () => runCommand(wrapInBulletListCommand.key)
+		},
+		{
+			id: 'orderedList',
+			label: m.richText_numberedList(),
+			keywords: ['ordered', 'number', '1.'],
+			icon: ListOrderedIcon,
+			run: () => runCommand(wrapInOrderedListCommand.key)
+		},
+		{
+			id: 'blockquote',
+			label: m.richText_quote(),
+			keywords: ['blockquote', '>'],
+			icon: QuoteIcon,
+			run: () => runCommand(wrapInBlockquoteCommand.key)
+		},
+		{
+			id: 'codeBlock',
+			label: m.richText_code(),
+			keywords: ['pre', 'snippet', '```'],
+			icon: CodeIcon,
+			run: () => runCommand(createCodeBlockCommand.key)
+		},
+		{
+			id: 'image',
+			label: m.updates_addImage(),
+			keywords: ['photo', 'picture', 'img'],
+			icon: ImageIcon,
+			run: () => openImagePicker()
+		},
+		{
+			id: 'video',
+			label: m.updates_addVideo(),
+			keywords: ['youtube', 'vimeo', 'embed'],
+			icon: VideoIcon,
+			run: () => openVideoDialog()
+		}
+	]);
+
+	const visibleItems = $derived(filterSlashItems(slashItems, slashQuery));
+
+	// The highlighted row must exist. Filtering can shorten the list under a
+	// selection that was valid a keystroke ago, and an index past the end means
+	// Enter silently does nothing.
+	const safeIndex = $derived(
+		visibleItems.length === 0 ? 0 : Math.min(activeIndex, visibleItems.length - 1)
+	);
+
+	function withView<T>(fn: (view: EditorView) => T): T | undefined {
+		const current = editor;
+		if (!current) return undefined;
+		return fn(current.ctx.get(editorViewCtx));
+	}
+
+	/**
+	 * The paragraph text to the left of the caret, or null when a slash there
+	 * could not mean "insert a block".
+	 *
+	 * Written out rather than using `SlashProvider.getContent`, because that
+	 * method lives on the provider and the provider needs this answer to decide
+	 * whether to exist — asking it would be a circular reference. Doing it here
+	 * also makes the conditions legible: a collapsed text caret, inside a
+	 * paragraph, in a focused editor.
+	 *
+	 * Paragraph only, so `/` inside a code block stays a slash. Code is exactly
+	 * where someone types paths, and a menu opening over `/usr/bin` would be
+	 * both wrong and hard to dismiss.
+	 */
+	function textBeforeCaret(view: EditorView): string | null {
+		if (!view.hasFocus() || !view.editable) return null;
+
+		const { selection } = view.state;
+		if (!(selection instanceof TextSelection) || !selection.empty) return null;
+
+		// Read off the selection rather than destructured, because Svelte reserves
+		// the `$` prefix and refuses to compile a variable named `$from`.
+		const head = selection.$from;
+		if (head.parent.type.name !== 'paragraph') return null;
+
+		// `￼` is the object-replacement character, standing in for any inline
+		// node so that its absence cannot join two words into a false match.
+		return head.parent.textBetween(0, head.parentOffset, undefined, '￼');
+	}
+
+	/**
+	 * Removes the `/query` the author typed, then runs the block's own action.
+	 *
+	 * The text goes first and unconditionally. If it were left to each action to
+	 * clean up, the two that finish asynchronously — a photo upload, the video
+	 * dialog — would leave `/photo` sitting in the paragraph for as long as the
+	 * network took, and an author who kept typing would find it welded into their
+	 * sentence.
+	 */
+	function consumeSlashQuery(): void {
+		withView((view) => {
+			const { state, dispatch } = view;
+			const from = state.selection.$from.pos - (slashQuery.length + 1);
+			if (from < 0) return;
+			dispatch(state.tr.delete(from, state.selection.$from.pos));
+		});
+		closeSlash();
+	}
+
+	function runItem(item: SlashItem): void {
+		if (disabled) return;
+		consumeSlashQuery();
+		item.run();
+	}
+
+	function runCommand<T>(key: CmdKey<T>, payload?: T): void {
+		editor?.action(callCommand(key, payload));
+		withView((view) => view.focus());
+	}
+
+	function closeSlash(): void {
+		slashOpen = false;
+		slashQuery = '';
+		activeIndex = 0;
+	}
+
+	/**
+	 * Inserts a platform block at the caret.
+	 *
+	 * `replaceSelectionWith` rather than a raw insert, so an empty paragraph the
+	 * author was sitting in is consumed instead of being left above the block as
+	 * a stray blank line that they then have to notice and delete.
+	 */
+	function insertPlatformBlock(nodeName: string, attrs: Record<string, string>): void {
+		withView((view) => {
+			const type = view.state.schema.nodes[nodeName];
+			if (!type) return;
+			view.dispatch(view.state.tr.replaceSelectionWith(type.create(attrs)));
+			view.focus();
+		});
 	}
 
 	/**
@@ -209,41 +394,40 @@
 	 * assembled, and an id with no entry in that map renders as nothing at all.
 	 * That is the difference between a photo an org can take back and one it
 	 * cannot, which for people escaping forced labour is the whole point.
+	 *
+	 * The blob URL registered alongside it is a local preview and is not the same
+	 * kind of thing: it dies with the tab and is never serialized.
 	 */
-	function insertImage(storageId: string): void {
-		// `alt` is written empty rather than left out so the attribute is visible
-		// in the source and an author who cares can fill it in. Omitting it would
-		// make the accessible outcome the invisible one.
-		insertBlock(`::image{id=${storageId} alt=""}`);
+	function insertImage(storageId: string, file: File): void {
+		previewUrls.set(storageId, URL.createObjectURL(file));
+		// `alt` starts empty rather than absent so the attribute is visible in the
+		// saved source and an author who cares can fill it in.
+		insertPlatformBlock(PLATFORM_IMAGE, { id: storageId, alt: '' });
 	}
 
 	/**
-	 * THE URL MUST BE QUOTED.
+	 * THE URL IS STORED AS AN ATTRIBUTE AND QUOTED WHEN IT IS SERIALIZED.
 	 *
 	 * An unquoted directive attribute value ends at the first `=`, so
 	 * `::video{url=https://www.youtube.com/watch?v=abc}` parses as
 	 * url="https://www.youtube.com/watch?v" — the remainder falls outside the
 	 * attribute, remark stops recognising the line as a directive at all, and the
 	 * author's markup is printed on the published page as raw text. Nearly every
-	 * YouTube link anyone will ever paste contains a `=`. The quotes are not a
-	 * style choice, they are the difference between a video and a visible
-	 * mistake, and `$lib/domain/rich-text.ts` says the same thing from the far
-	 * end of the pipe.
+	 * YouTube link anyone will ever paste contains a `=`. The quoting is enforced
+	 * in `platform-directives.ts`, which turns `preferUnquoted` off so that no
+	 * attribute can ever be emitted bare.
 	 */
 	function insertVideo(url: string): void {
-		// A quoted value ends at the closing quote, so a `"` inside the URL would
-		// break back out of the attribute. Percent-encoding it is valid in a URL
-		// and keeps the directive one directive.
-		insertBlock(`::video{url="${url.replaceAll('"', '%22')}"}`);
+		insertPlatformBlock(PLATFORM_VIDEO, { url });
 	}
 
 	/**
 	 * Opens the OS file picker.
 	 *
-	 * Called straight out of the toolbar button's click handler, so the click is
-	 * still the user gesture browsers require before they will show a file
-	 * dialog. Anything asynchronous in between — a permission check, a fetch —
-	 * would spend that gesture and get the dialog silently blocked.
+	 * Called straight out of the menu row's click handler, so the click is still
+	 * the user gesture browsers require before they will show a file dialog.
+	 * Anything asynchronous in between — a permission check, a fetch — would
+	 * spend that gesture and get the dialog silently blocked.
 	 */
 	function openImagePicker(): void {
 		if (disabled || uploading) return;
@@ -271,7 +455,7 @@
 			// `::image{id= alt=""}` would render as nothing and leave the author
 			// with an invisible line to explain.
 			if (storageId === '') throw new Error('No storage id was returned.');
-			insertImage(storageId);
+			insertImage(storageId, file);
 		} catch {
 			// Nothing is inserted on failure, on purpose. A directive naming bytes
 			// that were never stored renders as nothing on the page while looking
@@ -294,14 +478,166 @@
 		videoDialogOpen = false;
 		insertVideo(url);
 	}
+
+	const slash = slashFactory('platformSlash');
+
+	async function createEditor(host: HTMLElement, menu: HTMLElement, initial: string) {
+		return Editor.make()
+			.config((ctx) => {
+				ctx.set(rootCtx, host);
+				ctx.set(defaultValueCtx, initial);
+
+				// Pinned to the conventions already in the database. The previous
+				// editor's list button wrote `- `, and `---` is the rule everyone
+				// types; remark-stringify defaults to `*` for both, which would
+				// rewrite every list and divider in every stored body the first
+				// time somebody opened an old post and saved it.
+				ctx.set(remarkStringifyOptionsCtx, { bullet: '-', rule: '-', ruleRepetition: 3 });
+
+				ctx.update(editorViewOptionsCtx, (prev) => ({
+					...prev,
+					attributes: {
+						class: 'rich-text-surface',
+						...(id ? { id } : {})
+					},
+					editable: () => !disabled
+				}));
+
+				ctx.set(slash.key, {
+					view: () => {
+						const provider = new SlashProvider({
+							content: menu,
+							// The default 200ms is tuned for a tooltip that follows a
+							// mouse. Here it is the gap between pressing `/` and the
+							// menu appearing, and at 200ms it reads as a stutter.
+							debounce: 20,
+							shouldShow: (view: EditorView) => {
+								const text = textBeforeCaret(view);
+								const query = text === null ? null : matchSlashQuery(text);
+								if (query === null) {
+									closeSlash();
+									return false;
+								}
+								slashQuery = query;
+								slashOpen = true;
+								// An empty result set means the author has typed past
+								// anything on offer, so the menu gets out of the way
+								// rather than hovering there empty.
+								return filterSlashItems(slashItems, query).length > 0;
+							}
+						});
+						provider.onHide = () => closeSlash();
+						return {
+							update: (view: EditorView, prevState?: EditorState) =>
+								provider.update(view, prevState),
+							destroy: () => provider.destroy()
+						};
+					},
+					props: {
+						// Intercepted here rather than on the menu element because
+						// focus never leaves the document while the menu is open —
+						// the author is still typing, so these keys arrive at
+						// ProseMirror, and returning true is what stops Enter from
+						// splitting the paragraph behind the menu.
+						handleKeyDown: (_view: EditorView, event: KeyboardEvent) => {
+							if (!slashOpen || visibleItems.length === 0) return false;
+
+							if (event.key === 'ArrowDown') {
+								activeIndex = (safeIndex + 1) % visibleItems.length;
+								return true;
+							}
+							if (event.key === 'ArrowUp') {
+								activeIndex = (safeIndex - 1 + visibleItems.length) % visibleItems.length;
+								return true;
+							}
+							if (event.key === 'Enter' || event.key === 'Tab') {
+								const item = visibleItems[safeIndex];
+								if (!item) return false;
+								runItem(item);
+								return true;
+							}
+							if (event.key === 'Escape') {
+								closeSlash();
+								return true;
+							}
+							return false;
+						}
+					}
+				});
+
+				ctx.get(listenerCtx).markdownUpdated((_ctx, markdown) => {
+					lastEmitted = markdown;
+					value = markdown;
+				});
+			})
+			.use(commonmark)
+			.use(listener)
+			.use(history)
+			.use(clipboard)
+			.use(cursor)
+			.use(trailing)
+			.use(slash)
+			.use(placeholderPlugin(() => placeholder))
+			.use(platformDirectivePlugins(previewUrlFor))
+			.create();
+	}
+
+	$effect(() => {
+		const host = hostEl;
+		const menu = slashMenuEl;
+		if (!host || !menu) return;
+
+		let disposed = false;
+		let created: Editor | null = null;
+		const initial = value;
+		lastEmitted = initial;
+
+		void createEditor(host, menu, initial).then((made) => {
+			if (disposed) {
+				void made.destroy();
+				return;
+			}
+			created = made;
+			editor = made;
+		});
+
+		return () => {
+			disposed = true;
+			editor = null;
+			void created?.destroy();
+			// The blobs are this tab's copies of photos that already live on the
+			// server. Holding them past the editor's life is a leak with no upside.
+			for (const url of previewUrls.values()) URL.revokeObjectURL(url);
+			previewUrls.clear();
+		};
+	});
+
+	// Reloads the document only when the change came from outside. `lastEmitted`
+	// is what this component just handed up, so the parent echoing it back is not
+	// an edit and must not cost the author their caret or their undo history.
+	$effect(() => {
+		const next = value;
+		if (!editor || next === lastEmitted) return;
+		lastEmitted = next;
+		editor.action(replaceAll(next));
+	});
+
+	// ProseMirror asks `editable` once per state update and caches the answer, so
+	// flipping the prop is not enough on its own — the view has to be told that
+	// the question is worth asking again. Without this a dialog that loses write
+	// permission mid-edit stays typable.
+	$effect(() => {
+		const readOnly = disabled;
+		withView((view) => view.setProps({ editable: () => !readOnly }));
+	});
 </script>
 
 <!--
 	Kept outside the editor wrapper below, which goes `inert` while disabled: an
 	inert subtree cannot be interacted with, and a file input that cannot be
 	clicked is a picker that never opens. Hidden rather than styled away because
-	the toolbar button is the real control and a second, bare file input would be
-	a second thing for a screen reader to announce.
+	the menu row is the real control and a second, bare file input would be a
+	second thing for a screen reader to announce.
 -->
 <input
 	bind:this={fileInput}
@@ -314,13 +650,12 @@
 />
 
 <!--
-	`inert` rather than a class that only dims things. The textarea's own
-	`disabled` stops typing, but Carta's toolbar buttons are ordinary buttons
-	that edit the value directly, and they stay both clickable and reachable by
-	keyboard — the toolbar implements arrow-key navigation. `inert` is the one
-	attribute that takes the whole subtree out of pointer and keyboard reach at
-	once, so a read-only editor is genuinely read-only instead of merely looking
-	it.
+	`inert` rather than a class that only dims things. ProseMirror's own
+	`editable` stops typing, but the slash menu is made of ordinary buttons that
+	edit the document directly and would stay both clickable and reachable by
+	keyboard. `inert` is the one attribute that takes the whole subtree out of
+	pointer and keyboard reach at once, so a read-only editor is genuinely
+	read-only instead of merely looking it.
 -->
 <div
 	class="rich-text-editor"
@@ -328,13 +663,48 @@
 	inert={disabled}
 	aria-busy={uploading || undefined}
 >
-	<MarkdownEditor
-		{carta}
-		bind:value
-		{placeholder}
-		userLabels={labels}
-		textarea={{ id, disabled }}
-	/>
+	<div class="rich-text-host" bind:this={hostEl}></div>
+</div>
+
+<!--
+	Owned by Svelte but re-parented by SlashProvider, which appends it next to
+	the editing surface and sets `left`/`top` on it. It lives outside the wrapper
+	above so that the provider's move does not fight the wrapper's layout, and it
+	is always in the DOM because the provider needs a stable element to position.
+	`data-show` is the provider's own switch; the stylesheet keys off it.
+
+	The name is the generic "Add" rather than something exact. It named the whole
+	menu "Add photo" before, which is a lie to anyone hearing it read out; a key
+	of its own — `richText_blockMenu`, say — is what this really wants.
+-->
+<div
+	bind:this={slashMenuEl}
+	class="rich-text-slash"
+	role="listbox"
+	tabindex="-1"
+	aria-label={m.richText_blockMenu()}
+>
+	{#each visibleItems as item, index (item.id)}
+		{@const Icon = item.icon}
+		<button
+			type="button"
+			class="rich-text-slash__item"
+			class:rich-text-slash__item--active={index === safeIndex}
+			role="option"
+			aria-selected={index === safeIndex}
+			onmouseenter={() => (activeIndex = index)}
+			onmousedown={(event) => {
+				// The document keeps focus so that `consumeSlashQuery` still has a
+				// selection to work from; a mousedown that blurred the editor would
+				// leave the `/query` behind and insert the block nowhere.
+				event.preventDefault();
+				runItem(item);
+			}}
+		>
+			<Icon class="size-4 shrink-0" aria-hidden="true" />
+			<span>{item.label}</span>
+		</button>
+	{/each}
 </div>
 
 <Dialog.Root bind:open={videoDialogOpen}>
@@ -387,67 +757,19 @@
 
 <style>
 	/*
-		Carta's default theme is driven by six custom properties, so matching this
-		app is a matter of redefining them rather than out-specifying its
-		selectors. They inherit down into everything Carta renders, and because
-		the app's tokens are themselves redefined under `.dark`, dark mode follows
-		for free — Carta's own `--*-dark` properties are declared but never read
-		by its stylesheet, so there is nothing there to fight.
+		The frame, drawn to match the Input primitive that every other field on the
+		same form comes from.
 	*/
 	.rich-text-editor {
-		--border-color: var(--border);
-		--hover-color: var(--accent);
-		--caret-color: var(--foreground);
-		--text-color: var(--foreground);
-		--focus-outline: var(--ring);
-		--selection-color: color-mix(in oklab, var(--primary) 25%, transparent);
-	}
-
-	/* Squares the frame up with the Input primitive, which every other field on
-	   the same form is drawn from. */
-	.rich-text-editor :global(.carta-editor) {
+		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
+		background: var(--background);
+		position: relative;
 	}
 
-	/* The focus ring the rest of the app uses. Carta puts focus on the textarea,
-	   which is invisible under the highlight overlay, so the ring has to be drawn
-	   on the frame instead of on the focused element. */
-	.rich-text-editor :global(.carta-editor:focus-within) {
+	.rich-text-editor:focus-within {
 		border-color: var(--ring);
 		box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
-	}
-
-	/* Carta hard-codes 600px, which is taller than most screens once a page
-	   header and a save bar are accounted for. A fixed height rather than one
-	   that grows with the text, because the preview sits beside the input in
-	   split mode and two panes that resize each other jump under the cursor. */
-	.rich-text-editor :global(.carta-input),
-	.rich-text-editor :global(.carta-renderer) {
-		height: 22rem;
-	}
-
-	.rich-text-editor :global(.carta-input-wrapper),
-	.rich-text-editor :global(.carta-font-code) {
-		font-family: var(--font-mono);
-	}
-
-	.rich-text-editor :global(.carta-input ::placeholder) {
-		color: var(--muted-foreground);
-	}
-
-	/* Carta's toolbar buttons are unstyled `button` elements, so they inherit the
-	   browser's outline. Matching the ring keeps a keyboard author inside one
-	   visual language as they tab from the fields above into the toolbar. */
-	.rich-text-editor :global(.carta-toolbar button:focus-visible) {
-		outline: 2px solid var(--ring);
-		outline-offset: -2px;
-		border-radius: var(--radius-sm);
-	}
-
-	.rich-text-editor :global(.carta-icons-menu) {
-		background: var(--popover);
-		color: var(--popover-foreground);
-		border-radius: var(--radius-md);
 	}
 
 	/* The disabled editor still has to be READ. Dimming it says "not now"; the
@@ -457,73 +779,189 @@
 	}
 
 	/*
-		Enough rhythm for the preview pane to read as prose. Not `prose` from
-		@tailwindcss/typography, which RichTextBody uses: Carta writes the
-		preview's markup itself and there is no element here to hang that class
-		on. This is a rough likeness of the published page, not a promise of one —
-		the `::image` and `::video` directives are not in Carta's markdown
-		pipeline, so they show as their source text here and only become a photo
-		or a frame once `renderRichText` has seen them.
+		A fixed height rather than one that grows with the text. The dialog this
+		sits in is already tall, and a box that resizes under the caret as
+		paragraphs wrap makes the page jump while somebody is mid-sentence.
 	*/
-	.rich-text-editor :global(.carta-renderer h1),
-	.rich-text-editor :global(.carta-renderer h2),
-	.rich-text-editor :global(.carta-renderer h3) {
+	.rich-text-host {
+		height: 22rem;
+		overflow-y: auto;
+	}
+
+	.rich-text-editor :global(.rich-text-surface) {
+		padding: 0.75rem 0.875rem;
+		min-height: 100%;
+		outline: none;
+		color: var(--foreground);
+		caret-color: var(--foreground);
+	}
+
+	.rich-text-editor :global(.rich-text-surface ::selection) {
+		background: color-mix(in oklab, var(--primary) 25%, transparent);
+	}
+
+	/*
+		THE POINT OF THE WHOLE COMPONENT. These rules are a likeness of the
+		published page, so that what an author sees while typing is the shape a
+		donor will read. They are deliberately close to RichTextBody's `prose`
+		output rather than to any editor chrome.
+	*/
+	.rich-text-editor :global(.rich-text-surface h1),
+	.rich-text-editor :global(.rich-text-surface h2),
+	.rich-text-editor :global(.rich-text-surface h3),
+	.rich-text-editor :global(.rich-text-surface h4),
+	.rich-text-editor :global(.rich-text-surface h5),
+	.rich-text-editor :global(.rich-text-surface h6) {
 		font-weight: 600;
 		line-height: 1.25;
 		margin: 1.25em 0 0.5em;
 	}
 
-	.rich-text-editor :global(.carta-renderer h1) {
+	.rich-text-editor :global(.rich-text-surface h1) {
 		font-size: 1.5rem;
 	}
 
-	.rich-text-editor :global(.carta-renderer h2) {
+	.rich-text-editor :global(.rich-text-surface h2) {
 		font-size: 1.25rem;
 	}
 
-	.rich-text-editor :global(.carta-renderer p),
-	.rich-text-editor :global(.carta-renderer ul),
-	.rich-text-editor :global(.carta-renderer ol),
-	.rich-text-editor :global(.carta-renderer blockquote) {
+	.rich-text-editor :global(.rich-text-surface h3) {
+		font-size: 1.125rem;
+	}
+
+	.rich-text-editor :global(.rich-text-surface p),
+	.rich-text-editor :global(.rich-text-surface ul),
+	.rich-text-editor :global(.rich-text-surface ol),
+	.rich-text-editor :global(.rich-text-surface blockquote) {
 		margin: 0.75em 0;
 		line-height: 1.65;
 	}
 
-	.rich-text-editor :global(.carta-renderer ul),
-	.rich-text-editor :global(.carta-renderer ol) {
+	.rich-text-editor :global(.rich-text-surface ul),
+	.rich-text-editor :global(.rich-text-surface ol) {
 		padding-left: 1.5rem;
 	}
 
-	.rich-text-editor :global(.carta-renderer ul) {
+	.rich-text-editor :global(.rich-text-surface ul) {
 		list-style: disc;
 	}
 
-	.rich-text-editor :global(.carta-renderer ol) {
+	.rich-text-editor :global(.rich-text-surface ol) {
 		list-style: decimal;
 	}
 
-	.rich-text-editor :global(.carta-renderer blockquote) {
+	.rich-text-editor :global(.rich-text-surface blockquote) {
 		border-left: 3px solid var(--border);
 		padding-left: 0.875rem;
 		color: var(--muted-foreground);
 	}
 
-	.rich-text-editor :global(.carta-renderer a) {
+	.rich-text-editor :global(.rich-text-surface a) {
 		color: var(--primary);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}
 
-	.rich-text-editor :global(.carta-renderer pre),
-	.rich-text-editor :global(.carta-renderer code) {
+	.rich-text-editor :global(.rich-text-surface code) {
 		font-family: var(--font-mono);
 		font-size: 0.875em;
 	}
 
-	.rich-text-editor :global(.carta-renderer pre) {
+	.rich-text-editor :global(.rich-text-surface pre) {
 		background: var(--muted);
 		border-radius: var(--radius-sm);
 		overflow-x: auto;
 		padding: 0.75rem;
+		font-family: var(--font-mono);
+		font-size: 0.875em;
+	}
+
+	.rich-text-editor :global(.rich-text-surface hr) {
+		border: 0;
+		border-top: 1px solid var(--border);
+		margin: 1.5em 0;
+	}
+
+	/* The placeholder, hung off the decoration the plugin above attaches. */
+	.rich-text-editor :global(.rich-text-surface .rich-text-empty::before) {
+		content: attr(data-placeholder);
+		color: var(--muted-foreground);
+		pointer-events: none;
+		float: left;
+		height: 0;
+	}
+
+	/*
+		A photo or a video as a block. The selected state matters more here than
+		it does for text: these are atoms, so clicking one selects the whole thing
+		and the only feedback that it is about to be deleted is this ring.
+	*/
+	.rich-text-editor :global(.rich-text-block) {
+		margin: 1em 0;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--muted);
+		overflow: hidden;
+	}
+
+	.rich-text-editor :global(.rich-text-block.ProseMirror-selectednode) {
+		outline: 2px solid var(--ring);
+		outline-offset: 1px;
+	}
+
+	.rich-text-editor :global(.rich-text-block__image) {
+		display: block;
+		width: 100%;
+		max-height: 18rem;
+		object-fit: contain;
+	}
+
+	.rich-text-editor :global(.rich-text-block__label) {
+		display: block;
+		padding: 0.75rem 0.875rem;
+		font-size: 0.8125rem;
+		color: var(--muted-foreground);
+		overflow-wrap: anywhere;
+	}
+
+	/*
+		The slash menu. Positioned by floating-ui through SlashProvider, which
+		writes `left`/`top` and toggles `data-show`, so this rule set owns
+		everything except where it sits.
+	*/
+	.rich-text-slash {
+		position: absolute;
+		z-index: 50;
+		display: none;
+		width: 15rem;
+		max-height: 17rem;
+		overflow-y: auto;
+		padding: 0.25rem;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-md);
+		background: var(--popover);
+		color: var(--popover-foreground);
+		box-shadow: 0 10px 24px -8px color-mix(in oklab, var(--foreground) 25%, transparent);
+	}
+
+	.rich-text-slash:global([data-show='true']) {
+		display: block;
+	}
+
+	.rich-text-slash__item {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		width: 100%;
+		padding: 0.4375rem 0.5rem;
+		border-radius: var(--radius-sm);
+		font-size: 0.875rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.rich-text-slash__item--active {
+		background: var(--accent);
+		color: var(--accent-foreground);
 	}
 </style>

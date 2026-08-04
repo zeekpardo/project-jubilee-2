@@ -7,9 +7,9 @@
 // produces markdown, `renderRichText` turns it into HTML that is safe for
 // `{@html}`, and RichTextBody is the only place that HTML is ever inserted.
 //
-// RichTextEditor is exported here for callers that want it eagerly. Carta and
-// shiki are a large chunk, so a page a stranger can reach should import the
-// component's module path directly inside an `{#await import(…)}` instead —
+// RichTextEditor is exported here for callers that want it eagerly. Milkdown and
+// ProseMirror are a large chunk, so a page a stranger can reach should import
+// the component's module path directly inside an `{#await import(…)}` instead —
 // this barrel would drag the editor into the same chunk as the renderer.
 
 export { default as RichTextBody } from './RichTextBody.svelte';

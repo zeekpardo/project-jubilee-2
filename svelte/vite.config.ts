@@ -46,7 +46,18 @@ const config: VitestConfig = {
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/i18n/paraglide',
-			strategy: ['cookie', 'preferredLanguage', 'baseLocale']
+			strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
+			// MUST match the `--output-structure` the postinstall script passes.
+			// It defaults to 'message-modules', which writes a different file
+			// layout than the 'locale-modules' one postinstall produces — and the
+			// app imports `paraglide/messages.js`, which re-exports
+			// `messages/_index.js`, a file only the locale-modules structure
+			// generates. With the two disagreeing, `pnpm dev` compiled into the
+			// other layout and left `_index.js` exactly as the last `pnpm install`
+			// had written it, so a newly added message key resolved to undefined
+			// and its call site threw `m.someKey is not a function`. Whether that
+			// bit you depended on how recently you had installed.
+			outputStructure: 'locale-modules'
 		}),
 		tailwindcss(),
 		sveltekit()

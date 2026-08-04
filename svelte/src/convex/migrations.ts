@@ -284,8 +284,10 @@ export const dropTransparency = migrations.define({
 // @convex-dev/migrations running `for (const doc of page) await doOne(doc)`,
 // which it does only while parallelize is unset. Turning it on for speed would
 // let two rows scan the same set and mint the same slug, and nothing would
-// fail: `getProjectUpdate` resolves with `.first()`, so one post keeps the
-// address and the other 404s at a permalink it believes it owns.
+// fail: `updateBySlug` in model/updates.ts resolves with `.first()`, so one
+// post keeps the address and the other 404s at a permalink it believes it
+// owns. Both `getCampaignUpdate` and `getProjectUpdate` go through that one
+// lookup, so hardening either permalink alone would leave the other exposed.
 //
 // The damage concentrates exactly where the slug fallback does. A title with no
 // Latin characters — Urdu, which is the first language of the families this app

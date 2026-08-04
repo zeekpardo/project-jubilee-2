@@ -16,6 +16,12 @@
 //   has none, so the only control left is that the person who writes the post
 //   is not the person who decides it goes out.
 //
+// ADDRESSING. A published post is reachable at a URL, and ids do not travel
+// (PLAN-updates.md §4c), so the handle is a slug frozen at first publish. Its
+// uniqueness scope is the level it belongs to, never the campaign as a whole:
+// see `takenUpdateSlugs` below for why that distinction is load-bearing rather
+// than tidy.
+//
 // BLOBS. `assetIds` is the only handle to an update's photographs — a storage
 // id named only from inside the markdown body is invisible to model/cascade.ts,
 // which keys off columns. Every path that drops one of those ids has to delete
@@ -100,6 +106,83 @@ export async function deleteUpdateAssets(
 }
 
 /**
+ * The most sibling slugs one collision check will read. The scan below is
+ * narrowed to a single base's own family of slugs, so reaching this cap would
+ * mean two hundred posts in one campaign whose titles all reduce to the same
+ * words — far past anything real, which is what makes the cap safe to have.
+ */
+const SLUG_FAMILY_MAX = 200;
+
+/**
+ * The slugs a new one must not collide with, and NO others.
+ *
+ * The scope is the level, not the campaign. A project update is unique among
+ * that project's posts; a campaign-level update is unique among that campaign's
+ * campaign-level posts. Both levels are expressed by the same range because
+ * `projectId` is an equality component of the index — passing `undefined` names
+ * the campaign level, passing an id names one record. That is also what keeps
+ * the two levels from addressing each other: every row carries `campaignId`, so
+ * a (campaignId, slug) key alone would let a campaign-wide post answer to a
+ * record's URL, publishing org-wide news at a named family's address.
+ *
+ * Only the candidate's own family is read — `base` itself plus every `base-N` —
+ * rather than all of the parent's posts. A bounded scan of everything would
+ * silently stop being a uniqueness check once a campaign outgrew the cap, and
+ * the duplicate it then minted would make one of the two permalinks
+ * unreachable, which is a broken shared link and not a visible error.
+ */
+export async function takenUpdateSlugs(
+	ctx: QueryCtx,
+	campaignId: Id<'campaigns'>,
+	projectId: Id<'projects'> | undefined,
+	base: string
+): Promise<Set<string>> {
+	// Every candidate is `base` or `base-N`. '-' is 0x2D, so '.' at 0x2E is the
+	// first string that sorts after all of them: the range is exactly this base's
+	// family and nothing beyond it.
+	const familyEnd = `${base}.`;
+
+	const siblings = await ctx.db
+		.query('updates')
+		.withIndex('by_campaignId_and_projectId_and_slug', (q) =>
+			q
+				.eq('campaignId', campaignId)
+				.eq('projectId', projectId)
+				.gte('slug', base)
+				.lt('slug', familyEnd)
+		)
+		.take(SLUG_FAMILY_MAX);
+
+	return new Set(siblings.map((sibling) => sibling.slug).filter((slug): slug is string => !!slug));
+}
+
+/**
+ * One update at a public address, or null. The level is pinned by the same
+ * `projectId` equality as above, so a campaign-level slug cannot be resolved
+ * from a record's URL and a record's slug cannot be resolved from the
+ * campaign's — the wrong level is not a wrong answer here, it is a post about a
+ * named family surfacing somewhere nobody chose to put it.
+ *
+ * `.first()` rather than `.unique()`: slug uniqueness is enforced at publish
+ * time, and a visitor should not be the one who discovers it was broken.
+ * Returns the row unscrubbed — every caller must still take it through
+ * `toPublicUpdate`, which is where the publish decision is enforced.
+ */
+export async function updateBySlug(
+	ctx: QueryCtx,
+	campaignId: Id<'campaigns'>,
+	projectId: Id<'projects'> | undefined,
+	slug: string
+): Promise<Doc<'updates'> | null> {
+	return await ctx.db
+		.query('updates')
+		.withIndex('by_campaignId_and_projectId_and_slug', (q) =>
+			q.eq('campaignId', campaignId).eq('projectId', projectId).eq('slug', slug)
+		)
+		.first();
+}
+
+/**
  * Storage ids resolved to the URLs a renderer substitutes into the body. An id
  * that no longer resolves is DROPPED rather than thrown on, the same way
  * `resolveReceiptUrl` degrades: a deleted photo should cost a figure, not the
@@ -149,18 +232,27 @@ export async function listUpdatesByParent(
 				.take(limit);
 		}
 		const campaignId = parent.campaignId;
-		const query = ctx.db
+		// Campaign-level means projectId ABSENT, which IS expressible alongside the
+		// campaign: an index carrying `projectId` matches a missing field against
+		// `undefined`. Worth the second index rather than a post-index filter,
+		// because a filtered page can come back short of `limit` while more rows
+		// remain, and an author would read that as "there are no more".
+		if (parent.campaignLevelOnly) {
+			return await ctx.db
+				.query('updates')
+				.withIndex('by_campaignId_and_projectId_and_status_and_publishedAt', (q) =>
+					q.eq('campaignId', campaignId).eq('projectId', undefined).eq('status', status)
+				)
+				.order('desc')
+				.take(limit);
+		}
+		return await ctx.db
 			.query('updates')
 			.withIndex('by_campaignId_and_status_and_publishedAt', (q) =>
 				q.eq('campaignId', campaignId).eq('status', status)
 			)
-			.order('desc');
-		// Campaign-level means projectId ABSENT. No index can express that
-		// alongside the campaign, so it is a filter — applied before the take, so
-		// the page is still `limit` rows of the thing that was asked for.
-		return await (
-			parent.campaignLevelOnly ? query.filter((q) => q.eq(q.field('projectId'), undefined)) : query
-		).take(limit);
+			.order('desc')
+			.take(limit);
 	};
 
 	return [...(await read('draft')), ...(await read('published'))];

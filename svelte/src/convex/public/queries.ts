@@ -21,6 +21,7 @@ import {
 	type PublicStat,
 	type PublicUpdate
 } from '../model/public';
+import { updateBySlug } from '../model/updates';
 import { publicStatSections, type PublicStatSection } from '../model/stats';
 
 /**
@@ -51,6 +52,29 @@ async function resolvePublishedCampaign(
 const MAX_LIMIT = 100;
 const clampLimit = (limit: number | undefined) =>
 	Math.max(1, Math.min(Math.floor(limit ?? 50), MAX_LIMIT));
+
+/**
+ * PAGING AN UPDATE FEED. `publishedBefore` is a keyset cursor, not an offset:
+ * the caller passes the `publishedAt` of the last post it received and gets the
+ * next page of strictly older ones. An offset would be wrong rather than merely
+ * slow, because publishing one more post while a reader is on page two shifts
+ * every later row down by one and duplicates a post across the boundary.
+ *
+ * Both feeds read an EXACT index range — no post-index filter — so a page
+ * shorter than `limit` really is the end of the feed and a caller can stop
+ * there. Ordering is `.order('desc')` over `publishedAt` with `_creationTime`
+ * appended by Convex as the final key, so the newest post leads and no JS sort
+ * is involved.
+ *
+ * The one gap: the cursor is exclusive on `publishedAt` alone, since an index
+ * range cannot express "older than this millisecond, or the same millisecond but
+ * created earlier". Two posts sharing one millisecond and straddling a page
+ * boundary would cost the second of them its place in the feed. `publishedAt` is
+ * stamped per mutation from the caller's clock, so that needs two publishes
+ * inside the same millisecond; a bulk backfill that stamps a whole batch with
+ * one timestamp is the case that would actually hit it.
+ */
+const publishedBeforeArg = v.optional(v.number());
 
 /** A published campaign, addressed by slug. Null when unpublished. */
 export const getCampaign = query({
@@ -117,21 +141,31 @@ export const getProject = query({
  * construction rather than a display bug.
  */
 export const listCampaignUpdates = query({
-	args: { orgSlug: v.string(), campaignSlug: v.string(), limit: v.optional(v.number()) },
+	args: {
+		orgSlug: v.string(),
+		campaignSlug: v.string(),
+		limit: v.optional(v.number()),
+		publishedBefore: publishedBeforeArg
+	},
 	handler: async (ctx, args): Promise<PublicUpdate[]> => {
 		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
 		if (!campaign) return [];
 
 		const updates = await ctx.db
 			.query('updates')
-			.withIndex('by_campaignId_and_status_and_publishedAt', (q) =>
-				q.eq('campaignId', campaign._id).eq('status', 'published')
-			)
+			// Campaign-level means projectId ABSENT, and this index carries it, so
+			// the range is exact: no filter, and a short page is genuinely the end of
+			// the feed rather than a page the filter happened to thin out.
+			.withIndex('by_campaignId_and_projectId_and_status_and_publishedAt', (q) => {
+				const level = q
+					.eq('campaignId', campaign._id)
+					.eq('projectId', undefined)
+					.eq('status', 'published');
+				return args.publishedBefore === undefined
+					? level
+					: level.lt('publishedAt', args.publishedBefore);
+			})
 			.order('desc')
-			// Campaign-level means projectId ABSENT, which no index can express
-			// alongside the campaign. Applied before the take, so a page is still
-			// `limit` campaign-level posts rather than whatever survived a trim.
-			.filter((q) => q.eq(q.field('projectId'), undefined))
 			.take(clampLimit(args.limit));
 
 		const out: PublicUpdate[] = [];
@@ -157,7 +191,8 @@ export const listProjectUpdates = query({
 		orgSlug: v.string(),
 		campaignSlug: v.string(),
 		number: v.string(),
-		limit: v.optional(v.number())
+		limit: v.optional(v.number()),
+		publishedBefore: publishedBeforeArg
 	},
 	handler: async (ctx, args): Promise<PublicUpdate[]> => {
 		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
@@ -173,9 +208,12 @@ export const listProjectUpdates = query({
 
 		const updates = await ctx.db
 			.query('updates')
-			.withIndex('by_projectId_and_status_and_publishedAt', (q) =>
-				q.eq('projectId', project._id).eq('status', 'published')
-			)
+			.withIndex('by_projectId_and_status_and_publishedAt', (q) => {
+				const level = q.eq('projectId', project._id).eq('status', 'published');
+				return args.publishedBefore === undefined
+					? level
+					: level.lt('publishedAt', args.publishedBefore);
+			})
 			.order('desc')
 			.take(clampLimit(args.limit));
 
@@ -185,6 +223,68 @@ export const listProjectUpdates = query({
 			if (publicUpdate) out.push(publicUpdate);
 		}
 		return out;
+	}
+});
+
+/**
+ * One campaign-level post at its permalink. This is what makes an update
+ * addressable as a blog page, and it is addressed by slug because ids do not
+ * travel — see the wall's header for why a slug may go out where an id may not.
+ *
+ * Campaign-level ONLY. `updateBySlug` pins the level in the index key, so a post
+ * about one family cannot be reached here even by someone who knows its slug;
+ * that one lives behind the record's own publish check in getProjectUpdate.
+ *
+ * Null for an unknown slug and null for an unpublished post, deliberately the
+ * same answer: a caller can 404 both without the 404 telling anyone which of the
+ * two it was. `toPublicUpdate` is what makes the second half true — the row is
+ * loaded unscrubbed and only the wall decides whether it is public.
+ */
+export const getCampaignUpdate = query({
+	args: { orgSlug: v.string(), campaignSlug: v.string(), updateSlug: v.string() },
+	handler: async (ctx, args): Promise<PublicUpdate | null> => {
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return null;
+
+		const update = await updateBySlug(ctx, campaign._id, undefined, args.updateSlug);
+		return update ? await toPublicUpdate(ctx, update) : null;
+	}
+});
+
+/**
+ * One post about one record, at its permalink under that record's number.
+ *
+ * The project's OWN publish check stays explicit, exactly as `getProject` keeps
+ * it: nothing in this codebase treats a parent's state as authorization for a
+ * child row, and unpublishing a record must take its posts about that family off
+ * the public site with it. The update's own publish check then happens again in
+ * `toPublicUpdate`.
+ *
+ * A campaign-level post is not reachable from here: the slug is resolved with
+ * this project's id pinned in the index key, so org-wide news cannot surface at
+ * a named family's address.
+ */
+export const getProjectUpdate = query({
+	args: {
+		orgSlug: v.string(),
+		campaignSlug: v.string(),
+		number: v.string(),
+		updateSlug: v.string()
+	},
+	handler: async (ctx, args): Promise<PublicUpdate | null> => {
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return null;
+
+		const project = await ctx.db
+			.query('projects')
+			.withIndex('by_campaignId_and_number', (q) =>
+				q.eq('campaignId', campaign._id).eq('number', args.number)
+			)
+			.first();
+		if (!project || !project.isPublished) return null;
+
+		const update = await updateBySlug(ctx, campaign._id, project._id, args.updateSlug);
+		return update ? await toPublicUpdate(ctx, update) : null;
 	}
 });
 

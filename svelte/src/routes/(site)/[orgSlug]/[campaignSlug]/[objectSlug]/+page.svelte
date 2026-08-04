@@ -114,8 +114,20 @@
 		     written once; the updates are the answer to the question a donor asks
 		     after they have given, so they continue that column at the same
 		     measure rather than opening a new region of the page. Renders nothing
-		     at all when the campaign has posted nothing. -->
-		<UpdatesFeed updates={data.updates} class="mt-10 max-w-2xl sm:mt-12" />
+		     at all when the campaign has posted nothing.
+
+		     A teaser, not the archive: the newest post arrives already cut to a few
+		     blocks by the load function, the three after it as headlines, and the
+		     blog index carries everything else. -->
+		<UpdatesFeed
+			class="mt-10 max-w-2xl sm:mt-12"
+			lead={data.updates.lead}
+			headlines={data.updates.headlines}
+			orgSlug={data.orgProfile.slug}
+			campaignSlug={campaign.slug}
+			objectSlug={campaign.objectSlug}
+			number={null}
+		/>
 	</div>
 </section>
 

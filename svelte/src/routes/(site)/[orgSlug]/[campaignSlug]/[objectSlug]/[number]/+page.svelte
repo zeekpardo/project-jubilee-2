@@ -156,8 +156,20 @@
 	     chapter of it. Above the details and the ask, since a supporter deciding
 	     whether to give again reads what has happened before they read the
 	     attributes. Same reading measure as the story, and nothing at all —
-	     not even a heading — for a record nobody has posted about. -->
-	<UpdatesFeed updates={data.updates} class="mt-10 max-w-prose" />
+	     not even a heading — for a record nobody has posted about.
+
+	     A teaser rather than the whole feed: the newest post arrives already cut
+	     to a few blocks by the load function, the three after it as headlines,
+	     and this record's blog index carries everything else. -->
+	<UpdatesFeed
+		class="mt-10 max-w-prose"
+		lead={data.updates.lead}
+		headlines={data.updates.headlines}
+		orgSlug={data.orgProfile.slug}
+		campaignSlug={campaign.slug}
+		objectSlug={campaign.objectSlug}
+		number={project.number}
+	/>
 
 	<div class="mt-10 grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
 		<div class="min-w-0">

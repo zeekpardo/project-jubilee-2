@@ -1,6 +1,8 @@
 import { Migrations } from '@convex-dev/migrations';
 import { components, internal } from './_generated/api.js';
 import type { DataModel, Doc } from './_generated/dataModel.js';
+import { slugifyTitle, uniqueSlug } from '../lib/domain/update-slug';
+import { takenUpdateSlugs } from './model/updates';
 
 export const migrations = new Migrations<DataModel>(components.migrations);
 export const run = migrations.runner();
@@ -264,6 +266,35 @@ export const dropTransparency = migrations.define({
 	migrateOne: () => ({ transparency: undefined }) as Partial<Doc<'contacts'>>
 });
 
+// Updates published BEFORE `slug` existed carry none, and the wall fails closed
+// on that: `toPublicUpdate` returns null for a published row without a slug,
+// exactly as it does for a draft. That is the right way round — a post the
+// public site cannot address is better than one addressed by something that
+// might later name a different post — but it means every update published
+// before this feature shipped silently disappeared from the public site. Not
+// broken, not erroring, just absent, which is the failure nobody notices.
+//
+// The slug is minted the same way `publishUpdate` mints it, including the
+// collision scan, so a backfilled address is indistinguishable from one issued
+// at publish time. Idempotent: a row that already has a slug keeps it, because
+// a slug is frozen once issued and reissuing one would break a link somebody
+// has already shared.
+export const backfillUpdateSlugs = migrations.define({
+	table: 'updates',
+	migrateOne: async (ctx, update) => {
+		if (update.slug !== undefined) return;
+		// Drafts are deliberately skipped. They have no public address to keep
+		// stable, and `publishUpdate` mints the slug from whatever the title says
+		// at the moment of publishing — which is the title the author settled on,
+		// not the one an unfinished draft happened to be carrying.
+		if (update.status !== 'published') return;
+
+		const base = slugifyTitle(update.title);
+		const taken = await takenUpdateSlugs(ctx, update.campaignId, update.projectId, base);
+		return { slug: uniqueSlug(base, taken) };
+	}
+});
+
 /** Runs every migration this app has, in order. Safe to re-run. */
 export const runAll = migrations.runner([
 	internal.migrations.normaliseTaskTemplateItems,
@@ -277,5 +308,6 @@ export const runAll = migrations.runner([
 	internal.migrations.dropTaskNote,
 	// Reads `transparency`, so it must run before the one that drops it.
 	internal.migrations.renameTransparency,
-	internal.migrations.dropTransparency
+	internal.migrations.dropTransparency,
+	internal.migrations.backfillUpdateSlugs
 ]);

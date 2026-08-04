@@ -32,8 +32,10 @@ import {
 	deleteUpdateAssets,
 	requireUpdate,
 	requireUpdateParents,
+	takenUpdateSlugs,
 	updateWriteCapability
 } from '../model/updates';
+import { slugifyTitle, uniqueSlug } from '../../lib/domain/update-slug';
 
 /** Titles and bodies are trimmed once, here, so no reader has to. */
 function requireTitle(title: string): string {
@@ -138,6 +140,13 @@ export const updateUpdate = mutation({
  * moment has to come from the caller; storing it explicitly is also what stops
  * the publish date from silently being the creation date, which is the mistake
  * that made the reference app's republishing invisible to a reader.
+ *
+ * This is also where the post acquires its public address. The slug is minted
+ * ONLY when the row has none, so republishing after an unpublish keeps the
+ * original one: a supporter who shared the link before it came down finds the
+ * same post when it goes back up. Nothing recomputes it from the title either,
+ * which is why fixing a typo in a headline later is a safe edit rather than a
+ * silent link break.
  */
 export const publishUpdate = mutation({
 	args: {
@@ -153,9 +162,21 @@ export const publishUpdate = mutation({
 			throw new ConvexError('A publish time must be a moment in epoch milliseconds');
 		}
 
+		// A slug already on the row is left exactly as it is — see above. The
+		// collision check is scoped to this update's own level, so a record's post
+		// and its campaign's post may share a slug without either shadowing the
+		// other; model/updates.ts holds that argument.
+		let slug = update.slug;
+		if (!slug) {
+			const base = slugifyTitle(update.title);
+			const taken = await takenUpdateSlugs(ctx, update.campaignId, update.projectId, base);
+			slug = uniqueSlug(base, taken);
+		}
+
 		await ctx.db.patch('updates', update._id, {
 			status: 'published' as const,
-			publishedAt: args.publishedAt
+			publishedAt: args.publishedAt,
+			slug
 		});
 		return update._id;
 	}
@@ -168,6 +189,11 @@ export const publishUpdate = mutation({
  * `publishedAt` is cleared with it, so a draft never carries a publish time it
  * is not honouring, and republishing stamps a fresh one — the date a reader
  * sees is always the moment the text they are reading became public.
+ *
+ * The SLUG is deliberately not cleared with it. It is the post's identity, not
+ * its publication state, and clearing it would hand the freed address to the
+ * next post published in the same scope — so a link shared before this came
+ * down would later open somebody else's story.
  *
  * Unpublishing does NOT revoke the photographs. Storage URLs handed out while
  * this was public do not expire; only deleting the blob does that, which is

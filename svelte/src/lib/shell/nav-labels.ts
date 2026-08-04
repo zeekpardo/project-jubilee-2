@@ -18,7 +18,8 @@ const ITEM_LABELS: Record<string, () => string> = {
 	members: m.nav_members,
 	settings: m.nav_settings,
 	organization: m.nav_organization,
-	publicSite: m.nav_publicSite
+	publicSite: m.nav_publicSite,
+	giving: m.nav_giving
 };
 
 export function sectionLabel(key: string): string {

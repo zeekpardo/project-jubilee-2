@@ -22,6 +22,41 @@ export const resend: Resend = new Resend(components.resend, {
 	testMode: false
 });
 
+/**
+ * The verified sender, guarded at the point of use like every other send in
+ * this file.
+ *
+ * Exported because donation receipts are sent from `stripe/receipts.ts` rather
+ * than from here — they are triggered by a Stripe webhook, not by an auth
+ * flow — and two modules disagreeing about the From address would mean
+ * receipts silently failing DMARC while sign-in mail kept working.
+ */
+export function emailSendFrom(): string {
+	if (!EMAIL_SEND_FROM) {
+		throw new Error('EMAIL_SEND_FROM environment variable is required but not set');
+	}
+	return EMAIL_SEND_FROM;
+}
+
+/**
+ * Brand chrome for the shared email shell, from the same env as auth mail.
+ *
+ * Every field is optional because `renderBaseEmail` supplies its own defaults,
+ * and a deployment that has not set BRAND_* should get those rather than the
+ * string "undefined" in its email header.
+ */
+export function emailBrand(): {
+	brandName: string | undefined;
+	brandTagline: string | undefined;
+	brandLogoUrl: string | undefined;
+} {
+	return {
+		brandName: BRAND_NAME,
+		brandTagline: BRAND_TAGLINE,
+		brandLogoUrl: BRAND_LOGO_URL
+	};
+}
+
 export const sendEmailVerification = async (
 	ctx: ActionCtx,
 	{

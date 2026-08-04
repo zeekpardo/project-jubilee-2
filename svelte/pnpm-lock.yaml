@@ -20,6 +20,9 @@ importers:
       '@convex-dev/migrations':
         specifier: ^0.3.4
         version: 0.3.4(convex@1.36.1(react@19.1.1))
+      '@convex-dev/rate-limiter':
+        specifier: ^0.3.2
+        version: 0.3.2(convex@1.36.1(react@19.1.1))(react@19.1.1)
       '@convex-dev/resend':
         specifier: 0.2.3
         version: 0.2.3(convex-helpers@0.1.115(@standard-schema/spec@1.1.0)(convex@1.36.1(react@19.1.1))(react@19.1.1)(typescript@6.0.3)(zod@4.3.6))(convex@1.36.1(react@19.1.1))(react@19.1.1)
@@ -44,6 +47,9 @@ importers:
       '@mmailaender/convex-svelte':
         specifier: ^0.18.0
         version: 0.18.0(@sveltejs/kit@2.57.1(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.59.0))(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.2)(jiti@2.6.1)))(svelte@5.55.4(@typescript-eslint/types@8.59.0))(typescript@6.0.3)(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.2)(jiti@2.6.1)))(convex@1.36.1(react@19.1.1))(svelte@5.55.4(@typescript-eslint/types@8.59.0))(zod@4.3.6)
+      '@stripe/stripe-js':
+        specifier: ^9.12.1
+        version: 9.12.1
       '@tailwindcss/vite':
         specifier: ^4.2.4
         version: 4.2.4(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.2)(jiti@2.6.1))
@@ -95,6 +101,9 @@ importers:
       runed:
         specifier: ^0.37.1
         version: 0.37.1(@sveltejs/kit@2.57.1(@sveltejs/vite-plugin-svelte@7.0.0(svelte@5.55.4(@typescript-eslint/types@8.59.0))(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.2)(jiti@2.6.1)))(svelte@5.55.4(@typescript-eslint/types@8.59.0))(typescript@6.0.3)(vite@8.0.9(@types/node@25.6.0)(esbuild@0.27.2)(jiti@2.6.1)))(svelte@5.55.4(@typescript-eslint/types@8.59.0))(zod@4.3.6)
+      stripe:
+        specifier: ^22.4.0
+        version: 22.4.0(@types/node@25.6.0)
       svelte-easy-crop:
         specifier: ^5.0.1
         version: 5.0.1(svelte@5.55.4(@typescript-eslint/types@8.59.0))
@@ -431,8 +440,8 @@ packages:
     peerDependencies:
       convex: ^1.24.8
 
-  '@convex-dev/rate-limiter@0.3.0':
-    resolution: {integrity: sha512-8R1gos0KoGU9+1bahTpOuZgU04d4aAmk7SJw6D37HXLn7DLylAIKegaWmDgdcpaOGHDDDfnvuoEmC1AnoqHruA==}
+  '@convex-dev/rate-limiter@0.3.2':
+    resolution: {integrity: sha512-+oBPsBfFbzdxiF/9XaaTQmVnvDlvEfg/c69/v8LxTbw4VLuiflIKlfnPQL8OS0azXQQ11hcPWHmU8ytFmHKDXA==}
     peerDependencies:
       convex: ^1.24.8
       react: ^18.2.0 || ^19.0.0
@@ -1627,6 +1636,10 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@stripe/stripe-js@9.12.1':
+    resolution: {integrity: sha512-KLXPvjA0BfS4dQnW+ddHjwtIXMnIfKYxqmeNMmQCfKjvYog0cSG+Z7ZvK4RH1+bV90GC07nUztWDRWmJLi5HZQ==}
+    engines: {node: '>=12.16'}
 
   '@sveltejs/acorn-typescript@1.0.5':
     resolution: {integrity: sha512-IwQk4yfwLdibDlrXVE04jTZYlLnwsTT2PIOQQGNLWfjavGifnk1JD1LcZjZaBTRcxZu2FfPfNLOE04DSu9lqtQ==}
@@ -3827,6 +3840,15 @@ packages:
     resolution: {integrity: sha512-vavAMRXOgBVNF6nyEEmL3DBK19iRpDcoIwW+swQ+CbGiu7lju6t+JklA1MHweoWtadgt4ISVUsXLyDq34ddcwA==}
     engines: {node: '>=4'}
 
+  stripe@22.4.0:
+    resolution: {integrity: sha512-LVJ+tcSYeqOSnXr3i+Kz2tZ7y0crLLdP2uwD/4wccrmEVyn0g/Heo0pF7as7rxS/sOjJzrb1lxgZY0Y0Dx1pSA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   style-mod@4.1.3:
     resolution: {integrity: sha512-i/n8VsZydrugj3Iuzll8+x/00GH2vnYsk1eomD8QiRrSAeW6ItbCQDtfXCeJHd0iwiNagqjQkvpvREEPtW3IoQ==}
 
@@ -4579,7 +4601,7 @@ snapshots:
     dependencies:
       convex: 1.36.1(react@19.1.1)
 
-  '@convex-dev/rate-limiter@0.3.0(convex@1.36.1(react@19.1.1))(react@19.1.1)':
+  '@convex-dev/rate-limiter@0.3.2(convex@1.36.1(react@19.1.1))(react@19.1.1)':
     dependencies:
       convex: 1.36.1(react@19.1.1)
     optionalDependencies:
@@ -4587,7 +4609,7 @@ snapshots:
 
   '@convex-dev/resend@0.2.3(convex-helpers@0.1.115(@standard-schema/spec@1.1.0)(convex@1.36.1(react@19.1.1))(react@19.1.1)(typescript@6.0.3)(zod@4.3.6))(convex@1.36.1(react@19.1.1))(react@19.1.1)':
     dependencies:
-      '@convex-dev/rate-limiter': 0.3.0(convex@1.36.1(react@19.1.1))(react@19.1.1)
+      '@convex-dev/rate-limiter': 0.3.2(convex@1.36.1(react@19.1.1))(react@19.1.1)
       '@convex-dev/workpool': 0.3.0(convex-helpers@0.1.115(@standard-schema/spec@1.1.0)(convex@1.36.1(react@19.1.1))(react@19.1.1)(typescript@6.0.3)(zod@4.3.6))(convex@1.36.1(react@19.1.1))
       convex: 1.36.1(react@19.1.1)
       convex-helpers: 0.1.115(@standard-schema/spec@1.1.0)(convex@1.36.1(react@19.1.1))(react@19.1.1)(typescript@6.0.3)(zod@4.3.6)
@@ -5592,6 +5614,8 @@ snapshots:
   '@stablelib/base64@1.0.1': {}
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@stripe/stripe-js@9.12.1': {}
 
   '@sveltejs/acorn-typescript@1.0.5(acorn@8.15.0)':
     dependencies:
@@ -8342,6 +8366,10 @@ snapshots:
       ansi-regex: 5.0.1
 
   strip-bom@3.0.0: {}
+
+  stripe@22.4.0(@types/node@25.6.0):
+    optionalDependencies:
+      '@types/node': 25.6.0
 
   style-mod@4.1.3: {}
 

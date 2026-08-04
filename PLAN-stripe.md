@@ -3,12 +3,12 @@
 How online giving gets built on this codebase. Written against the repo as of the `portal` branch,
 Aug 2026.
 
-> **Status, 2026-08-04.** This is no longer a plan for future work — steps 1–5, 7 and 8 of §15 are
-> built, deployed and typechecked. What remains is step 6 (refund/dispute/payout admin) and, more
-> importantly, **verification against a real Stripe sandbox**: no API key has been configured, so
-> not one call in this integration has ever left the building. Read §15 for exactly what is done and
-> what to do first once keys exist. The sections below are still accurate as design rationale;
-> where reality diverged from the original plan, the divergence is called out inline.
+> **Status, 2026-08-04.** This is no longer a plan for future work — every step of §15 is built,
+> deployed and typechecked. What remains is **verification against a real Stripe sandbox**: no API
+> key has been configured, so not one call in this integration has ever left the building. Read §15
+> for what is done and what to do first once keys exist. The sections below are still accurate as
+> design rationale; where reality diverged from the original plan, the divergence is called out
+> inline.
 
 ---
 
@@ -1129,15 +1129,31 @@ Assert `charges_enabled` in our own code path.
    reactive thanks page. `DonationForm`'s `disabled` now derives from account status.
 5. ~~**Receipting.**~~ **Done.** IRC §170(f)(8) acknowledgment via Resend, per-org legal name / EIN /
    goods-and-services statement, gapless per-org-per-year receipt numbers, void-on-refund.
-6. **Refunds, disputes, payouts** in admin; embedded Stripe components in the org portal. **Not
-   built.** The webhook records `charge.refunded` and `charge.dispute.created` and unwinds the
-   ledger, but there is no admin UI to *initiate* a refund and no payout view.
+6. ~~**Refunds, disputes, payouts** in admin.~~ **Done.** `/app/admin/donations` (gated on
+   `money:read`, deliberately a wider audience than the owner-only Stripe settings page): a
+   paginated gift table with a partial-or-full refund dialog behind `money:write`, plus payout and
+   dispute cards fed by new `stripePayouts` and `stripeDisputes` tables.
+
+   **Embedded Stripe components in the org portal: deliberately not built.** §6 notes that embedded
+   *onboarding* is unavailable to full-dashboard accounts because
+   `disable_stripe_user_authentication` requires `requirement_collection: 'application'`. Whether
+   the same auth prompt afflicts the ongoing-management components is unverified, and building on
+   an unverified assumption is what this document exists to avoid. It is also largely redundant:
+   the whole point of Standard-equivalent accounts is that the org already has its own Stripe
+   dashboard. Revisit if orgs ask for it.
 7. ~~**Recurring.**~~ **Done, unverified.** Subscriptions on the connected account with a per-campaign
    Product, `invoice.paid` → installment → ledger, cancel-on-deauthorize, and donor self-service
    (change amount / cancel / cancel-at-period-end) built ourselves rather than via the Billing
    portal — see §16.4, which is still unverified.
 8. ~~**Reconciliation cron.**~~ **Done.** Four `crons.interval` sweeps: retry failed events, resync
    accounts, reconcile unsettled gifts against Stripe, expire abandoned intents.
+
+A correctness fix worth noting, found while building step 6: `charge.refunded` fires for
+**partial** refunds too, and the original handler deleted the whole ledger transaction on any
+refund — erasing money the nonprofit still held. Refunds now carry Stripe's cumulative
+`amount_refunded` through `planRefund` (`lib/domain/giving.ts`, unit-tested), which reduces the
+transaction and its allocations for a partial and only removes rows on a full reversal. Taking the
+running total rather than the delta is also what makes re-delivery idempotent.
 
 **Nothing above has been exercised against Stripe.** Every path is written, typechecked, deployed
 and unit-tested where it is pure, but no API key has been set, so no call has ever left the

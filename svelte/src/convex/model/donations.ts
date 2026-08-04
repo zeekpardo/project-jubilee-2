@@ -15,6 +15,7 @@ import { ConvexError } from 'convex/values';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { createContactModel, normalizeEmail } from './contacts';
+import { planRefund } from '../../lib/domain/giving';
 
 /**
  * The donor's contact row, created if this is the first time they have given.
@@ -141,39 +142,81 @@ export async function writeGiftToLedger(
 }
 
 /**
- * Unwinds a gift the donor got back.
+ * Unwinds a gift, or the part of it the donor got back.
  *
- * Deletes the allocation and the transaction rather than posting a negative
- * one. The ledger's own invariant is `sum(allocations) <= amountCents` with
- * positive amounts throughout, and `assertPositiveCents` rejects a negative
- * transaction outright — so a contra-entry is not representable without
- * changing what a transaction means for every other surface that reads it.
+ * `refundedCents` is the CUMULATIVE amount refunded, straight from Stripe's
+ * `charge.amount_refunded`, not the size of the latest refund. Stripe reports
+ * it that way and it makes this idempotent for free: a redelivered event
+ * recomputes the same end state instead of subtracting twice.
  *
- * The gift is not lost: the `donationIntents` row survives with status
- * `refunded` or `disputed` and keeps every Stripe handle, which is where the
- * history lives.
+ * The partial case is the one that matters and the one that is easy to get
+ * wrong. `charge.refunded` fires for a $10 refund of a $100 gift exactly as it
+ * does for the full amount, so treating the event as "this gift is gone" would
+ * erase ninety dollars the nonprofit still has.
+ *
+ * A full refund removes the rows rather than posting a negative one. The
+ * ledger's invariant is `sum(allocations) <= amountCents` with positive
+ * amounts throughout, and `assertPositiveCents` rejects a negative transaction
+ * outright — a contra-entry is not representable without changing what a
+ * transaction means to every other surface that reads it. Nothing is lost: the
+ * `donationIntents` row survives with its status and every Stripe handle, and
+ * that is where the history lives.
  *
  * Note that a refund never returns Stripe's processing fee. The org is out
- * that money, and no ledger row here can change that.
+ * that money and no ledger row here can change it.
  */
 export async function reverseGiftInLedger(
 	ctx: MutationCtx,
 	intent: Doc<'donationIntents'>,
-	status: 'refunded' | 'disputed'
+	status: 'refunded' | 'disputed',
+	refundedCents: number
 ): Promise<void> {
+	let plan = planRefund({
+		chargedCents: intent.chargedCents,
+		refundedCents,
+		allocationCents: []
+	});
+
 	if (intent.transactionId) {
 		const allocations = await ctx.db
 			.query('allocations')
 			.withIndex('by_transactionId', (q) => q.eq('transactionId', intent.transactionId!))
 			.take(50);
-		for (const allocation of allocations) {
-			await ctx.db.delete('allocations', allocation._id);
+
+		plan = planRefund({
+			chargedCents: intent.chargedCents,
+			refundedCents,
+			allocationCents: allocations.map((allocation) => allocation.amountCents)
+		});
+
+		// Allocations first, then the transaction. Shrinking the transaction
+		// while its allocations still summed to the old figure would breach
+		// `sum(allocations) <= amountCents` for the width of the mutation —
+		// unobservable from outside, but the ordering costs nothing and keeps
+		// the invariant true throughout.
+		for (const [index, allocation] of allocations.entries()) {
+			const next = plan.allocationCents[index];
+			if (next <= 0) {
+				await ctx.db.delete('allocations', allocation._id);
+			} else if (next !== allocation.amountCents) {
+				await ctx.db.patch('allocations', allocation._id, { amountCents: next });
+			}
 		}
-		await ctx.db.delete('transactions', intent.transactionId);
+
+		if (plan.removeTransaction) {
+			await ctx.db.delete('transactions', intent.transactionId);
+		} else {
+			await ctx.db.patch('transactions', intent.transactionId, {
+				amountCents: plan.remainingCents
+			});
+		}
 	}
 
 	await ctx.db.patch('donationIntents', intent._id, {
 		status,
-		transactionId: undefined
+		refundedCents: plan.refundedCents,
+		// Only a full reversal detaches the ledger row, because on a partial one
+		// there is still a real transaction recording the money the org kept.
+		...(plan.removeTransaction ? { transactionId: undefined } : {})
 	});
 }

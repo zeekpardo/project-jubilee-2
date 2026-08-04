@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { mutation } from '../_generated/server';
+import { mutation } from '../functions';
 import type { Doc } from '../_generated/dataModel';
 import { requireCapability } from '../model/access';
 import { deleteContactCascade } from '../model/cascade';

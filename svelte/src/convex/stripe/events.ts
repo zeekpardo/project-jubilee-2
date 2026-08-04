@@ -180,21 +180,88 @@ async function dispatch(ctx: ActionCtx, event: Stripe.Event): Promise<void> {
 		}
 
 		case 'charge.refunded': {
-			const paymentIntentId = idOf(event.data.object.payment_intent);
+			const charge = event.data.object;
+			const paymentIntentId = idOf(charge.payment_intent);
 			if (!paymentIntentId) return;
 			await ctx.runMutation(internal.stripe.webhooks.recordGiftReversed, {
 				stripePaymentIntentId: paymentIntentId,
-				status: 'refunded'
+				status: 'refunded',
+				// Cumulative, not the size of this one refund. This event fires
+				// for a partial refund exactly as it does for a full one, and
+				// treating it as "the gift is gone" would erase money the
+				// nonprofit still holds.
+				refundedCents: charge.amount_refunded
 			});
 			return;
 		}
 
-		case 'charge.dispute.created': {
-			const paymentIntentId = idOf(event.data.object.payment_intent);
+		case 'charge.dispute.created':
+		case 'charge.dispute.updated':
+		case 'charge.dispute.closed': {
+			const dispute = event.data.object;
+			if (!event.account) return;
+
+			const chargeId = idOf(dispute.charge);
+			if (!chargeId) return;
+			const paymentIntentId = idOf(dispute.payment_intent);
+
+			await ctx.runMutation(internal.stripe.webhooks.recordDispute, {
+				stripeAccountId: event.account,
+				stripeDisputeId: dispute.id,
+				stripeChargeId: chargeId,
+				stripePaymentIntentId: paymentIntentId,
+				amountCents: dispute.amount,
+				currency: dispute.currency,
+				reason: dispute.reason,
+				status: dispute.status,
+				evidenceDueBy: dispute.evidence_details?.due_by
+					? dispute.evidence_details.due_by * 1000
+					: undefined,
+				createdAt: dispute.created * 1000
+			});
+
 			if (!paymentIntentId) return;
+
+			// The funds are held from the moment a dispute opens, so the gift
+			// comes out of the ledger then rather than when it closes. A dispute
+			// the org WINS restores the money — which we deliberately do not
+			// re-post automatically, because Stripe re-credits the balance
+			// without a new charge and inventing a transaction to match would be
+			// a fabricated ledger row. It is surfaced in admin for a human to
+			// re-enter, which is the same path any other correction takes.
+			if (dispute.status === 'won' || dispute.status === 'warning_closed') return;
+
 			await ctx.runMutation(internal.stripe.webhooks.recordGiftReversed, {
 				stripePaymentIntentId: paymentIntentId,
-				status: 'disputed'
+				status: 'disputed',
+				// A dispute is always for the whole disputed amount; there is no
+				// partial-dispute concept the way there is for refunds.
+				refundedCents: dispute.amount
+			});
+			return;
+		}
+
+		// ----------------------------------------------------------
+		// Payouts — money reaching the org's actual bank account
+		// ----------------------------------------------------------
+		case 'payout.created':
+		case 'payout.updated':
+		case 'payout.paid':
+		case 'payout.failed':
+		case 'payout.canceled': {
+			const payout = event.data.object;
+			if (!event.account) return;
+			await ctx.runMutation(internal.stripe.webhooks.recordPayout, {
+				stripeAccountId: event.account,
+				stripePayoutId: payout.id,
+				amountCents: payout.amount,
+				currency: payout.currency,
+				status: mapPayoutStatus(payout.status),
+				arrivalDate: payout.arrival_date ? payout.arrival_date * 1000 : undefined,
+				failureCode: payout.failure_code ?? undefined,
+				failureMessage: payout.failure_message ?? undefined,
+				statementDescriptor: payout.statement_descriptor ?? undefined,
+				createdAt: payout.created * 1000
 			});
 			return;
 		}
@@ -230,10 +297,7 @@ async function dispatch(ctx: ActionCtx, event: Stripe.Event): Promise<void> {
 		// ----------------------------------------------------------
 		// Things worth seeing but not yet worth acting on
 		// ----------------------------------------------------------
-		case 'charge.dispute.closed':
 		case 'invoice.payment_failed':
-		case 'payout.paid':
-		case 'payout.failed':
 		case 'payment_method.automatically_updated':
 		case 'radar.early_fraud_warning.created':
 		case 'application_fee.created':
@@ -361,6 +425,26 @@ function getCurrentPeriodEnd(subscription: Stripe.Subscription): number | undefi
 	const seconds = withPeriod.current_period_end ?? withPeriod.items?.data?.[0]?.current_period_end;
 	// Stripe speaks seconds; everything on our side is milliseconds.
 	return seconds ? seconds * 1000 : undefined;
+}
+
+/**
+ * Stripe's payout statuses, which our union mirrors exactly except that an
+ * unrecognized one is treated as `pending` rather than failing the delivery.
+ * A payout we mislabel as in-flight is a cosmetic error; a 500 here would make
+ * Stripe retry a payout event forever.
+ */
+function mapPayoutStatus(
+	status: string
+): 'pending' | 'in_transit' | 'paid' | 'canceled' | 'failed' {
+	switch (status) {
+		case 'in_transit':
+		case 'paid':
+		case 'canceled':
+		case 'failed':
+			return status;
+		default:
+			return 'pending';
+	}
 }
 
 /**

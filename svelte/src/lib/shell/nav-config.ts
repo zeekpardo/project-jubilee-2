@@ -13,6 +13,7 @@ import Settings from '@lucide/svelte/icons/settings';
 import Building2 from '@lucide/svelte/icons/building-2';
 import Globe from '@lucide/svelte/icons/globe';
 import HandCoins from '@lucide/svelte/icons/hand-coins';
+import CreditCard from '@lucide/svelte/icons/credit-card';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import Plane from '@lucide/svelte/icons/plane';
 import UsersRound from '@lucide/svelte/icons/users-round';
@@ -81,13 +82,23 @@ export const ADMIN_NAV: NavItem[] = [
 		icon: Globe,
 		capability: 'org:manage'
 	},
-	// Owner-only, one step tighter than the two above it: this is the surface
-	// that decides where an org's donations land, so it sits behind
+	// Donation activity: gifts, payouts, disputes, refunds. Deliberately a
+	// wider audience than the Stripe settings below — reconciling deposits and
+	// refunding a duplicate gift is a bookkeeper's job, and making them ask the
+	// executive director would be absurd.
+	{
+		key: 'donations',
+		href: '/app/admin/donations',
+		icon: HandCoins,
+		capability: 'money:read'
+	},
+	// Owner-only, one step tighter than everything above it: this is the
+	// surface that decides where an org's donations land, so it sits behind
 	// billing:manage rather than org:manage.
 	{
 		key: 'giving',
 		href: '/app/admin/giving',
-		icon: HandCoins,
+		icon: CreditCard,
 		capability: 'billing:manage'
 	},
 	// The one-time correction of PLAN-trips.md §13. settings:manage rather than

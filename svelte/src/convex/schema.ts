@@ -599,12 +599,58 @@ const transactions = defineTable({
 	// Donor attribution (donations). Cleared, not cascaded, if the contact is
 	// deleted — the money still moved.
 	contactId: v.optional(v.id('contacts')),
-	note: v.optional(v.string())
+	note: v.optional(v.string()),
+
+	// How much of this transaction its allocations account for, and whether
+	// that covers the whole thing. Both are DERIVED — the allocations remain
+	// the source of truth — and both are maintained by the trigger in
+	// `functions.ts`, never by hand.
+	//
+	// They exist so the allocation inbox can be an indexed lookup instead of
+	// reading every transaction and every allocation in the org to subtract
+	// one from the other. Optional because rows written before the backfill
+	// have neither; `allocatedCents ?? 0` is the safe read, and
+	// `isFullyAllocated !== false` is deliberately NOT — an unmigrated row
+	// must surface in the inbox rather than hide in it.
+	allocatedCents: v.optional(v.number()),
+	isFullyAllocated: v.optional(v.boolean())
 })
 	.index('by_orgId', ['orgId'])
 	.index('by_orgId_and_type', ['orgId', 'type'])
 	.index('by_orgId_and_occurredOn', ['orgId', 'occurredOn'])
-	.index('by_contactId', ['contactId']);
+	.index('by_contactId', ['contactId'])
+	// The allocation inbox: "which of this org's money is not yet attributed".
+	.index('by_orgId_and_isFullyAllocated', ['orgId', 'isFullyAllocated']);
+
+// The ledger totals, kept per org so the budget page can render three numbers
+// without reading three tables' worth of rows to add them up.
+//
+// A counter row rather than the `@convex-dev/aggregate` component, following
+// the project guideline's own split: aggregate is for counts, ranks, offsets
+// and arbitrary key ranges, while "a simple total" is what a denormalized
+// counter document is for. This is six fixed sums per org.
+//
+// The tradeoff being accepted: every transaction write in an org contends on
+// this one row, so a burst of simultaneous donations will produce OCC retries.
+// That is fine at the scale a nonprofit's giving day produces, and if it ever
+// stops being fine the upgrade is the aggregate component, whose tree
+// structure exists precisely to spread that contention out.
+//
+// Never written by hand. The trigger in `functions.ts` owns it, which is what
+// keeps it honest across the fourteen places that write a transaction.
+const orgMoneyTotals = defineTable({
+	orgId: v.string(),
+	// Sums of `transactions.amountCents` by type.
+	receivedCents: v.number(),
+	sentCents: v.number(),
+	spentCents: v.number(),
+	// Sums of the UNALLOCATED remainder by type — what the inbox badges count.
+	unallocatedDonationCents: v.number(),
+	unallocatedTransferCents: v.number(),
+	unallocatedExpenditureCents: v.number()
+})
+	// unique(orgId)
+	.index('by_orgId', ['orgId']);
 
 // Attributes part of a transaction to a campaign, and optionally to one
 // project. A project-less allocation is a campaign-level/overhead cost.
@@ -768,6 +814,12 @@ const donationIntents = defineTable({
 	transactionId: v.optional(v.id('transactions')),
 	failureMessage: v.optional(v.string()),
 
+	// How much of this gift has been given back. Stripe fires `charge.refunded`
+	// for PARTIAL refunds too, so a boolean here would quietly erase the
+	// remaining nine tenths of a gift the donor only clawed back a tenth of.
+	// Zero and absent both mean "nothing refunded".
+	refundedCents: v.optional(v.number()),
+
 	// Tax acknowledgment state. The number is immutable once assigned and
 	// sequential per org per year ('2026-0007'), because a receipt series with
 	// gaps or reuse is the first thing an auditor pulls on.
@@ -846,6 +898,76 @@ const stripeCampaignProducts = defineTable({
 })
 	// unique(campaignId, stripeAccountId)
 	.index('by_campaignId_and_stripeAccountId', ['campaignId', 'stripeAccountId']);
+
+// Money leaving an org's Stripe balance for their bank account.
+//
+// Mirrored from `payout.*` webhooks rather than fetched live, so the admin
+// surface is one indexed read instead of a Stripe API call per page view — and
+// so it still renders when Stripe is having a bad morning.
+//
+// `failed` is the row that earns this table its place. A failed payout means
+// donations are piling up in a balance the org cannot reach, usually because a
+// bank account was mistyped, and nothing else in the product would ever
+// surface it.
+const stripePayouts = defineTable({
+	orgId: v.string(),
+	stripeAccountId: v.string(),
+	stripePayoutId: v.string(),
+
+	amountCents: v.number(),
+	currency: v.string(),
+	status: v.union(
+		v.literal('pending'),
+		v.literal('in_transit'),
+		v.literal('paid'),
+		v.literal('canceled'),
+		v.literal('failed')
+	),
+	// When Stripe expects it to land, in ms. Not when it was created.
+	arrivalDate: v.optional(v.number()),
+	failureCode: v.optional(v.string()),
+	failureMessage: v.optional(v.string()),
+	statementDescriptor: v.optional(v.string()),
+	// `payout.created` time in ms, which is what the list is ordered by — the
+	// row's own `_creationTime` is when the webhook reached us, which drifts.
+	createdAt: v.number()
+})
+	// unique(stripePayoutId)
+	.index('by_stripePayoutId', ['stripePayoutId'])
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_createdAt', ['orgId', 'createdAt']);
+
+// A donor's bank taking money back, and the clock that comes with it.
+//
+// Under direct charges this debits the NONPROFIT's balance, not ours, which is
+// exactly why it has to be visible in our admin: we are not the ones who will
+// be told, and `evidenceDueBy` is a real deadline that passes silently.
+const stripeDisputes = defineTable({
+	orgId: v.string(),
+	stripeAccountId: v.string(),
+	stripeDisputeId: v.string(),
+
+	stripeChargeId: v.string(),
+	stripePaymentIntentId: v.optional(v.string()),
+	// Absent when the disputed charge is not one we recorded — possible if an
+	// org takes payments through the same Stripe account by other means.
+	donationIntentId: v.optional(v.id('donationIntents')),
+
+	amountCents: v.number(),
+	currency: v.string(),
+	// Stripe's own vocabulary ('fraudulent', 'product_not_received', …). Text
+	// rather than a union so a new reason code cannot fail a write on a row we
+	// need to record precisely when things are going wrong.
+	reason: v.string(),
+	status: v.string(),
+	evidenceDueBy: v.optional(v.number()),
+	createdAt: v.number()
+})
+	// unique(stripeDisputeId)
+	.index('by_stripeDisputeId', ['stripeDisputeId'])
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_createdAt', ['orgId', 'createdAt'])
+	.index('by_donationIntentId', ['donationIntentId']);
 
 // The next receipt number to hand out, per org per calendar year.
 //
@@ -1018,7 +1140,18 @@ const contacts = defineTable({
 	// not one. Nothing about what a portal shows branches on it, and nothing
 	// should; it is a mailing preference.
 	updateDetail: v.optional(v.union(v.literal('summary'), v.literal('full'))),
-	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone')))
+	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone'))),
+
+	// Everything a person might be searched by, lowercased into one string.
+	//
+	// Convex full-text search indexes exactly ONE field, and a contact is
+	// findable by half a dozen — name, nickname, email, organization. So the
+	// haystack is assembled here rather than searched across columns.
+	//
+	// Derived, and maintained by the trigger in `functions.ts` alongside the
+	// org's contact count. Never written by hand: a stale haystack means a
+	// person who cannot be found by the name they were just renamed to.
+	searchText: v.optional(v.string())
 })
 	// unique(orgId, emailLower) when email present; unique(orgId, authUserId);
 	// unique(orgId, remoteId) when remoteId present
@@ -1026,7 +1159,28 @@ const contacts = defineTable({
 	.index('by_orgId_and_emailLower', ['orgId', 'emailLower'])
 	.index('by_orgId_and_authUserId', ['orgId', 'authUserId'])
 	.index('by_orgId_and_remoteId', ['orgId', 'remoteId'])
-	.index('by_orgId_and_status', ['orgId', 'status']);
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	// `filterFields: ['orgId']` is load-bearing, not an optimization. A search
+	// index without it would happily match contacts across every organization
+	// on the platform — the tenant isolation that `withIndex(q.eq('orgId'))`
+	// gives the other queries for free has to be asked for explicitly here.
+	.searchIndex('search_contacts', {
+		searchField: 'searchText',
+		filterFields: ['orgId']
+	});
+
+// How many contacts an org has, so the dashboard's People tile can show a
+// number without loading every person to count them.
+//
+// Convex has no count operator, and `.collect().length` over a growing table
+// is the exact pattern the guidelines forbid — it reads every row to produce
+// one integer. Maintained by the same trigger that maintains `searchText`.
+const orgContactTotals = defineTable({
+	orgId: v.string(),
+	contactCount: v.number()
+})
+	// unique(orgId)
+	.index('by_orgId', ['orgId']);
 
 // Every address a contact has, including the primary one. Exactly one row per
 // contact carries isPrimary, and the model layer projects it onto
@@ -1454,13 +1608,17 @@ export default defineSchema({
 	updates,
 	transactions,
 	allocations,
+	orgMoneyTotals,
 	stripeAccounts,
 	donationIntents,
 	recurringGifts,
 	stripeCampaignProducts,
+	stripePayouts,
+	stripeDisputes,
 	receiptCounters,
 	stripeEvents,
 	contacts,
+	orgContactTotals,
 	contactEmails,
 	contactPhones,
 	contactAddresses,

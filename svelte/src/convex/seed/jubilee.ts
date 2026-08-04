@@ -18,7 +18,8 @@
  * row itself.
  */
 import { ConvexError, v } from 'convex/values';
-import { internalMutation, internalQuery } from '../_generated/server';
+import { internalQuery } from '../_generated/server';
+import { internalMutation } from '../functions';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { createCampaignModel } from '../model/campaigns';

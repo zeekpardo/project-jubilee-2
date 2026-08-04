@@ -17,6 +17,7 @@
 	import * as Select from '$lib/primitives/ui/select';
 	import { Badge } from '$lib/primitives/ui/badge';
 	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
 	import { Label } from '$lib/primitives/ui/label';
 	import { Skeleton } from '$lib/primitives/ui/skeleton';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
@@ -40,8 +41,24 @@
 	const households = $derived(householdsResponse?.data ?? []);
 	const loading = $derived(householdsResponse?.isLoading ?? false);
 
+	let selected = $state<Record<string, string[]>>({});
+	// Captured when a contact is picked so the chosen name survives a later
+	// search that no longer returns them.
+	let selectedLabels = $state<Record<string, string>>({});
+	let searches = $state<Record<string, string>>({});
+	let adding = $state<string | null>(null);
+	let confirmOpen = $state(false);
+	let removing = $state<Id<'householdMembers'> | null>(null);
+
+	// The contact list comes back bounded, so each household's picker searches
+	// the org rather than listing it. One shared query feeds every block: only
+	// the picker the user is actually in can be typed into, so its term is the
+	// one worth spending a subscription on.
+	let activePicker = $state<string | null>(null);
+	const activeSearch = $derived(activePicker ? (searches[activePicker] ?? '').trim() : '');
+
 	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
-		auth.isAuthenticated && canWrite ? {} : 'skip'
+		auth.isAuthenticated && canWrite ? { search: activeSearch || undefined, limit: 50 } : 'skip'
 	);
 	const contacts = $derived(contactsResponse?.data ?? []);
 
@@ -49,29 +66,33 @@
 		households.flatMap((row) => {
 			const household = row.household;
 			if (!household) return [];
+			const key = household._id as string;
 			const taken = new Set(row.members.map((member) => member.contactId as string));
+			const options = contacts
+				.filter((contact) => !taken.has(contact._id as string))
+				.map((contact) => ({
+					value: contact._id as string,
+					label: contactDisplayName(contact)
+				}));
+			const picked = selected[key]?.[0];
 			return [
 				{
+					key,
 					household,
 					membership: row.membership,
 					members: row.members,
 					picker: createListCollection({
-						items: contacts
-							.filter((contact) => !taken.has(contact._id as string))
-							.map((contact) => ({
-								value: contact._id as string,
-								label: contactDisplayName(contact)
-							}))
+						// A pick the current search no longer returns is kept in the list, so
+						// the trigger never goes blank on the person Add is about to add.
+						items:
+							picked !== undefined && !options.some((option) => option.value === picked)
+								? [{ value: picked, label: selectedLabels[key] ?? '' }, ...options]
+								: options
 					})
 				}
 			];
 		})
 	);
-
-	let selected = $state<Record<string, string[]>>({});
-	let adding = $state<string | null>(null);
-	let confirmOpen = $state(false);
-	let removing = $state<Id<'householdMembers'> | null>(null);
 
 	async function setPrimary(householdId: Id<'households'>, primaryContactId: Id<'contacts'>) {
 		try {
@@ -96,6 +117,8 @@
 				contactId: picked as Id<'contacts'>
 			});
 			selected = { ...selected, [key]: [] };
+			selectedLabels = { ...selectedLabels, [key]: '' };
+			searches = { ...searches, [key]: '' };
 		} catch (error) {
 			toast.error(error instanceof ConvexError ? String(error.data) : m.state_saveFailed());
 		} finally {
@@ -183,14 +206,30 @@
 					{/if}
 
 					{#if canWrite}
-						<div class="border-border flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-end">
+						<!-- Entering this picker at all — the search box or the trigger — makes
+						     it the block whose term the shared contact query is running. -->
+						<div
+							class="border-border flex flex-col gap-2 border-t pt-3 sm:flex-row sm:items-end"
+							onfocusin={() => (activePicker = block.key)}
+						>
 							<div class="flex flex-1 flex-col gap-1.5">
-								<Label>{m.households_addMember()}</Label>
+								<Label for="household-member-search-{block.key}">{m.households_addMember()}</Label>
+								<Input
+									id="household-member-search-{block.key}"
+									type="search"
+									bind:value={searches[block.key]}
+									placeholder={m.list_search()}
+									autocomplete="off"
+								/>
 								<Select.Root
 									collection={block.picker}
-									value={selected[block.household._id as string] ?? []}
-									onValueChange={(d: { value: string[] }) =>
-										(selected = { ...selected, [block.household._id as string]: d.value })}
+									value={selected[block.key] ?? []}
+									onValueChange={(d: { value: string[] }) => {
+										selected = { ...selected, [block.key]: d.value };
+										const next = d.value[0];
+										const label = block.picker.items.find((item) => item.value === next)?.label;
+										if (next && label) selectedLabels = { ...selectedLabels, [block.key]: label };
+									}}
 								>
 									<Select.Trigger
 										size="sm"
@@ -208,8 +247,8 @@
 							</div>
 							<Button
 								onclick={() => addMember(block.household._id)}
-								loading={adding === (block.household._id as string)}
-								disabled={(selected[block.household._id as string] ?? []).length === 0}
+								loading={adding === block.key}
+								disabled={(selected[block.key] ?? []).length === 0}
 							>
 								{m.action_add()}
 							</Button>

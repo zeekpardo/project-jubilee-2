@@ -33,7 +33,7 @@
  *   npx convex run seed/portal:clearPortalMember '{"orgId":"..."}'
  */
 import { ConvexError, v } from 'convex/values';
-import { internalMutation } from '../_generated/server';
+import { internalMutation } from '../functions';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { contactDisplayName } from '../../lib/features/contacts/contact-name';

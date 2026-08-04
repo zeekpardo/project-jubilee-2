@@ -21,6 +21,7 @@ const ITEM_LABELS: Record<string, () => string> = {
 	organization: m.nav_organization,
 	publicSite: m.nav_publicSite,
 	giving: m.nav_giving,
+	donations: m.nav_donations,
 	memberSides: m.nav_memberSides
 };
 

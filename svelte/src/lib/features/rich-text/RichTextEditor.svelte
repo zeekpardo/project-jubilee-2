@@ -88,6 +88,7 @@
 	import '@milkdown/kit/prose/view/style/prosemirror.css';
 	import '@milkdown/kit/prose/gapcursor/style/gapcursor.css';
 
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import CodeIcon from '@lucide/svelte/icons/code';
 	import Heading1Icon from '@lucide/svelte/icons/heading-1';
@@ -589,10 +590,23 @@
 
 		let disposed = false;
 		let created: Editor | null = null;
-		const initial = value;
+
+		// UNTRACKED, and the editor is unusable without it. `value` is bindable and
+		// this component writes to it on every keystroke, so reading it here as a
+		// dependency makes each character tear the editor down and build a new one:
+		// the caret goes, the dialog falls back to focusing its first field, and
+		// typing in the body lands in the title. The document is seeded once, on
+		// mount; the effect below is what carries later changes in from outside.
+		const initial = untrack(() => value);
 		lastEmitted = initial;
 
-		void createEditor(host, menu, initial).then((made) => {
+		// Creation is untracked wholesale, not just `value`. `createEditor` also
+		// reads `id` and `disabled` while configuring, and a caller passing an
+		// inline arrow for `resolveImageUrl` hands this a new function identity on
+		// every parent render. Any of those becoming a dependency puts the editor
+		// back on the teardown-and-rebuild treadmill this effect must never be on.
+		// The only things it may react to are the two DOM nodes read above.
+		void untrack(() => createEditor(host, menu, initial)).then((made) => {
 			if (disposed) {
 				void made.destroy();
 				return;

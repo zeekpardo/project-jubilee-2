@@ -18,6 +18,7 @@
 	import ProjectGiving from '$lib/features/projects/ProjectGiving.svelte';
 	import ProjectInternalPanel from '$lib/features/projects/ProjectInternalPanel.svelte';
 	import ProjectPublicPanel from '$lib/features/projects/ProjectPublicPanel.svelte';
+	import UpdatesPanel from '$lib/features/updates/UpdatesPanel.svelte';
 	import EditProjectDialog from '$lib/features/projects/EditProjectDialog.svelte';
 	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
 	import { Button } from '$lib/primitives/ui/button';
@@ -74,6 +75,7 @@
 		'people',
 		'budget',
 		'documents',
+		'updates',
 		'giving',
 		'public',
 		'internal'
@@ -147,6 +149,7 @@
 					<Tabs.Trigger value="people">{m.projects_members()}</Tabs.Trigger>
 					<Tabs.Trigger value="budget">{m.nav_budget()}</Tabs.Trigger>
 					<Tabs.Trigger value="documents">{m.projects_documents()}</Tabs.Trigger>
+					<Tabs.Trigger value="updates">{m.updates_title()}</Tabs.Trigger>
 					<Tabs.Trigger value="giving">{m.projectDetail_tab_giving()}</Tabs.Trigger>
 					<Tabs.Trigger value="public">{m.projectDetail_tab_public()}</Tabs.Trigger>
 					<Tabs.Trigger value="internal">{m.projectDetail_tab_internal()}</Tabs.Trigger>
@@ -174,6 +177,14 @@
 
 				<Tabs.Content value="documents">
 					<ProjectDocuments {project} {stages} />
+				</Tabs.Content>
+
+				<Tabs.Content value="updates">
+					<!-- The same panel the campaign screen mounts, told which record
+					these posts are about. Writing one is `projects:write`, the same
+					capability that authorizes this record's own story; publishing it is
+					not, and the panel says so. -->
+					<UpdatesPanel {campaignId} projectId={project._id} />
 				</Tabs.Content>
 
 				<Tabs.Content value="giving">

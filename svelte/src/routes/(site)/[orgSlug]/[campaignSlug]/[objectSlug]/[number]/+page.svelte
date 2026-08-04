@@ -8,6 +8,7 @@
 	import InterestForm from '$lib/features/public-site/InterestForm.svelte';
 	import DonationForm from '$lib/features/public-site/DonationForm.svelte';
 	import YourGivingNote from '$lib/features/public-site/YourGivingNote.svelte';
+	import UpdatesFeed from '$lib/features/public-site/UpdatesFeed.svelte';
 	import * as Dialog from '$lib/primitives/ui/dialog';
 	import ProjectHeroMedia from '$lib/features/public-site/ProjectHeroMedia.svelte';
 	import { formatCents } from '$lib/features/money/format';
@@ -150,6 +151,13 @@
 			</div>
 		</section>
 	{/if}
+
+	<!-- Directly after their story, because that is what an update is: the next
+	     chapter of it. Above the details and the ask, since a supporter deciding
+	     whether to give again reads what has happened before they read the
+	     attributes. Same reading measure as the story, and nothing at all —
+	     not even a heading — for a record nobody has posted about. -->
+	<UpdatesFeed updates={data.updates} class="mt-10 max-w-prose" />
 
 	<div class="mt-10 grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:items-start">
 		<div class="min-w-0">

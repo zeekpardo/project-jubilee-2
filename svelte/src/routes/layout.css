@@ -1,5 +1,10 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
+/* Registered for rendered rich text: `prose` styles the HTML that
+   $lib/domain/rich-text.ts produces, where the markup comes from a markdown
+   pipeline rather than from components we can put classes on. The package was
+   a dependency long before this line, so `prose` silently did nothing. */
+@plugin '@tailwindcss/typography';
 @import 'tw-animate-css';
 
 @import '@fontsource-variable/geist';

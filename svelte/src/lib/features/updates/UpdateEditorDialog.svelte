@@ -164,7 +164,22 @@
 
 			<div class="flex flex-col gap-2">
 				<Label for="update-body">{m.updates_fieldBody()}</Label>
-				<RichTextEditor bind:value={body} onUploadImage={uploadImage} disabled={!canWrite} />
+				<!--
+					`assets` is already a storageId → resolved URL map on the row the
+					list query handed us, so photographs from an earlier session draw as
+					photographs rather than as labelled cards. The editor reads the
+					resolver at node-render time and does not re-render on a late
+					answer, which is fine here: this dialog only ever opens with an
+					`update` it was given, so the map is populated before the editor
+					mounts. The resolved URL is drawn and never serialized — a storage
+					URL in a saved body would outlive both unpublishing and deletion.
+				-->
+				<RichTextEditor
+					bind:value={body}
+					onUploadImage={uploadImage}
+					resolveImageUrl={(storageId) => update?.assets[storageId]}
+					disabled={!canWrite}
+				/>
 				<p class="text-muted-foreground text-xs">{m.updates_bodyHint()}</p>
 			</div>
 

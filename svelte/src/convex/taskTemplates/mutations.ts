@@ -3,18 +3,31 @@ import { mutation } from '../_generated/server';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { requireCapability } from '../model/access';
+import { taskTemplateScopeKey, type TaskTemplateScope } from '../model/tasks';
 import { statConfigId, type StatConfig, type StatSource } from '../../lib/domain/campaign-stats';
 
-// At most one active version per campaign, so activating one clears the rest.
+// Which checklist a version is. Absent means 'project' on the way IN as well as
+// in storage — see the `scope` line in createTaskTemplateVersion below.
+const scopeValidator = v.union(v.literal('project'), v.literal('trip'));
+
+// At most one active version per campaign AND SCOPE, so activating one clears
+// the rest of its own kind.
+//
+// Scope is not a refinement here, it is the whole point. Left scope-blind this
+// ranged over the campaign alone, and activating a trip checklist would
+// deactivate the campaign's record checklist — whose first symptom is a project
+// created next week arriving with no tasks on it, a week after the change that
+// caused it. The two lists are different work and deactivate independently.
 async function deactivateOthers(
 	ctx: MutationCtx,
 	campaignId: Id<'campaigns'>,
+	scope: TaskTemplateScope,
 	keepId: Id<'taskTemplates'> | null
 ): Promise<void> {
 	const active = await ctx.db
 		.query('taskTemplates')
-		.withIndex('by_campaignId_and_isActive', (q) =>
-			q.eq('campaignId', campaignId).eq('isActive', true)
+		.withIndex('by_campaignId_and_scope_and_isActive', (q) =>
+			q.eq('campaignId', campaignId).eq('scope', taskTemplateScopeKey(scope)).eq('isActive', true)
 		)
 		.collect();
 	for (const template of active) {
@@ -32,7 +45,10 @@ const itemsValidator = v.array(
 		key: v.string(),
 		label: v.string(),
 		order: v.number(),
-		impactTag: v.optional(v.string())
+		impactTag: v.optional(v.string()),
+		// Trip scope only, and refused elsewhere: an item answered once PER PERSON
+		// rather than once per trip. See assertScopeRules.
+		perAttendee: v.optional(v.boolean())
 	})
 );
 
@@ -58,9 +74,42 @@ function assertUniqueKeys(items: { key: string }[]): void {
 	}
 }
 
-/** The stored shape: a blank tag is no tag. */
+/**
+ * The two item flags that only make sense in one scope, refused rather than
+ * ignored — a stored field nothing reads is a field someone will one day
+ * believe.
+ *
+ * `impactTag` on a TRIP item is the guard rail §6 asks for, moved to the
+ * earliest place that can hold it. A trip task has no projectId, impact stats
+ * count DISTINCT projectId, so the tag would count zero forever; catching it
+ * when the checklist is saved names the mistake to the person who made it,
+ * where catching it at instantiation would fail a trip create instead. The task
+ * write path enforces the same pair (see IMPACT_TAG_NEEDS_PROJECT in
+ * tasks/mutations.ts) — this is the template-shaped statement of one rule, not
+ * a second rule.
+ *
+ * `perAttendee` on a PROJECT item has nothing to fan out over: a record has no
+ * roster.
+ */
+function assertScopeRules(
+	scope: TaskTemplateScope,
+	items: { key: string; impactTag?: string; perAttendee?: boolean }[]
+): void {
+	for (const item of items) {
+		if (scope === 'trip' && item.impactTag?.trim()) {
+			throw new ConvexError(
+				`"${item.key}" cannot carry an impact tag. Impact stats count distinct records, and a trip checklist item is not about a record — tag the record checklist item instead.`
+			);
+		}
+		if (scope !== 'trip' && item.perAttendee) {
+			throw new ConvexError(`"${item.key}" can only be per-person on a trip checklist.`);
+		}
+	}
+}
+
+/** The stored shape: a blank tag is no tag, and a false flag is no flag. */
 function normaliseItems(
-	items: { key: string; label: string; order: number; impactTag?: string }[]
+	items: { key: string; label: string; order: number; impactTag?: string; perAttendee?: boolean }[]
 ) {
 	return items.map((item) => ({
 		key: item.key,
@@ -68,7 +117,10 @@ function normaliseItems(
 		order: item.order,
 		// An empty string would land in the by_campaignId_and_impactTag index
 		// under a tag nothing looks for.
-		...(item.impactTag?.trim() ? { impactTag: item.impactTag.trim() } : {})
+		...(item.impactTag?.trim() ? { impactTag: item.impactTag.trim() } : {}),
+		// Absent and false mean the same thing, so only one of them is ever
+		// stored — the same choice `impactTag` makes just above.
+		...(item.perAttendee ? { perAttendee: true } : {})
 	}));
 }
 
@@ -144,6 +196,9 @@ export const createTaskTemplateVersion = mutation({
 	args: {
 		campaignId: v.id('campaigns'),
 		version: v.string(),
+		// Absent is the record checklist, which is what every caller written
+		// before trips existed meant and still means.
+		scope: v.optional(scopeValidator),
 		items: itemsValidator,
 		statSurfaces: v.optional(statSurfacesValidator),
 		effectiveFrom: v.optional(v.string()),
@@ -157,6 +212,12 @@ export const createTaskTemplateVersion = mutation({
 			throw new ConvexError('Campaign not found');
 		}
 
+		const scope: TaskTemplateScope = args.scope ?? 'project';
+
+		// Version numbers are unique per CAMPAIGN, not per campaign and scope: the
+		// index says so, and widening it would be a schema change for the sake of
+		// letting two different lists both be called "v1" — which is a thing to be
+		// glad they cannot be, since a task records only the version it agreed to.
 		const conflict = await ctx.db
 			.query('taskTemplates')
 			.withIndex('by_campaignId_and_version', (q) =>
@@ -168,16 +229,24 @@ export const createTaskTemplateVersion = mutation({
 		}
 
 		assertUniqueKeys(args.items);
+		assertScopeRules(scope, args.items);
 
 		const activate = args.activate ?? false;
 		if (activate) {
-			await deactivateOthers(ctx, args.campaignId, null);
+			await deactivateOthers(ctx, args.campaignId, scope, null);
 		}
 
 		const templateId = await ctx.db.insert('taskTemplates', {
 			orgId,
 			campaignId: args.campaignId,
 			version: args.version,
+			// STORED THROUGH THE SAME FUNCTION THE READS RANGE OVER, so project
+			// scope is written ABSENT and never as the literal 'project'. A row
+			// spelling it out would sit outside the `scope: undefined` range every
+			// project-scope read uses: invisible to the editor, and untouchable by
+			// deactivateOthers — which is a campaign with two active record
+			// checklists, and `.unique()` throwing on a page trying to render one.
+			scope: taskTemplateScopeKey(scope),
 			effectiveFrom: args.effectiveFrom,
 			isActive: activate,
 			items: normaliseItems(args.items)
@@ -228,6 +297,10 @@ export const updateTaskTemplate = mutation({
 		await requireCapability(ctx, 'campaign:edit', template.campaignId);
 
 		assertUniqueKeys(args.items);
+		// The scope is the version's, not the caller's: which list this is was
+		// decided when it was created and is not a thing an edit may change. Every
+		// task already created against it is keyed to a trip or to a record.
+		assertScopeRules(template.scope ?? 'project', args.items);
 
 		await ctx.db.patch('taskTemplates', template._id, {
 			items: normaliseItems(args.items),
@@ -256,7 +329,9 @@ export const activateTaskTemplate = mutation({
 		}
 		await requireCapability(ctx, 'campaign:edit', template.campaignId);
 
-		await deactivateOthers(ctx, template.campaignId, template._id);
+		// Only versions of its own scope are cleared: a campaign's record checklist
+		// and its trip checklist are both active at once, on purpose.
+		await deactivateOthers(ctx, template.campaignId, template.scope ?? 'project', template._id);
 
 		if (!template.isActive) {
 			await ctx.db.patch('taskTemplates', template._id, { isActive: true });

@@ -76,7 +76,81 @@ export async function deleteProjectCascade(
 		await ctx.db.patch('allocations', allocation._id, { projectId: undefined });
 	}
 
+	// The trip link goes, and unlike the allocation above it is DELETED rather
+	// than cleared: a link to a record that no longer exists carries no value,
+	// where an allocation still carries the money that moved. The trip itself
+	// survives — it visited other records, and it happened.
+	const tripLinks = await ctx.db
+		.query('tripProjects')
+		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
+		.collect();
+	for (const link of tripLinks) {
+		await ctx.db.delete('tripProjects', link._id);
+	}
+
 	await ctx.db.delete('projects', projectId);
+}
+
+/**
+ * Segments FIRST, then attendees. A per-person leg names the attendee it
+ * belongs to, so removing the traveller first would leave a flight pointing at
+ * nobody — and the arrival list the coordinator drives to the airport with is
+ * built from exactly those rows.
+ *
+ * Everything else here is trip-owned and goes with it: the record links, the
+ * planned budget, and the checklist. Once §7's ledger integration lands this
+ * also CLEARS `allocations.tripId` — never deletes the row, for the same reason
+ * deleteProjectCascade clears `projectId`: the money still moved, it simply
+ * stops being trip-attributed.
+ */
+export async function deleteTripCascade(ctx: MutationCtx, tripId: Id<'trips'>): Promise<void> {
+	const segments = await ctx.db
+		.query('tripSegments')
+		.withIndex('by_tripId', (q) => q.eq('tripId', tripId))
+		.collect();
+	for (const segment of segments) {
+		await ctx.db.delete('tripSegments', segment._id);
+	}
+
+	// Only the link rows go; the travellers themselves are org-level people.
+	const attendees = await ctx.db
+		.query('tripAttendees')
+		.withIndex('by_tripId', (q) => q.eq('tripId', tripId))
+		.collect();
+	for (const attendee of attendees) {
+		await ctx.db.delete('tripAttendees', attendee._id);
+	}
+
+	const projectLinks = await ctx.db
+		.query('tripProjects')
+		.withIndex('by_tripId', (q) => q.eq('tripId', tripId))
+		.collect();
+	for (const link of projectLinks) {
+		await ctx.db.delete('tripProjects', link._id);
+	}
+
+	// Planned costs only, and nothing else reads them, so they simply go.
+	const budgetLines = await ctx.db
+		.query('tripBudgetLines')
+		.withIndex('by_tripId', (q) => q.eq('tripId', tripId))
+		.collect();
+	for (const line of budgetLines) {
+		await ctx.db.delete('tripBudgetLines', line._id);
+	}
+
+	// The checklist goes with the trip, the same as a record's does in
+	// deleteProjectCascade: it is a tick against a journey that no longer
+	// exists. A task carrying BOTH tripId and projectId goes too — it was the
+	// trip's work — and the record's own cascade would reach it anyway.
+	const tasks = await ctx.db
+		.query('tasks')
+		.withIndex('by_tripId', (q) => q.eq('tripId', tripId))
+		.collect();
+	for (const task of tasks) {
+		await ctx.db.delete('tasks', task._id);
+	}
+
+	await ctx.db.delete('trips', tripId);
 }
 
 export async function deleteHouseholdCascade(
@@ -117,6 +191,15 @@ export async function deleteContactCascade(
 	// the task would erase a job that still has to be done — and, if it was
 	// ticked and tagged, silently move a published number.
 	//
+	// A PER-ATTENDEE TRIP ITEM IS THE EXCEPTION, and is deleted instead. "Passport
+	// valid 6 months past return" is not work that outlives the traveller: cleared,
+	// it survives on the trip page as an orphan reading "Passport check —
+	// Unassigned", which is a row nobody can ever tick and which makes the
+	// readiness count wrong. Narrowed to template-sourced trip tasks on purpose —
+	// those are the instantiated checklist, one row per person. A trip task
+	// somebody TYPED and handed to this contact is real work, and it is cleared
+	// like everything else.
+	//
 	// Read by org rather than by assignee: the field is optional and
 	// polymorphic, so no index over it would be useful to anything else, and a
 	// contact delete is rare enough not to earn one. The orgId prefix of
@@ -127,6 +210,10 @@ export async function deleteContactCascade(
 		.collect();
 	for (const task of assigned) {
 		if (task.assignee?.kind !== 'contact' || task.assignee.contactId !== contactId) continue;
+		if (task.tripId !== undefined && task.source === 'template') {
+			await ctx.db.delete('tasks', task._id);
+			continue;
+		}
 		await ctx.db.patch('tasks', task._id, { assignee: undefined });
 	}
 
@@ -176,6 +263,24 @@ export async function deleteContactCascade(
 		.collect();
 	for (const link of projectLinks) {
 		await ctx.db.delete('projectMembers', link._id);
+	}
+
+	// Same order as deleteTripCascade and for the same reason: this person's own
+	// flight legs name their attendee row, so they go before it. The trip itself
+	// survives — it still happened, and the rest of the team still went.
+	const tripLinks = await ctx.db
+		.query('tripAttendees')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.collect();
+	for (const link of tripLinks) {
+		const segments = await ctx.db
+			.query('tripSegments')
+			.withIndex('by_attendeeId', (q) => q.eq('attendeeId', link._id))
+			.collect();
+		for (const segment of segments) {
+			await ctx.db.delete('tripSegments', segment._id);
+		}
+		await ctx.db.delete('tripAttendees', link._id);
 	}
 
 	// A household outlives its primary contact; other members may remain.
@@ -243,6 +348,19 @@ export async function deleteCampaignCascade(
 	for (const update of updates) {
 		await deleteUpdateAssets(ctx, update.assetIds);
 		await ctx.db.delete('updates', update._id);
+	}
+
+	// Trips go BEFORE the projects below, the same shape as the allocations and
+	// tasks above: each takes its own record links with it, so the per-project
+	// cascade finds no tripProjects rows left to delete. The task sweep above
+	// has already reached this campaign's trip tasks, so deleteTripCascade finds
+	// none of those either — which is the pattern, not an oversight.
+	const trips = await ctx.db
+		.query('trips')
+		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const trip of trips) {
+		await deleteTripCascade(ctx, trip._id);
 	}
 
 	const projects = await ctx.db

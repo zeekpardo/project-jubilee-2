@@ -1,10 +1,19 @@
 import { v } from 'convex/values';
 import { query } from '../_generated/server';
 import { readableOrgId } from '../model/access';
+import { taskTemplateScopeKey } from '../model/tasks';
+
+// A campaign keeps two independent checklists — its records' and its trips' —
+// so every read here names which one it wants. Absent is the record checklist,
+// which is what every caller written before trips existed meant and still
+// means, and which is stored as an ABSENT `scope`: see taskTemplateScopeKey for
+// why the range says `undefined` rather than filtering after the fact.
+const scopeValidator = v.union(v.literal('project'), v.literal('trip'));
 
 export const listTaskTemplates = query({
 	args: {
-		campaignId: v.id('campaigns')
+		campaignId: v.id('campaigns'),
+		scope: v.optional(scopeValidator)
 	},
 	handler: async (ctx, args) => {
 		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
@@ -17,9 +26,16 @@ export const listTaskTemplates = query({
 			return [];
 		}
 
+		// Every version of ONE scope, active or not — the editor lists the history.
+		// Scope-blind, this would put trip checklists in the record-checklist editor
+		// and the other way round.
 		return await ctx.db
 			.query('taskTemplates')
-			.withIndex('by_campaignId_and_isActive', (q) => q.eq('campaignId', args.campaignId))
+			.withIndex('by_campaignId_and_scope_and_isActive', (q) =>
+				q
+					.eq('campaignId', args.campaignId)
+					.eq('scope', taskTemplateScopeKey(args.scope ?? 'project'))
+			)
 			.collect();
 	}
 });
@@ -34,7 +50,8 @@ export const listTaskTemplates = query({
  */
 export const countTasksByKey = query({
 	args: {
-		campaignId: v.id('campaigns')
+		campaignId: v.id('campaigns'),
+		scope: v.optional(scopeValidator)
 	},
 	handler: async (ctx, args) => {
 		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
@@ -52,10 +69,15 @@ export const countTasksByKey = query({
 			.withIndex('by_campaignId_and_status', (q) => q.eq('campaignId', args.campaignId))
 			.collect();
 
+		const wantsTrip = (args.scope ?? 'project') === 'trip';
 		const counts: Record<string, number> = {};
 		for (const task of tasks) {
 			// Manual tasks carry no template key, so they count toward no item.
 			if (!task.key) continue;
+			// Both checklists' tasks share the campaign index, and both are free to
+			// use the key "passport". Counted blind, removing an item from the record
+			// checklist would report the trip's rows as records affected.
+			if (wantsTrip ? !task.tripId : !task.projectId) continue;
 			counts[task.key] = (counts[task.key] ?? 0) + 1;
 		}
 		return counts;
@@ -88,9 +110,15 @@ export const listImpactTags = query({
 			return [];
 		}
 
+		// Record checklists only, and no scope argument: a trip item is REFUSED an
+		// impact tag at the write path (see assertScopeRules), because a trip task
+		// has no projectId and impact stats count distinct projects. There is
+		// nothing in the other scope to read.
 		const templates = await ctx.db
 			.query('taskTemplates')
-			.withIndex('by_campaignId_and_isActive', (q) => q.eq('campaignId', args.campaignId))
+			.withIndex('by_campaignId_and_scope_and_isActive', (q) =>
+				q.eq('campaignId', args.campaignId).eq('scope', taskTemplateScopeKey('project'))
+			)
 			.collect();
 
 		const tags = new Set<string>();
@@ -121,7 +149,8 @@ export const listImpactTags = query({
 
 export const getActiveTaskTemplate = query({
 	args: {
-		campaignId: v.id('campaigns')
+		campaignId: v.id('campaigns'),
+		scope: v.optional(scopeValidator)
 	},
 	handler: async (ctx, args) => {
 		const orgId = await readableOrgId(ctx, 'projects:read', args.campaignId);
@@ -134,10 +163,17 @@ export const getActiveTaskTemplate = query({
 			return null;
 		}
 
+		// `.unique()` is the invariant showing its teeth: one active version per
+		// campaign AND SCOPE, held by deactivateOthers. Ranging over the campaign
+		// alone would now find two — the record checklist and the trip one — and
+		// throw on a page that is only trying to render a list.
 		return await ctx.db
 			.query('taskTemplates')
-			.withIndex('by_campaignId_and_isActive', (q) =>
-				q.eq('campaignId', args.campaignId).eq('isActive', true)
+			.withIndex('by_campaignId_and_scope_and_isActive', (q) =>
+				q
+					.eq('campaignId', args.campaignId)
+					.eq('scope', taskTemplateScopeKey(args.scope ?? 'project'))
+					.eq('isActive', true)
 			)
 			.unique();
 	}

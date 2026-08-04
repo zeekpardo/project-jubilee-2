@@ -41,6 +41,14 @@ const campaigns = defineTable({
 	membersEnabled: v.boolean(),
 	budgetShape: v.union(v.literal('flat'), v.literal('template'), v.literal('none')),
 
+	// Most campaigns never run a trip, and a Trips tab on every campaign is a tab
+	// that is empty forever. Optional rather than required so this ships without a
+	// backfill — same pattern as pipelineStages.countsTowardImpact. Absent = false,
+	// which is the opposite default to that one because the safe answer differs:
+	// there, a stage counts unless someone says otherwise; here, a campaign does
+	// not grow a feature unless someone asks for it.
+	tripsEnabled: v.optional(v.boolean()),
+
 	// Generalization of Jubilee's is_freed: the adjective, the past-tense verb
 	// for stats, and how a project's goal gets marked met.
 	goalLabel: v.string(),
@@ -218,6 +226,17 @@ const taskTemplates = defineTable({
 	campaignId: v.id('campaigns'),
 	version: v.string(),
 	effectiveFrom: v.optional(v.string()),
+	// Which kind of checklist this version is. Absent = 'project', so every
+	// existing row keeps its meaning and this ships without a backfill. The
+	// exactly-one-active invariant widens from (campaignId) to (campaignId,
+	// scope): a campaign has one active record checklist AND one active trip
+	// checklist, and they are different lists of different work.
+	//
+	// Reading the project-scope template ranges over `scope: undefined` — the
+	// same explicit-undefined-in-an-index pattern `updates` uses for its
+	// campaign-level feed, and for the same reason: a post-index filter can
+	// return a short page while rows remain.
+	scope: v.optional(v.union(v.literal('project'), v.literal('trip'))),
 	isActive: v.boolean(),
 	// Bounded checklist (tens of items), so an inline array is safe here.
 	// `impactTag` makes public impact stats data-driven rather than hardcoded.
@@ -243,13 +262,24 @@ const taskTemplates = defineTable({
 			// string — normaliseTaskTemplateItems in migrations.ts drops it. A
 			// sibling `isPublic` flag also lived here and was collapsed into the
 			// stat's own showOnPublic — see dropChecklistIsPublic.
-			impactTag: v.optional(v.string())
+			impactTag: v.optional(v.string()),
+			// True when this item is answered once PER PERSON rather than once per
+			// trip. "Book group lodging" is a trip item; "passport valid 6 months
+			// past return" is twelve items, one per traveller, and a single shared
+			// tick would hide the one person who cannot board.
+			perAttendee: v.optional(v.boolean())
 		})
 	)
 })
 	// unique(campaignId, version)
 	.index('by_campaignId_and_version', ['campaignId', 'version'])
-	.index('by_campaignId_and_isActive', ['campaignId', 'isActive']);
+	.index('by_campaignId_and_isActive', ['campaignId', 'isActive'])
+	// The scope-aware twin of the index above, and the one every read and the
+	// single deactivateOthers enforcement point move to: scope-blind, activating
+	// a trip checklist silently deactivates the campaign's record checklist.
+	// Unstaged deliberately — this table holds a handful of rows per campaign,
+	// so the backfill is nothing.
+	.index('by_campaignId_and_scope_and_isActive', ['campaignId', 'scope', 'isActive']);
 
 // Who a task is on. Polymorphic because the same job can belong to a staff
 // member or to a contact — and once contacts.authUserId is set the two are the
@@ -292,6 +322,12 @@ const tasks = defineTable({
 	// pick up a task belonging to another campaign. Required for both sources:
 	// every task belongs to exactly one campaign even when it names no project.
 	campaignId: v.id('campaigns'),
+	// Trip work. NOT mutually exclusive with projectId: "visit the Rahman family"
+	// is a checklist item on a trip AND about a record, and a task carrying both
+	// is the one place a trip legitimately feeds an impact tag. The existing rule
+	// is unchanged and still does the work — writes refuse `impactTag` when
+	// projectId is unset, because impact stats count DISTINCT projectId.
+	tripId: v.optional(v.id('trips')),
 	source: v.union(v.literal('template'), v.literal('manual')),
 	// The taskTemplates version this was created against — templates are
 	// append-only, so a task must remember whose wording it agreed to. Set iff
@@ -327,6 +363,26 @@ const tasks = defineTable({
 	// unique(projectId, key) for template tasks only
 	.index('by_projectId', ['projectId'])
 	.index('by_projectId_and_key', ['projectId', 'key'])
+	// The trip twins of the two above, and the bounded read that instantiation
+	// dedupes against.
+	//
+	// NOT unique(tripId, key), unlike the project pair above. A `perAttendee`
+	// checklist item deliberately fans out to one row per traveller, all sharing
+	// that pair and told apart by `assignee.contactId` — so instantiation dedupes
+	// on (tripId, key) for a trip-wide item and (tripId, key, contactId) for a
+	// per-attendee one. Reading this index as a uniqueness guarantee would make
+	// `.unique()` throw the moment a trip has two travellers.
+	//
+	// ROLLOUT, not a property of these lines: this is the largest table in the
+	// schema — one row per checklist item per record per campaign — and adding an
+	// index to a large table blocks the deploy until its backfill finishes. So the
+	// FIRST production deploy of this schema declares both as
+	// `{ fields: [...], staged: true }` and a SECOND deploy restores the form
+	// below. They are committed unstaged because a staged index cannot be queried,
+	// and everything downstream of here — instantiation, the cascade, the trip
+	// page — reads them. See PLAN-trips.md §13.
+	.index('by_tripId', ['tripId'])
+	.index('by_tripId_and_key', ['tripId', 'key'])
 	.index('by_campaignId_and_status', ['campaignId', 'status'])
 	.index('by_campaignId_and_impactTag', ['campaignId', 'impactTag'])
 	// The admin-wide list, and its campaign-scoped twin above. The orgId prefix
@@ -1231,12 +1287,227 @@ const projectMembers = defineTable({
 	// team_lead | leader | attendee | member | volunteer. Text rather than a
 	// union so a campaign can use a word that fits its own work.
 	role: v.string(),
+	// Which side of the work this person is on. `served` is the family the
+	// campaign exists for; `team` is the organization's own people — the staffer,
+	// the volunteer, the trip goer standing in the photograph. `role` cannot
+	// answer this: it is free text so a campaign can use its own vocabulary,
+	// which is exactly why no code should have to recognize "Team Lead",
+	// "team_lead", and "Site Coordinator" as the same side of the work.
+	//
+	// On the LINK and not on the contact, because a contact's identity is
+	// campaign-agnostic: the same person is a beneficiary of one campaign and a
+	// volunteer on another campaign's trip.
+	//
+	// Absent means `served`, deliberately: every row written before this column
+	// existed was entered as a person on a record, and reading those as `team`
+	// would silently drop them out of an already-published impact number. New
+	// rows are written explicitly, so the ambiguity has a shrinking lifetime.
+	//
+	// `campaignMemberships` deliberately does NOT get this column — nothing
+	// counts it toward a published stat, so there the same ambiguity is a display
+	// label rather than a wrong figure. If anything ever does count it, it
+	// inherits this exact bug and the fix is this same column on that table.
+	side: v.optional(v.union(v.literal('served'), v.literal('team'))),
 	attributes: v.record(v.string(), attributeValue)
 })
 	// unique(projectId, contactId)
 	.index('by_projectId_and_contactId', ['projectId', 'contactId'])
 	.index('by_projectId', ['projectId'])
 	.index('by_contactId', ['contactId']);
+
+// ============================================================
+// Trips
+// ============================================================
+// A campaign run as a missions trip: a group of the organization's own people
+// travels somewhere, on dates, with flights, to do the campaign's work — and
+// while they are there they visit some of the campaign's records.
+//
+// Internal-only, deliberately: no isPublished, no public query, no site route.
+// A published trip page is a CORRELATION of exactly the facts the rest of this
+// schema spends its privacy budget keeping apart — a country, a two-week
+// window, the names of the people going, and the records they will visit. Each
+// is individually mild; together they say who was visited, where, and when. A
+// public "our team went to Pakistan in December" story belongs in `updates`,
+// which has the second-pair-of-eyes publish gate and lets prose say what
+// happened without publishing a roster and a visit schedule.
+//
+// The travellers are the `team` side of projectMembers.side above, which is why
+// they live here rather than becoming more projectMembers rows. See
+// PLAN-trips.md.
+
+// A trip: people from the organization travelling somewhere, on dates, to do a
+// campaign's work.
+const trips = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+
+	// A trip needs a handle that survives the destination being renamed and two
+	// trips going to the same country. Prefilled `{Campaign} — {Project} —
+	// {startOn}` by the create dialog; the value is the user's from then on, the
+	// same contract updates.slug has and for the same reason — a handle that
+	// silently rewrites itself is not a handle.
+	name: v.string(),
+
+	// ISO YYYY-MM-DD, for the same reason tasks.dueOn is: a trip that runs
+	// Dec 1–14 runs those days for everyone reading the page. Epoch ms would
+	// start it on Nov 30 for half of them.
+	startOn: v.string(),
+	endOn: v.string(),
+
+	// Freeform — "Pakistan", "Lahore, Pakistan", "Northern Thailand". A heading,
+	// not a geocode: no place table survives the first trip to somewhere it does
+	// not list, and this app's destinations are exactly the places a gazetteer
+	// is thin on.
+	destination: v.string(),
+	// Two-letter ISO, optional, for grouping and flags only. Never required —
+	// a trip can be domestic, or to a place whose code is politically contested.
+	countryCode: v.optional(v.string()),
+
+	status: v.union(
+		v.literal('planning'),
+		v.literal('confirmed'),
+		v.literal('completed'),
+		v.literal('cancelled')
+	),
+
+	summary: v.optional(v.string()),
+	notes: v.optional(v.string())
+})
+	.index('by_campaignId', ['campaignId'])
+	// The trip list is "soonest first" on both pages, so the common read is in
+	// index order rather than a sort in the handler.
+	.index('by_campaignId_and_startOn', ['campaignId', 'startOn'])
+	.index('by_orgId_and_startOn', ['orgId', 'startOn']);
+
+// Trip <-> project. Many-to-many: one trip visits several records, and the same
+// record is visited again on next year's trip. Association is optional in both
+// directions — a trip may exist before anyone has decided which families it
+// reaches, and most records are never visited at all.
+const tripProjects = defineTable({
+	orgId: v.string(),
+	tripId: v.id('trips'),
+	projectId: v.id('projects'),
+	// "Half day, morning only" — trip-specific, so it belongs on the link.
+	note: v.optional(v.string())
+})
+	// unique(tripId, projectId)
+	.index('by_tripId_and_projectId', ['tripId', 'projectId'])
+	.index('by_tripId', ['tripId'])
+	.index('by_projectId', ['projectId']);
+
+// Who is going. The organization's own people — the `team` side of
+// projectMembers.side — which is why this table exists at all rather than being
+// more projectMembers rows.
+const tripAttendees = defineTable({
+	orgId: v.string(),
+	tripId: v.id('trips'),
+	// Carried directly, never reached by traversal — the same choice `tasks` and
+	// `updates` make, and for the same reason: the campaign roster reads this by
+	// campaign, and a query that had to traverse could pick up a row belonging
+	// to another campaign.
+	campaignId: v.id('campaigns'),
+	contactId: v.id('contacts'),
+
+	// Free text, same as projectMembers.role: "Coordinator", "Translator",
+	// "Medic". This is the parenthetical in "Eman Hernandez (Coordinator)".
+	role: v.optional(v.string()),
+	// A flag rather than role === 'leader', because the Trip Leaders block is an
+	// index lookup and `role` is free text an org spells however it likes.
+	isLeader: v.boolean(),
+
+	// Where this person is in going, which is a fact about THIS journey and not
+	// about them: someone who declined December is still on the March roster.
+	status: v.union(
+		v.literal('invited'),
+		v.literal('confirmed'),
+		v.literal('declined'),
+		v.literal('cancelled')
+	),
+	notes: v.optional(v.string())
+})
+	// unique(tripId, contactId) — keyed to the TRIP, not the campaign. A person
+	// can go on several trips in the same campaign, so a (campaignId, contactId)
+	// key would make the second trip a duplicate-key error or, worse, an
+	// overwrite of the first trip's roster.
+	.index('by_tripId_and_contactId', ['tripId', 'contactId'])
+	.index('by_tripId', ['tripId'])
+	.index('by_tripId_and_isLeader', ['tripId', 'isLeader'])
+	.index('by_contactId', ['contactId'])
+	.index('by_campaignId', ['campaignId']);
+
+// One flight leg. A child table rather than airline/flightNumber columns on the
+// trip, because nobody flies to Pakistan on one flight: it is DFW → DOH → ISB,
+// and back. A single pair is wrong on the first real trip, and a second pair is
+// wrong on the first trip with two connections.
+const tripSegments = defineTable({
+	orgId: v.string(),
+	tripId: v.id('trips'),
+	// Absent = the group itinerary. Present = this one person's own leg — one
+	// attendee joins from another city, one stays a week longer and flies back
+	// alone. One table rather than two, because every column is identical and
+	// the trip page renders them in one list.
+	attendeeId: v.optional(v.id('tripAttendees')),
+
+	direction: v.union(v.literal('outbound'), v.literal('return')),
+	// Leg order within a direction: DFW->DOH is 0, DOH->ISB is 1.
+	order: v.number(),
+
+	airline: v.string(),
+	flightNumber: v.string(),
+	// IATA, uppercased on write. Optional because a leg can be entered before
+	// the routing is known.
+	departureAirport: v.optional(v.string()),
+	arrivalAirport: v.optional(v.string()),
+
+	// LOCAL WALL CLOCK at the airport, 'YYYY-MM-DDTHH:mm' with NO zone suffix —
+	// what is printed on the ticket, and what is rendered verbatim. Never parsed
+	// with `new Date()`, which would silently reinterpret it in the server's or
+	// the viewer's zone.
+	//
+	// The opposite treatment to tasks.dueOn and for the opposite reason: a due
+	// date is a calendar day, but a departure is a real instant quoted to a
+	// traveller in the departure airport's local time. Epoch ms alone would
+	// render in the VIEWER's zone, so the coordinator in Tulsa would see a
+	// departure time that appears nowhere on the ticket.
+	departureAt: v.string(),
+	arrivalAt: v.string(),
+	// IANA ('America/Chicago'). The half that makes the wall clock computable:
+	// durations, ordering across the date line, and "has it left yet" all resolve
+	// through this. Optional, because a coordinator typing a ticket at midnight
+	// should not be blocked on it — every consumer degrades to displaying the
+	// wall clock and declining to compute.
+	departureTimeZone: v.optional(v.string()),
+	arrivalTimeZone: v.optional(v.string()),
+
+	confirmationCode: v.optional(v.string()),
+	notes: v.optional(v.string())
+})
+	.index('by_tripId', ['tripId'])
+	.index('by_tripId_and_direction_and_order', ['tripId', 'direction', 'order'])
+	.index('by_attendeeId', ['attendeeId']);
+
+// What a trip PLANS to spend. Planned only: actuals live in the ledger, and the
+// `allocations.tripId` that would attribute them is specified but not built —
+// see PLAN-trips.md §7. Trip-owned data that nothing else reads or writes.
+const tripBudgetLines = defineTable({
+	orgId: v.string(),
+	tripId: v.id('trips'),
+	// "Airfare", "Lodging", "Ground transport", "Visas", "Insurance". Free text
+	// with a suggested list, not a union: what a trip spends on is the org's
+	// business, and a union is a schema change every time.
+	label: v.string(),
+	// Integer cents, always — the rule the whole ledger follows.
+	amountCents: v.number(),
+	// True when the amount is PER PERSON and the line total is amount x roster.
+	// Airfare is quoted per seat and lodging per bed; a planner multiplying by
+	// hand gets it wrong the first time somebody joins the trip, and gets it
+	// wrong silently.
+	perAttendee: v.boolean(),
+	notes: v.optional(v.string()),
+	order: v.number()
+})
+	.index('by_tripId', ['tripId'])
+	.index('by_tripId_and_order', ['tripId', 'order']);
 
 // Custom fields engine. One pair of tables powers custom fields for every
 // entity and both scopes. A record's applicable fields are all org-scope fields
@@ -1355,6 +1626,11 @@ export default defineSchema({
 	households,
 	householdMembers,
 	projectMembers,
+	trips,
+	tripProjects,
+	tripAttendees,
+	tripSegments,
+	tripBudgetLines,
 	customFieldCategories,
 	customFieldDefinitions,
 	campaignAssignments,

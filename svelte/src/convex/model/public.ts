@@ -237,12 +237,19 @@ export async function toPublicProject(
 	// Donors attached to this record are excluded: memberCount is published as
 	// the household's size, so counting sponsors would both overstate it and
 	// hint at how many donors a given family has.
+	//
+	// The organization's own team is excluded for a sharper reason. This filter
+	// feeds the public project page, so it decides both the household size
+	// published for a family AND which publicFirstName values are listed as its
+	// members. Without `side`, a trip goer attached to this record would be
+	// counted as part of the household and, if they have a public first name,
+	// named on the public site as a member of a family they merely visited.
 	const memberLinks = (
 		await ctx.db
 			.query('projectMembers')
 			.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
 			.collect()
-	).filter((link) => isPersonReachedRole(link.role));
+	).filter((link) => isPersonReachedRole(link.role, link.side));
 
 	// Only members with an explicit public first name are listed. A member
 	// without one is counted, never named.

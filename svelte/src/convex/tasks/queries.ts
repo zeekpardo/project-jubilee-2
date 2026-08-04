@@ -19,7 +19,12 @@ import type { QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { authComponent, createAuth } from '../auth';
 import { getAccess } from '../model/access';
-import { activeTaskTemplate, listProjectTasks } from '../model/tasks';
+import {
+	activeTaskTemplate,
+	listProjectTasks,
+	listTripTasks,
+	pendingTripTasks
+} from '../model/tasks';
 import { resolvePersonIdentity } from '../model/identity';
 import {
 	BULK_TASK_MAX,
@@ -98,6 +103,59 @@ export const listProjectChecklist = query({
 				new Map(campaign ? [[campaign._id as string, campaign]] : [])
 			),
 			pendingTemplateItems: (template?.items ?? []).filter((item) => !have.has(item.key)).length,
+			hasActiveTemplate: template !== null
+		};
+	}
+});
+
+/**
+ * A trip's travel-readiness checklist, answering the same two questions
+ * `listProjectChecklist` does: the rows, and how many the active TRIP checklist
+ * would still add.
+ *
+ * `pendingTemplateItems` counts the per-attendee fan-out, not the items — a
+ * template of three items and twelve travellers with nothing created yet is
+ * thirty-something rows, and a button offering "add 3" that adds 30 has lied.
+ * It is computed by the SAME function the sync mutation writes from, so the
+ * number offered and the rows created cannot drift apart.
+ */
+export const listTripChecklist = query({
+	args: { tripId: v.id('trips') },
+	handler: async (ctx, args) => {
+		// Gated twice off ONE `getAccess`, exactly as the project checklist is: a
+		// trip's campaign is only known once the trip is loaded. Trips carry no
+		// capability of their own — `projects:read` scoped to the campaign, per the
+		// plan's access section.
+		const access = await getAccess(ctx);
+		if (!access.orgId || !can(access, 'projects:read')) return EMPTY_CHECKLIST;
+		const orgId = access.orgId;
+
+		const trip = await ctx.db.get('trips', args.tripId);
+		if (!trip || trip.orgId !== orgId) return EMPTY_CHECKLIST;
+		if (!can(access, 'projects:read', trip.campaignId)) return EMPTY_CHECKLIST;
+
+		const tasks = await listTripTasks(ctx, args.tripId);
+		const { template, missing } = await pendingTripTasks(ctx, trip);
+
+		const campaign = await ctx.db.get('campaigns', trip.campaignId);
+		const hydrated = await hydrateTasks(
+			ctx,
+			tasks,
+			new Map(campaign ? [[campaign._id as string, campaign]] : [])
+		);
+
+		return {
+			// The model's tie-break is a contact id, which is stable and meaningless.
+			// Names exist only after hydration, so the roster order a person actually
+			// reads — the twelve rows of one passport item, alphabetical — is applied
+			// here rather than in the model.
+			tasks: hydrated.sort(
+				(a, b) =>
+					a.order - b.order ||
+					(a.key ?? '').localeCompare(b.key ?? '') ||
+					(a.assigneeName ?? '').localeCompare(b.assigneeName ?? '')
+			),
+			pendingTemplateItems: missing.length,
 			hasActiveTemplate: template !== null
 		};
 	}

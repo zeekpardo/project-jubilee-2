@@ -323,5 +323,118 @@ export const runAll = migrations.runner([
 	// Reads `transparency`, so it must run before the one that drops it.
 	internal.migrations.renameTransparency,
 	internal.migrations.dropTransparency,
-	internal.migrations.backfillUpdateSlugs
+	internal.migrations.backfillUpdateSlugs,
+	internal.migrations.backfillLedgerTotals
 ]);
+
+// ------------------------------------------------------------------
+// The budget page stops reading the whole ledger
+// ------------------------------------------------------------------
+// `getReconciliation` and `listUnallocated` used to load EVERY transaction and
+// EVERY allocation in an org, on every subscription tick, to produce five
+// numbers and an inbox. That is a scan whose cost grows with everything the
+// organization has ever done, and Convex caps documents read per query — so it
+// does not degrade gracefully, it eventually fails outright. Online giving is
+// about to make donations the highest-volume row type in the system.
+//
+// Both now read denormalized state instead: `transactions.allocatedCents` and
+// `isFullyAllocated` per row, and one `orgMoneyTotals` row per org. Going
+// forward those are maintained by the triggers in `functions.ts`, so no write
+// site has to remember anything. This backfills what already exists.
+//
+// DO NOT ADD `parallelize: true` TO THIS ONE, for a different reason than
+// `backfillUpdateSlugs` above but with the same shape of consequence. Every
+// transaction in an org accumulates into that org's single totals row, so
+// parallel rows would read-modify-write the same document concurrently and
+// lose contributions. Nothing would fail — the org's Received figure would
+// simply be too low, silently and permanently, which is the worst way for a
+// money number to be wrong.
+//
+// Idempotent by the per-row guard: a transaction that already carries
+// `isFullyAllocated` is skipped entirely, contribution included, so a re-run
+// costs no writes and cannot double-count. To rebuild from scratch, run
+// `migrations:resetLedgerTotals` first.
+export const backfillLedgerTotals = migrations.define({
+	table: 'transactions',
+	migrateOne: async (ctx, transaction) => {
+		// Already migrated. Skipping BEFORE touching the totals is what makes a
+		// second pass safe.
+		if (transaction.isFullyAllocated !== undefined) return;
+
+		const allocations = await ctx.db
+			.query('allocations')
+			.withIndex('by_transactionId', (q) => q.eq('transactionId', transaction._id))
+			.take(200);
+
+		const allocatedCents = allocations.reduce((sum, row) => sum + row.amountCents, 0);
+		// Clamped for the same reason the trigger clamps: the invariant says
+		// sum(allocations) <= amount, but a total that can go negative from one
+		// bad legacy row is not a total worth trusting.
+		const unallocated = Math.max(0, transaction.amountCents - allocatedCents);
+
+		const totals = await ctx.db
+			.query('orgMoneyTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', transaction.orgId))
+			.unique();
+
+		const base = totals ?? {
+			receivedCents: 0,
+			sentCents: 0,
+			spentCents: 0,
+			unallocatedDonationCents: 0,
+			unallocatedTransferCents: 0,
+			unallocatedExpenditureCents: 0
+		};
+
+		const next = {
+			receivedCents:
+				base.receivedCents + (transaction.type === 'donation' ? transaction.amountCents : 0),
+			sentCents: base.sentCents + (transaction.type === 'transfer' ? transaction.amountCents : 0),
+			spentCents:
+				base.spentCents + (transaction.type === 'expenditure' ? transaction.amountCents : 0),
+			unallocatedDonationCents:
+				base.unallocatedDonationCents + (transaction.type === 'donation' ? unallocated : 0),
+			unallocatedTransferCents:
+				base.unallocatedTransferCents + (transaction.type === 'transfer' ? unallocated : 0),
+			unallocatedExpenditureCents:
+				base.unallocatedExpenditureCents + (transaction.type === 'expenditure' ? unallocated : 0)
+		};
+
+		if (totals) {
+			await ctx.db.patch('orgMoneyTotals', totals._id, next);
+		} else {
+			await ctx.db.insert('orgMoneyTotals', { orgId: transaction.orgId, ...next });
+		}
+
+		// `isFullyAllocated` is written explicitly rather than left to a default,
+		// including for rows that ARE fully allocated. `listUnallocated` ranges on
+		// `isFullyAllocated: false`, and a row whose attribution we never
+		// established belongs in that inbox rather than silently outside it.
+		return { allocatedCents, isFullyAllocated: allocatedCents >= transaction.amountCents };
+	}
+});
+
+/**
+ * Clears the denormalized ledger state so `backfillLedgerTotals` can rebuild it.
+ *
+ * The repair path. These numbers are derived, so the source rows are always
+ * recoverable — but a total that has drifted has no way to notice on its own,
+ * and "delete it and recompute" is a far better answer than trying to work out
+ * by how much it is wrong.
+ *
+ * Run this, then `backfillLedgerTotals`, then check the result against
+ * `transactions:auditLedgerTotals`.
+ */
+export const resetLedgerTotals = migrations.define({
+	table: 'transactions',
+	migrateOne: async (ctx, transaction) => {
+		const totals = await ctx.db
+			.query('orgMoneyTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', transaction.orgId))
+			.unique();
+		if (totals) await ctx.db.delete('orgMoneyTotals', totals._id);
+		return { allocatedCents: undefined, isFullyAllocated: undefined } as Partial<
+			Doc<'transactions'>
+		>;
+	}
+});

@@ -1,5 +1,5 @@
 import { ConvexError, v } from 'convex/values';
-import { mutation } from '../_generated/server';
+import { mutation } from '../functions';
 import type { Doc } from '../_generated/dataModel';
 import { createCampaignModel } from '../model/campaigns';
 import { requireCapability } from '../model/access';

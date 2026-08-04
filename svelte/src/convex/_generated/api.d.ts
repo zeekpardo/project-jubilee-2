@@ -32,6 +32,7 @@ import type * as deviceAuthorization from "../deviceAuthorization.js";
 import type * as documents_mutations from "../documents/mutations.js";
 import type * as documents_queries from "../documents/queries.js";
 import type * as email from "../email.js";
+import type * as functions from "../functions.js";
 import type * as households_mutations from "../households/mutations.js";
 import type * as households_queries from "../households/queries.js";
 import type * as http from "../http.js";
@@ -144,6 +145,7 @@ declare const fullApi: ApiFromModules<{
   "documents/mutations": typeof documents_mutations;
   "documents/queries": typeof documents_queries;
   email: typeof email;
+  functions: typeof functions;
   "households/mutations": typeof households_mutations;
   "households/queries": typeof households_queries;
   http: typeof http;

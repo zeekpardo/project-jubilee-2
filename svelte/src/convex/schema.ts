@@ -543,12 +543,58 @@ const transactions = defineTable({
 	// Donor attribution (donations). Cleared, not cascaded, if the contact is
 	// deleted — the money still moved.
 	contactId: v.optional(v.id('contacts')),
-	note: v.optional(v.string())
+	note: v.optional(v.string()),
+
+	// How much of this transaction its allocations account for, and whether
+	// that covers the whole thing. Both are DERIVED — the allocations remain
+	// the source of truth — and both are maintained by the trigger in
+	// `functions.ts`, never by hand.
+	//
+	// They exist so the allocation inbox can be an indexed lookup instead of
+	// reading every transaction and every allocation in the org to subtract
+	// one from the other. Optional because rows written before the backfill
+	// have neither; `allocatedCents ?? 0` is the safe read, and
+	// `isFullyAllocated !== false` is deliberately NOT — an unmigrated row
+	// must surface in the inbox rather than hide in it.
+	allocatedCents: v.optional(v.number()),
+	isFullyAllocated: v.optional(v.boolean())
 })
 	.index('by_orgId', ['orgId'])
 	.index('by_orgId_and_type', ['orgId', 'type'])
 	.index('by_orgId_and_occurredOn', ['orgId', 'occurredOn'])
-	.index('by_contactId', ['contactId']);
+	.index('by_contactId', ['contactId'])
+	// The allocation inbox: "which of this org's money is not yet attributed".
+	.index('by_orgId_and_isFullyAllocated', ['orgId', 'isFullyAllocated']);
+
+// The ledger totals, kept per org so the budget page can render three numbers
+// without reading three tables' worth of rows to add them up.
+//
+// A counter row rather than the `@convex-dev/aggregate` component, following
+// the project guideline's own split: aggregate is for counts, ranks, offsets
+// and arbitrary key ranges, while "a simple total" is what a denormalized
+// counter document is for. This is six fixed sums per org.
+//
+// The tradeoff being accepted: every transaction write in an org contends on
+// this one row, so a burst of simultaneous donations will produce OCC retries.
+// That is fine at the scale a nonprofit's giving day produces, and if it ever
+// stops being fine the upgrade is the aggregate component, whose tree
+// structure exists precisely to spread that contention out.
+//
+// Never written by hand. The trigger in `functions.ts` owns it, which is what
+// keeps it honest across the fourteen places that write a transaction.
+const orgMoneyTotals = defineTable({
+	orgId: v.string(),
+	// Sums of `transactions.amountCents` by type.
+	receivedCents: v.number(),
+	sentCents: v.number(),
+	spentCents: v.number(),
+	// Sums of the UNALLOCATED remainder by type — what the inbox badges count.
+	unallocatedDonationCents: v.number(),
+	unallocatedTransferCents: v.number(),
+	unallocatedExpenditureCents: v.number()
+})
+	// unique(orgId)
+	.index('by_orgId', ['orgId']);
 
 // Attributes part of a transaction to a campaign, and optionally to one
 // project. A project-less allocation is a campaign-level/overhead cost.
@@ -1259,6 +1305,7 @@ export default defineSchema({
 	updates,
 	transactions,
 	allocations,
+	orgMoneyTotals,
 	stripeAccounts,
 	donationIntents,
 	recurringGifts,

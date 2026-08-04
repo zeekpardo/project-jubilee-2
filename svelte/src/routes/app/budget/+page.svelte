@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { useQuery } from '@mmailaender/convex-svelte';
+	import { useQuery, usePaginatedQuery } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 
@@ -39,20 +39,41 @@
 	);
 	const reconciliation = $derived(reconciliationResponse?.data);
 
-	const transactionsResponse = useQuery(api.transactions.queries.listTransactions, () =>
-		auth.isAuthenticated && canRead ? {} : 'skip'
+	let tab = $state<string>('donation');
+
+	// Only the ACTIVE tab's rows, and only a page of them.
+	//
+	// This used to load every transaction in the organization and filter the
+	// array three times in the browser, once per tab. That is a scan of the
+	// whole ledger to render twenty rows, and Convex caps documents read per
+	// query — so as donations accumulate it does not get slower, it stops
+	// working. Re-subscribing per tab costs one query on tab change and bounds
+	// the read permanently.
+	const ledger = usePaginatedQuery(
+		api.transactions.queries.pageTransactions,
+		() =>
+			auth.isAuthenticated && canRead && tab !== 'unallocated'
+				? { type: tab as TransactionType }
+				: 'skip',
+		{ initialNumItems: 25 }
 	);
-	const transactions = $derived(transactionsResponse?.data ?? []);
-	const loading = $derived(transactionsResponse?.isLoading ?? false);
+	const transactions = $derived(ledger.results ?? []);
+	const loading = $derived(ledger.status === 'LoadingFirstPage');
 
 	const unallocatedResponse = useQuery(api.transactions.queries.listUnallocated, () =>
 		auth.isAuthenticated && canRead ? {} : 'skip'
 	);
 	const unallocated = $derived(unallocatedResponse?.data ?? []);
 	const unallocatedLoading = $derived(unallocatedResponse?.isLoading ?? false);
-	const remainingById = $derived(
-		new Map<string, number>(unallocated.map((row) => [row._id as string, row.remainingCents]))
-	);
+	// Read off the row rather than cross-referenced against the unallocated
+	// list. That list is now bounded, so a transaction past the bound would
+	// have rendered as "fully allocated" when it is nothing of the sort —
+	// exactly the kind of quiet wrongness this whole change is about. Every
+	// transaction carries its own allocated total, maintained by the trigger in
+	// `convex/functions.ts`.
+	function remainingFor(transaction: { amountCents: number; allocatedCents?: number }): number {
+		return transaction.amountCents - (transaction.allocatedCents ?? 0);
+	}
 
 	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
 		auth.isAuthenticated && canReadContacts ? {} : 'skip'
@@ -70,16 +91,17 @@
 		{ value: 'expenditure', label: () => m.money_expenditures() }
 	] as const;
 
-	let tab = $state<string>('donation');
-
 	const tiles = $derived([
 		{ key: 'received', label: m.money_received(), value: reconciliation?.receivedCents ?? 0 },
 		{ key: 'sent', label: m.money_sent(), value: reconciliation?.sentCents ?? 0 },
 		{ key: 'spent', label: m.money_spent(), value: reconciliation?.spentCents ?? 0 }
 	]);
 
+	// The query is already scoped to the active tab, so every other tab's
+	// content renders empty — which is what the hidden panels should show
+	// anyway. Keeping the helper means the template below is unchanged.
 	function rowsFor(type: string) {
-		return transactions.filter((transaction) => transaction.type === type);
+		return type === tab ? transactions : [];
 	}
 
 	let formOpen = $state(false);
@@ -194,9 +216,9 @@
 											{transaction.reference || transaction.note || '—'}
 										</Table.Cell>
 										<Table.Cell class="tabular-nums">
-											{#if remainingById.has(transaction._id)}
+											{#if remainingFor(transaction) > 0}
 												<Badge variant="warning">
-													{formatCents(remainingById.get(transaction._id) ?? 0)}
+													{formatCents(remainingFor(transaction))}
 												</Badge>
 											{:else}
 												<Badge variant="success">{m.money_fullyAllocated()}</Badge>
@@ -236,6 +258,19 @@
 							</Table.Body>
 						</Table.Root>
 					</div>
+
+					{#if ledger.status === 'CanLoadMore' || ledger.status === 'LoadingMore'}
+						<div class="flex justify-center pt-3">
+							<Button
+								variant="outline"
+								onclick={() => ledger.loadMore(25)}
+								loading={ledger.status === 'LoadingMore'}
+								disabled={ledger.status === 'LoadingMore'}
+							>
+								{m.donations_loadMore()}
+							</Button>
+						</div>
+					{/if}
 				{/if}
 			</Tabs.Content>
 		{/each}

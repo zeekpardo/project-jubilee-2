@@ -109,7 +109,10 @@ export const listMemberDimensions = query({
 				.withIndex('by_projectId', (q) => q.eq('projectId', project._id))
 				.collect();
 			for (const link of links) {
-				if (!isPersonReachedRole(link.role)) continue;
+				// Same gate as the stat itself, so the facets offered in the stat
+				// builder describe the population the stat will actually count: a
+				// `team` row stops contributing filter options.
+				if (!isPersonReachedRole(link.role, link.side)) continue;
 				const relationship = link.attributes?.relationship;
 				if (typeof relationship === 'string' && relationship.trim()) {
 					relationships.add(relationship.trim());

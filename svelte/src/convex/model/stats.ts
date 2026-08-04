@@ -80,6 +80,23 @@ export type ComputeStatsOptions = {
 	window?: StatWindow;
 };
 
+/**
+ * A read-only what-if overlay, for the member-side audit report (PLAN-trips
+ * §13). The listed `projectMembers` ids are counted AS IF they carried
+ * `side: 'team'`; nothing is written and no other read is affected.
+ *
+ * It exists so the report's projected number comes out of THIS engine rather
+ * than a second implementation of the counting rules. A screen that says "12
+ * becomes 9" and is wrong about it is worse than no screen at all, and the
+ * only way to be sure is to ask the same code the site publishes from.
+ *
+ * Every other caller passes nothing and gets exactly what it got before.
+ */
+export type StatWhatIf = {
+	/** `projectMembers._id` values, as strings. */
+	teamMemberIds: ReadonlySet<string>;
+};
+
 function withinWindow(at: number | undefined, window: StatWindow | undefined): boolean {
 	if (!window || (window.from === undefined && window.to === undefined)) return true;
 	if (at === undefined) return false;
@@ -169,7 +186,11 @@ type MemberRow = {
  * per member — so it is built lazily and only when a member stat is actually
  * configured.
  */
-async function loadMembers(ctx: QueryCtx, scope: StatScope): Promise<MemberRow[]> {
+async function loadMembers(
+	ctx: QueryCtx,
+	scope: StatScope,
+	whatIf?: StatWhatIf
+): Promise<MemberRow[]> {
 	const out: MemberRow[] = [];
 	// A contact can be attached to several records; resolving them once keeps a
 	// large campaign from re-reading the same person per record.
@@ -182,8 +203,16 @@ async function loadMembers(ctx: QueryCtx, scope: StatScope): Promise<MemberRow[]
 			.collect();
 
 		for (const link of links) {
-			// A donor attached to a record is not a person that record reached.
-			if (!isPersonReachedRole(link.role)) continue;
+			// A donor attached to a record is not a person that record reached,
+			// and neither is the organization's own team — the staffer or trip
+			// goer standing in the photograph. The link's `side` says which,
+			// falling back to the role denylist for rows written before it.
+			//
+			// The overlay is the audit report asking "what would this number be
+			// if these rows were marked team". It changes what is COUNTED here
+			// and nothing else — the row on disk is untouched.
+			const side = whatIf?.teamMemberIds.has(link._id as string) ? 'team' : link.side;
+			if (!isPersonReachedRole(link.role, side)) continue;
 
 			const contactId = link.contactId as string;
 			let resolved = contactCache.get(contactId);
@@ -493,7 +522,8 @@ export type EvaluatedStat = {
 export async function evaluateStats(
 	ctx: QueryCtx,
 	campaign: Doc<'campaigns'>,
-	window?: StatWindow
+	window?: StatWindow,
+	whatIf?: StatWhatIf
 ): Promise<EvaluatedStat[]> {
 	const configs = resolveStatConfigs(campaign.publicStats as StatConfig[] | undefined);
 	if (configs.length === 0) return [];
@@ -508,7 +538,7 @@ export async function evaluateStats(
 	// most once per call and only when something actually asks for people —
 	// a member stat, or one of the reach built-ins.
 	let members: MemberRow[] | null = null;
-	const membersOnce = async () => (members ??= await loadMembers(ctx, scope));
+	const membersOnce = async () => (members ??= await loadMembers(ctx, scope, whatIf));
 
 	// Computed lazily and shared: several built-ins read the same rows. Keyed by
 	// whether a window applies, because a public figure is always lifetime while

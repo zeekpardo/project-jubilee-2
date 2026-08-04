@@ -29,13 +29,25 @@ export const createCampaign = mutation({
 		promoVideoUrl: v.optional(v.string()),
 		accent: v.optional(v.string()),
 		membersEnabled: v.optional(v.boolean()),
+		// Optional, and absent means false — most campaigns never run a trip and
+		// must not grow the feature unless someone asks for it. PLAN-trips.md §2.
+		tripsEnabled: v.optional(v.boolean()),
 		budgetShape: v.optional(budgetShapeValidator),
 		goalTrigger: v.optional(goalTriggerValidator),
 		isPublished: v.optional(v.boolean())
 	},
 	handler: async (ctx, args) => {
 		const { orgId } = await requireCapability(ctx, 'campaign:create');
-		return await createCampaignModel(ctx, { ...args, orgId });
+		// `createCampaignModel` is shared with the seed script and defaults every
+		// column it writes; `tripsEnabled` has no default to write, so it is
+		// patched on only when the caller actually asked for it. Absent stays
+		// absent, which reads as false everywhere.
+		const { tripsEnabled, ...input } = args;
+		const campaignId = await createCampaignModel(ctx, { ...input, orgId });
+		if (tripsEnabled !== undefined) {
+			await ctx.db.patch('campaigns', campaignId, { tripsEnabled });
+		}
+		return campaignId;
 	}
 });
 
@@ -57,6 +69,10 @@ export const updateCampaign = mutation({
 		promoVideoUrl: v.optional(v.string()),
 		accent: v.optional(v.string()),
 		membersEnabled: v.optional(v.boolean()),
+		// See createCampaign: optional, absent = false (PLAN-trips.md §2). The
+		// patch loop below only writes the keys that arrived, so leaving it out of
+		// a save never turns an enabled campaign off.
+		tripsEnabled: v.optional(v.boolean()),
 		budgetShape: v.optional(budgetShapeValidator),
 		goalLabel: v.optional(v.string()),
 		goalVerb: v.optional(v.string()),

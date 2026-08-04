@@ -33,6 +33,7 @@
 	let budgetShape = $state<Campaign['budgetShape']>('flat');
 	let status = $state<Campaign['status']>('active');
 	let membersEnabled = $state(false);
+	let tripsEnabled = $state(false);
 	let isSaving = $state(false);
 
 	// One-time seed — the parent page only mounts this card once the campaign
@@ -51,6 +52,9 @@
 		budgetShape = campaign.budgetShape;
 		status = campaign.status;
 		membersEnabled = campaign.membersEnabled;
+		// Optional column: absent means off, and it is coerced here rather than
+		// left `undefined` so the Switch is always controlled. PLAN-trips.md §2.
+		tripsEnabled = campaign.tripsEnabled === true;
 		loaded = true;
 	});
 
@@ -94,7 +98,8 @@
 				goalTrigger,
 				budgetShape,
 				status,
-				membersEnabled
+				membersEnabled,
+				tripsEnabled
 			});
 			toast.success(m.campaigns_updated());
 		} catch (error) {
@@ -269,6 +274,21 @@
 						disabled={!canWrite}
 						onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
 							membersEnabled = details.checked;
+						}}
+					/>
+				</div>
+				<div class="flex items-start justify-between gap-4 rounded-md border p-4">
+					<div class="min-w-0">
+						<Label>{m.campaignDetail_tripsEnabled()}</Label>
+						<p class="text-muted-foreground mt-1 text-sm">
+							{m.campaignDetail_tripsEnabledHelp()}
+						</p>
+					</div>
+					<Switch
+						checked={tripsEnabled}
+						disabled={!canWrite}
+						onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
+							tripsEnabled = details.checked;
 						}}
 					/>
 				</div>

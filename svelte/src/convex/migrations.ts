@@ -324,7 +324,8 @@ export const runAll = migrations.runner([
 	internal.migrations.renameTransparency,
 	internal.migrations.dropTransparency,
 	internal.migrations.backfillUpdateSlugs,
-	internal.migrations.backfillLedgerTotals
+	internal.migrations.backfillLedgerTotals,
+	internal.migrations.backfillContactSearch
 ]);
 
 // ------------------------------------------------------------------
@@ -436,5 +437,80 @@ export const resetLedgerTotals = migrations.define({
 		return { allocatedCents: undefined, isFullyAllocated: undefined } as Partial<
 			Doc<'transactions'>
 		>;
+	}
+});
+
+// ------------------------------------------------------------------
+// Contacts stop being loaded in full to be searched or counted
+// ------------------------------------------------------------------
+// `listContacts` had two unbounded paths. Without a `limit` it collected the
+// org; WITH a search it collected the org regardless, then filtered in
+// JavaScript and sliced — so the limit never bounded the read at all, and the
+// admin directory ran that on every keystroke.
+//
+// Search now goes through a full-text index over `contacts.searchText`, and
+// the dashboard's People tile reads a maintained count instead of taking
+// `.length` of every person in the organization. Both are derived and both are
+// maintained by the trigger in `functions.ts`; this backfills what exists.
+//
+// DO NOT ADD `parallelize: true`, for the same reason as
+// `backfillLedgerTotals`: every contact in an org increments that org's single
+// count row, so parallel rows would read-modify-write the same document and
+// lose increments. A headcount that is quietly low is worse than a slow
+// migration.
+//
+// Idempotent by the per-row guard. A contact that already has `searchText` is
+// skipped entirely, count included, so a re-run costs nothing and cannot
+// double-count. `resetContactSearch` rebuilds from scratch.
+export const backfillContactSearch = migrations.define({
+	table: 'contacts',
+	migrateOne: async (ctx, contact) => {
+		if (contact.searchText !== undefined) return;
+
+		const totals = await ctx.db
+			.query('orgContactTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', contact.orgId))
+			.unique();
+
+		if (totals) {
+			await ctx.db.patch('orgContactTotals', totals._id, {
+				contactCount: totals.contactCount + 1
+			});
+		} else {
+			await ctx.db.insert('orgContactTotals', { orgId: contact.orgId, contactCount: 1 });
+		}
+
+		// Duplicated from `buildSearchText` in `functions.ts` rather than
+		// imported, deliberately: a migration is a snapshot of what the schema
+		// meant WHEN IT RAN. Importing the live helper would silently change what
+		// an already-executed backfill did the next time someone edits the
+		// haystack, and the trigger will recompute every row it touches anyway.
+		const searchText = [
+			contact.firstName,
+			contact.lastName,
+			contact.givenName,
+			contact.middleName,
+			contact.nickname,
+			contact.emailLower,
+			contact.organization
+		]
+			.filter(Boolean)
+			.join(' ')
+			.toLowerCase();
+
+		return { searchText };
+	}
+});
+
+/** The repair path for the above. Run this, then `backfillContactSearch`. */
+export const resetContactSearch = migrations.define({
+	table: 'contacts',
+	migrateOne: async (ctx, contact) => {
+		const totals = await ctx.db
+			.query('orgContactTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', contact.orgId))
+			.unique();
+		if (totals) await ctx.db.delete('orgContactTotals', totals._id);
+		return { searchText: undefined } as Partial<Doc<'contacts'>>;
 	}
 });

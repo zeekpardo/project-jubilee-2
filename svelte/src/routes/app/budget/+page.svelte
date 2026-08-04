@@ -6,7 +6,6 @@
 	import PageContainer from '$lib/shell/PageContainer.svelte';
 	import { getAccessContext, Can } from '$lib/access';
 	import { getActiveCampaignContext } from '$lib/campaigns/active.svelte';
-	import { contactDisplayName } from '$lib/features/contacts/contact-name';
 	import { formatCents, formatCentsCompact } from '$lib/features/money/format';
 	import { transactionTypeLabel } from '$lib/features/money/labels';
 	import TransactionFormDialog from '$lib/features/money/TransactionFormDialog.svelte';
@@ -75,15 +74,14 @@
 		return transaction.amountCents - (transaction.allocatedCents ?? 0);
 	}
 
+	// Only for the donor picker in the form dialog. The LEDGER's donor column no
+	// longer needs this: `pageTransactions` joins the name onto each row, so
+	// labelling twenty-five rows costs twenty-five id lookups rather than every
+	// contact in the organization.
 	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
 		auth.isAuthenticated && canReadContacts ? {} : 'skip'
 	);
 	const contacts = $derived(contactsResponse?.data ?? []);
-	const donorNames = $derived(
-		new Map<string, string>(
-			contacts.map((contact) => [contact._id as string, contactDisplayName(contact)])
-		)
-	);
 
 	const LEDGER_TABS = [
 		{ value: 'donation', label: () => m.money_donations() },
@@ -208,7 +206,7 @@
 										{#if ledgerTab.value === 'donation'}
 											<Table.Cell class="text-muted-foreground">
 												{transaction.contactId
-													? (donorNames.get(transaction.contactId) ?? m.money_noDonor())
+													? (transaction.donorName || m.money_noDonor())
 													: m.money_noDonor()}
 											</Table.Cell>
 										{/if}

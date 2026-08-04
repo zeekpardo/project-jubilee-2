@@ -10,6 +10,7 @@
 	import * as Select from '$lib/primitives/ui/select';
 	import * as Table from '$lib/primitives/ui/table';
 	import { Button } from '$lib/primitives/ui/button';
+	import { Input } from '$lib/primitives/ui/input';
 	import { Label } from '$lib/primitives/ui/label';
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import * as m from '$lib/i18n/messages';
@@ -35,8 +36,13 @@
 	);
 	const household = $derived(householdResponse?.data);
 
+	// The contact list comes back bounded, so the picker searches the org rather
+	// than listing it — a plain dropdown would silently stop at the first page
+	// and everyone past it could never be added to a household.
+	let contactSearch = $state('');
+
 	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
-		auth.isAuthenticated && open ? {} : 'skip'
+		auth.isAuthenticated && open ? { search: contactSearch.trim() || undefined, limit: 50 } : 'skip'
 	);
 	const contacts = $derived(contactsResponse?.data ?? []);
 
@@ -45,18 +51,30 @@
 		contacts.filter((c) => !(household?.members ?? []).some((mem) => mem.contactId === c._id))
 	);
 
-	const contactCollection = $derived(
-		createListCollection({
-			items: available.map((c) => ({ value: c._id as string, label: contactDisplayName(c) }))
-		})
-	);
 	const roleCollection = createListCollection({
 		items: HOUSEHOLD_ROLES.map((value) => ({ value, label: householdRoleLabel(value) }))
 	});
 
 	let selectedContact = $state<string[]>([]);
+	// Captured when a contact is picked so the chosen name survives a later
+	// search that no longer returns them.
+	let selectedLabel = $state('');
 	let selectedRole = $state<string[]>(['adult']);
 	let working = $state(false);
+
+	const picked = $derived(selectedContact[0]);
+	const contactCollection = $derived(
+		createListCollection({
+			items: [
+				// A pick the current search no longer returns is kept in the list, so the
+				// trigger never goes blank on the person the Add button is about to add.
+				...(picked !== undefined && !available.some((c) => (c._id as string) === picked)
+					? [{ value: picked, label: selectedLabel }]
+					: []),
+				...available.map((c) => ({ value: c._id as string, label: contactDisplayName(c) }))
+			]
+		})
+	);
 
 	async function addMember() {
 		const contactId = selectedContact[0];
@@ -69,6 +87,8 @@
 				role: (selectedRole[0] ?? 'adult') as HouseholdRole
 			});
 			selectedContact = [];
+			selectedLabel = '';
+			contactSearch = '';
 		} catch (error) {
 			toast.error(error instanceof ConvexError ? String(error.data) : m.state_saveFailed());
 		} finally {
@@ -154,11 +174,25 @@
 
 			<div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-end">
 				<div class="flex flex-1 flex-col gap-1.5">
-					<Label>{m.households_addMember()}</Label>
+					<Label for="hm-contact-search">{m.households_addMember()}</Label>
+					<Input
+						id="hm-contact-search"
+						type="search"
+						bind:value={contactSearch}
+						placeholder={m.list_search()}
+						autocomplete="off"
+					/>
 					<Select.Root
 						collection={contactCollection}
 						value={selectedContact}
-						onValueChange={(d: { value: string[] }) => (selectedContact = d.value)}
+						onValueChange={(d: { value: string[] }) => {
+							selectedContact = d.value;
+							const next = d.value[0];
+							if (next)
+								selectedLabel =
+									contactCollection.items.find((item) => item.value === next)?.label ??
+									selectedLabel;
+						}}
 					>
 						<Select.Trigger size="sm" placeholder={m.projects_selectContact()} class="w-full" />
 						<Select.Content>

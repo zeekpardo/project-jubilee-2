@@ -1084,7 +1084,18 @@ const contacts = defineTable({
 	// not one. Nothing about what a portal shows branches on it, and nothing
 	// should; it is a mailing preference.
 	updateDetail: v.optional(v.union(v.literal('summary'), v.literal('full'))),
-	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone')))
+	preferredContact: v.optional(v.union(v.literal('email'), v.literal('mail'), v.literal('phone'))),
+
+	// Everything a person might be searched by, lowercased into one string.
+	//
+	// Convex full-text search indexes exactly ONE field, and a contact is
+	// findable by half a dozen — name, nickname, email, organization. So the
+	// haystack is assembled here rather than searched across columns.
+	//
+	// Derived, and maintained by the trigger in `functions.ts` alongside the
+	// org's contact count. Never written by hand: a stale haystack means a
+	// person who cannot be found by the name they were just renamed to.
+	searchText: v.optional(v.string())
 })
 	// unique(orgId, emailLower) when email present; unique(orgId, authUserId);
 	// unique(orgId, remoteId) when remoteId present
@@ -1092,7 +1103,28 @@ const contacts = defineTable({
 	.index('by_orgId_and_emailLower', ['orgId', 'emailLower'])
 	.index('by_orgId_and_authUserId', ['orgId', 'authUserId'])
 	.index('by_orgId_and_remoteId', ['orgId', 'remoteId'])
-	.index('by_orgId_and_status', ['orgId', 'status']);
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	// `filterFields: ['orgId']` is load-bearing, not an optimization. A search
+	// index without it would happily match contacts across every organization
+	// on the platform — the tenant isolation that `withIndex(q.eq('orgId'))`
+	// gives the other queries for free has to be asked for explicitly here.
+	.searchIndex('search_contacts', {
+		searchField: 'searchText',
+		filterFields: ['orgId']
+	});
+
+// How many contacts an org has, so the dashboard's People tile can show a
+// number without loading every person to count them.
+//
+// Convex has no count operator, and `.collect().length` over a growing table
+// is the exact pattern the guidelines forbid — it reads every row to produce
+// one integer. Maintained by the same trigger that maintains `searchText`.
+const orgContactTotals = defineTable({
+	orgId: v.string(),
+	contactCount: v.number()
+})
+	// unique(orgId)
+	.index('by_orgId', ['orgId']);
 
 // Every address a contact has, including the primary one. Exactly one row per
 // contact carries isPrimary, and the model layer projects it onto
@@ -1315,6 +1347,7 @@ export default defineSchema({
 	receiptCounters,
 	stripeEvents,
 	contacts,
+	orgContactTotals,
 	contactEmails,
 	contactPhones,
 	contactAddresses,

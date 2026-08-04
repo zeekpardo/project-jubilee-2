@@ -1,8 +1,9 @@
 // ============================================================
 // Mutation builders that keep the ledger's derived numbers honest
 // ============================================================
-// `transactions.allocatedCents`, `transactions.isFullyAllocated` and the
-// `orgMoneyTotals` row are all DERIVED. The allocations and transactions
+// `transactions.allocatedCents`, `transactions.isFullyAllocated`,
+// `contacts.searchText` and the `orgMoneyTotals` / `orgContactTotals` rows are
+// all DERIVED. The allocations and transactions
 // themselves remain the source of truth; these exist so the budget page can
 // answer "what did we receive" and "what is unattributed" without reading
 // every row in the org to work it out.
@@ -16,9 +17,10 @@
 // insert/patch/delete on the two ledger tables fires a hook, and no call site
 // has to remember anything. The one rule that makes it work:
 //
-//   ANY mutation that can reach a transaction or allocation write — directly,
-//   through a model helper, or through a cascade — must be defined with the
-//   `mutation` / `internalMutation` exported HERE, not from `_generated/server`.
+//   ANY mutation that can reach a transaction, allocation or contact write —
+//   directly, through a model helper, or through a cascade — must be defined
+//   with the `mutation` / `internalMutation` exported HERE, rather than from
+//   `_generated/server`.
 //
 // Importing the raw builder is not an error anywhere else; plenty of mutations
 // never touch money. It is only these paths that must come through this file.
@@ -184,8 +186,83 @@ triggers.register('transactions', async (ctx, change) => {
 	await ctx.db.patch('orgMoneyTotals', existing._id, addTotals(existing, delta, 1));
 });
 
+// ------------------------------------------------------------
+// Contacts: the search haystack, and how many there are
+// ------------------------------------------------------------
+
 /**
- * Use these anywhere a transaction or allocation might be written.
+ * Everything a person might be searched by, lowercased into one string.
+ *
+ * Convex full-text search indexes exactly ONE field, and a contact is findable
+ * by half a dozen. Rather than search across columns — which the index cannot
+ * do — the haystack is assembled here and indexed as a unit.
+ *
+ * `emailLower` rather than `email`, and no phone number: a search index
+ * tokenizes on word boundaries, so a phone number would only ever match if
+ * typed with identical punctuation, which is worse than not offering it.
+ */
+function buildSearchText(contact: Doc<'contacts'>): string {
+	return [
+		contact.firstName,
+		contact.lastName,
+		contact.givenName,
+		contact.middleName,
+		contact.nickname,
+		contact.emailLower,
+		contact.organization
+	]
+		.filter(Boolean)
+		.join(' ')
+		.toLowerCase();
+}
+
+/**
+ * Keeps a contact findable, and keeps the org's headcount current.
+ *
+ * Both derived values live on one trigger because both change on exactly the
+ * same events. The count is here because Convex has no count operator and the
+ * dashboard's People tile wants a number, not every person — reading the whole
+ * table to call `.length` on it is the pattern this whole change exists to
+ * remove.
+ *
+ * The `searchText` write is guarded against itself: patching a contact fires
+ * this trigger again, so recomputing and re-patching unconditionally would
+ * recurse. Comparing first means the second pass is a no-op and stops.
+ */
+triggers.register('contacts', async (ctx, change) => {
+	if (change.newDoc) {
+		const searchText = buildSearchText(change.newDoc);
+		if (change.newDoc.searchText !== searchText) {
+			await ctx.db.patch('contacts', change.id, { searchText });
+		}
+	}
+
+	// A patch changes no headcount; only arrivals and departures do.
+	const delta =
+		change.operation === 'insert' ? 1 : change.operation === 'delete' ? -1 : 0;
+	if (delta === 0) return;
+
+	const orgId = change.newDoc?.orgId ?? change.oldDoc?.orgId;
+	if (!orgId) return;
+
+	const existing = await ctx.db
+		.query('orgContactTotals')
+		.withIndex('by_orgId', (q) => q.eq('orgId', orgId))
+		.unique();
+
+	if (!existing) {
+		await ctx.db.insert('orgContactTotals', { orgId, contactCount: Math.max(0, delta) });
+		return;
+	}
+	await ctx.db.patch('orgContactTotals', existing._id, {
+		// Clamped because a count that can go negative is worse than one that is
+		// merely stale, and `auditContactTotals` exists to catch the latter.
+		contactCount: Math.max(0, existing.contactCount + delta)
+	});
+});
+
+/**
+ * Use these anywhere a transaction, allocation or contact might be written.
  *
  * Drop-in replacements for the builders in `_generated/server` — same
  * signature, same context, with a `db` that fires the triggers above.

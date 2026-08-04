@@ -3,6 +3,8 @@ import { paginationOptsValidator } from 'convex/server';
 import { internalQuery, query } from '../_generated/server';
 import { readableOrgId } from '../model/access';
 import { transactionTypeValidator } from '../model/money';
+import type { Doc } from '../_generated/dataModel';
+import { contactDisplayName } from '../../lib/features/contacts/contact-name';
 import type { ReconciliationResult } from '../../lib/domain/reconciliation';
 
 /**
@@ -43,7 +45,19 @@ export const listTransactions = query({
 	}
 });
 
-/** The paginated form, for the budget ledger's own tabs. */
+/**
+ * The paginated form, for the budget ledger's own tabs.
+ *
+ * Each row carries its donor's display name, resolved here. The page used to
+ * subscribe to the org's ENTIRE contact list purely to build a
+ * contactId -> name map for labelling twenty-five rows — every donor in the
+ * organization loaded to render one column. Joining per page is bounded by the
+ * page size, and the lookups are `db.get` by id rather than a scan.
+ *
+ * Only the name is exposed, not the contact. A ledger row needs a label; it
+ * does not need the person's email, address or medical notes travelling to the
+ * browser with it.
+ */
 export const pageTransactions = query({
 	args: {
 		paginationOpts: paginationOptsValidator,
@@ -63,9 +77,45 @@ export const pageTransactions = query({
 						.query('transactions')
 						.withIndex('by_orgId_and_type', (q) => q.eq('orgId', orgId).eq('type', type));
 
-		return await rows.order('desc').paginate(args.paginationOpts);
+		const result = await rows.order('desc').paginate(args.paginationOpts);
+
+		// Cached across the page because one major donor commonly accounts for
+		// several rows on it, and a repeated `db.get` for the same id is a read
+		// this query does not need to spend.
+		const names = new Map<string, string | undefined>();
+		const page = await Promise.all(
+			result.page.map(async (transaction) => {
+				if (!transaction.contactId) return { ...transaction, donorName: undefined };
+
+				const key = transaction.contactId as string;
+				if (!names.has(key)) {
+					const contact = await ctx.db.get('contacts', transaction.contactId);
+					// Cross-org contacts cannot appear here — the transaction was
+					// already scoped by orgId — but a contact deleted since the gift
+					// was recorded can, and that resolves to no label rather than a
+					// crash.
+					names.set(key, contact ? contactLabel(contact) : undefined);
+				}
+				return { ...transaction, donorName: names.get(key) };
+			})
+		);
+
+		return { ...result, page };
 	}
 });
+
+/**
+ * The donor's name as a ledger row should show it.
+ *
+ * Delegates to the same helper the client renders with — it is a pure
+ * function with no browser dependencies, and `model/money.ts` already imports
+ * across this boundary for `reconciliation`. Reimplementing the rule here
+ * would mean a mononym or an organization contact eventually rendering one way
+ * in the ledger and another everywhere else.
+ */
+function contactLabel(contact: Doc<'contacts'>): string {
+	return contactDisplayName(contact);
+}
 
 export const getTransaction = query({
 	args: {

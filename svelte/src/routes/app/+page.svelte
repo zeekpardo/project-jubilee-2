@@ -35,7 +35,9 @@
 	);
 	const stages = $derived(toStages(stagesResponse.data));
 
-	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
+	// The tile needs one integer, so it reads the maintained count rather than
+	// subscribing to the org's whole contact list to call `.length` on it.
+	const contactCountResponse = useQuery(api.contacts.queries.countContacts, () =>
 		auth.isAuthenticated && canReadContacts ? {} : 'skip'
 	);
 
@@ -59,7 +61,7 @@
 		{
 			key: 'people',
 			label: m.dash_people(),
-			value: canReadContacts ? String(contactsResponse.data?.length ?? 0) : null
+			value: canReadContacts ? String(contactCountResponse.data ?? 0) : null
 		},
 		{
 			key: 'raised',

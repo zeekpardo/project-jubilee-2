@@ -32,24 +32,27 @@
 	const auth = useAuth();
 	const client = useConvexClient();
 
+	// The contact list comes back bounded, so the picker searches the org rather
+	// than listing it — a plain dropdown would silently stop at the first page
+	// and everyone past it would be unreachable from this dialog.
+	let contactSearch = $state('');
+
 	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
-		auth.isAuthenticated && open ? {} : 'skip'
+		auth.isAuthenticated && open ? { search: contactSearch.trim() || undefined, limit: 50 } : 'skip'
 	);
 	const contacts = $derived(contactsResponse?.data ?? []);
 
 	// Anyone already in the campaign is not offered again.
 	const available = $derived(contacts.filter((c) => !memberContactIds.includes(c._id as string)));
 
-	const contactCollection = $derived(
-		createListCollection({
-			items: available.map((c) => ({ value: c._id as string, label: contactDisplayName(c) }))
-		})
-	);
 	const roleCollection = createListCollection({
 		items: CAMPAIGN_ROLES.map((value) => ({ value, label: campaignRoleLabel(value) }))
 	});
 
 	let selectedContact = $state<string[]>([]);
+	// Captured when a contact is picked so the chosen name survives a later
+	// search that no longer returns them.
+	let selectedLabel = $state('');
 	let role = $state<string[]>(['attendee']);
 	let firstName = $state('');
 	let lastName = $state('');
@@ -58,8 +61,24 @@
 	let saving = $state(false);
 	let errorMessage = $state('');
 
+	const picked = $derived(selectedContact[0]);
+	const contactCollection = $derived(
+		createListCollection({
+			items: [
+				// A pick the current search no longer returns is kept in the list, so the
+				// trigger never goes blank on the person the Add button is about to add.
+				...(picked !== undefined && !available.some((c) => (c._id as string) === picked)
+					? [{ value: picked, label: selectedLabel }]
+					: []),
+				...available.map((c) => ({ value: c._id as string, label: contactDisplayName(c) }))
+			]
+		})
+	);
+
 	function reset() {
 		selectedContact = [];
+		selectedLabel = '';
+		contactSearch = '';
 		role = ['attendee'];
 		firstName = '';
 		lastName = '';
@@ -147,15 +166,33 @@
 
 				<Tabs.Content value="existing">
 					<div class="flex flex-col gap-4 pt-2">
-						{#if available.length === 0}
-							<p class="text-muted-foreground text-sm">{m.campaignContacts_alreadyIn()}</p>
-						{:else}
-							<div class="flex flex-col gap-1.5">
-								<Label>{m.campaignContacts_allContacts()}</Label>
+						<div class="flex flex-col gap-1.5">
+							<Label for="cm-contact-search">{m.campaignContacts_allContacts()}</Label>
+							<Input
+								id="cm-contact-search"
+								type="search"
+								bind:value={contactSearch}
+								placeholder={m.list_search()}
+								autocomplete="off"
+							/>
+							{#if contactCollection.items.length === 0}
+								<!-- An empty list only means "everyone is already a member" while no
+								     search is narrowing it; with a term typed it is just a miss. -->
+								<p class="text-muted-foreground text-sm">
+									{contactSearch.trim() ? m.list_noResults() : m.campaignContacts_alreadyIn()}
+								</p>
+							{:else}
 								<Select.Root
 									collection={contactCollection}
 									value={selectedContact}
-									onValueChange={(d: { value: string[] }) => (selectedContact = d.value)}
+									onValueChange={(d: { value: string[] }) => {
+										selectedContact = d.value;
+										const next = d.value[0];
+										if (next)
+											selectedLabel =
+												contactCollection.items.find((item) => item.value === next)?.label ??
+												selectedLabel;
+									}}
 								>
 									<Select.Trigger
 										size="sm"
@@ -170,17 +207,17 @@
 										{/each}
 									</Select.Content>
 								</Select.Root>
-							</div>
-							<div class="flex justify-end">
-								<Button
-									onclick={addExisting}
-									loading={saving}
-									disabled={selectedContact.length === 0}
-								>
-									{m.action_add()}
-								</Button>
-							</div>
-						{/if}
+							{/if}
+						</div>
+						<div class="flex justify-end">
+							<Button
+								onclick={addExisting}
+								loading={saving}
+								disabled={selectedContact.length === 0}
+							>
+								{m.action_add()}
+							</Button>
+						</div>
 					</div>
 				</Tabs.Content>
 

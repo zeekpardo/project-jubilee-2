@@ -39,8 +39,18 @@
 //   - campaign summary cards: slug, name, summary, coverImageUrl,
 //     objectSlug, objectLabelPlural — a subset of toPublicCampaign, for list
 //     views that don't need the full detail shape
-//   - a PUBLISHED update's `title`, `body` and `publishedAt`, plus an `assets`
-//     map of storage id to resolved URL for the photographs its body names.
+//   - a PUBLISHED update's `title`, `body`, `publishedAt` and `slug`, plus an
+//     `assets` map of storage id to resolved URL for the photographs its body
+//     names.
+//     The `slug` goes out where an id may not because it is not a key to
+//     anything: it was derived from the title the org itself chose to publish,
+//     it is unique only within one campaign or one record rather than across
+//     this deployment, and it names exactly one row that has already passed the
+//     publish check below. A document id is the opposite on every count —
+//     forgeable into a reference to any table, meaningful to queries that never
+//     asked whether the row was public, and an admission that the row exists at
+//     all. The slug says only "this published post is at this address", which is
+//     the whole point of having one.
 //     The body is markdown authored by staff and is the only FREE PROSE ABOUT A
 //     NAMED FAMILY this wall carries, which is why the decision to let it
 //     through is a capability of its own (`content:publish`, held by fewer
@@ -401,6 +411,11 @@ export function toPublicOrgProfile(
 }
 
 export type PublicUpdate = {
+	/**
+	 * The post's public address, unique within its campaign or its record. Never
+	 * null: a published row that has no slug does not come out of the wall at all.
+	 */
+	slug: string;
 	title: string;
 	/** Markdown. Rendered server-side; no editor bytes reach a public page. */
 	body: string;
@@ -425,14 +440,25 @@ export type PublicUpdate = {
  * does not expire — deleting the blob is the only revocation there is — so a
  * URL minted for a draft would be a permanent public address for a photo nobody
  * had yet agreed to publish.
+ *
+ * NULL ALSO FOR A PUBLISHED ROW WITH NO SLUG, which `publishUpdate` cannot
+ * produce — it mints one on the way through. A row in that state is therefore a
+ * row that reached `published` without passing the `content:publish` gate: a
+ * seed, a migration, or somebody typing in the Convex dashboard. Failing closed
+ * costs an operator a confused afternoon; failing open would put free prose
+ * about a named family on the public site by a route that never asked anyone.
+ * It is also what lets a caller link every row it is handed, since the slug on
+ * this shape is never null.
  */
 export async function toPublicUpdate(
 	ctx: QueryCtx,
 	update: Doc<'updates'>
 ): Promise<PublicUpdate | null> {
 	if (update.status !== 'published') return null;
+	if (!update.slug) return null;
 
 	return {
+		slug: update.slug,
 		title: update.title,
 		body: update.body,
 		publishedAt: update.publishedAt ?? null,

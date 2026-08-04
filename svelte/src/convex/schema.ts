@@ -455,6 +455,13 @@ const updates = defineTable({
 	projectId: v.optional(v.id('projects')),
 
 	title: v.string(),
+	// The public handle, so a post can be addressed as a blog page without an id
+	// travelling — PLAN-updates.md §4c. Derived from the title by
+	// lib/domain/update-slug.ts at FIRST publish and never recomputed: editing a
+	// title afterwards must not retarget a link a supporter already shared.
+	// Optional because a draft has no public address to be at yet; the wall
+	// refuses to publish a row that reached `published` without one.
+	slug: v.optional(v.string()),
 	// Markdown, and the only representation. Raw HTML is never parsed, so
 	// nothing typed here can become executable markup. Nothing is derived from
 	// this string, so nothing can drift out of step with it — the reference
@@ -484,6 +491,26 @@ const updates = defineTable({
 	// _creationTime as the final key, so a published feed needs no JS sort.
 	.index('by_campaignId_and_status_and_publishedAt', ['campaignId', 'status', 'publishedAt'])
 	.index('by_projectId_and_status_and_publishedAt', ['projectId', 'status', 'publishedAt'])
+	// Addressing a post by its slug, and finding the siblings a new slug must not
+	// collide with. `projectId` sits BETWEEN the campaign and the slug on purpose:
+	// every row carries campaignId, including project ones, so a (campaignId,
+	// slug) key would match across both levels and a campaign-level post would be
+	// reachable at a record's URL. Here the level is part of the key — a
+	// campaign-level lookup ranges over projectId `undefined` and cannot see a
+	// record's posts, and a record's lookup pins its own id and cannot see the
+	// campaign's.
+	.index('by_campaignId_and_projectId_and_slug', ['campaignId', 'projectId', 'slug'])
+	// The campaign-level feed, as an exact range rather than a filtered one.
+	// Campaign-level means projectId ABSENT, which this expresses as an equality
+	// against `undefined`; without it that condition is a post-index filter, and a
+	// filtered page can come back short of `limit` while more rows remain, which
+	// makes a short page useless as an end-of-feed signal for a paging blog index.
+	.index('by_campaignId_and_projectId_and_status_and_publishedAt', [
+		'campaignId',
+		'projectId',
+		'status',
+		'publishedAt'
+	])
 	.index('by_orgId', ['orgId']);
 
 // The money ledger. Amounts are integer cents, always.

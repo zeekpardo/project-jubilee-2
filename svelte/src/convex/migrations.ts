@@ -279,6 +279,18 @@ export const dropTransparency = migrations.define({
 // at publish time. Idempotent: a row that already has a slug keeps it, because
 // a slug is frozen once issued and reissuing one would break a link somebody
 // has already shared.
+// DO NOT ADD `parallelize: true` TO THIS ONE. It reads the slugs its siblings
+// have already COMMITTED, so uniqueness within a batch rests entirely on
+// @convex-dev/migrations running `for (const doc of page) await doOne(doc)`,
+// which it does only while parallelize is unset. Turning it on for speed would
+// let two rows scan the same set and mint the same slug, and nothing would
+// fail: `getProjectUpdate` resolves with `.first()`, so one post keeps the
+// address and the other 404s at a permalink it believes it owns.
+//
+// The damage concentrates exactly where the slug fallback does. A title with no
+// Latin characters — Urdu, which is the first language of the families this app
+// serves — slugifies to nothing and becomes `update`, so a parallel batch would
+// collapse an entire campaign's Urdu-titled posts onto one address.
 export const backfillUpdateSlugs = migrations.define({
 	table: 'updates',
 	migrateOne: async (ctx, update) => {

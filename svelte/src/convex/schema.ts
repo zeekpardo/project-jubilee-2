@@ -149,7 +149,21 @@ const orgSettings = defineTable({
 				order: v.number()
 			})
 		)
-	)
+	),
+
+	// Tax acknowledgment identity, for the receipts we send after an online
+	// gift. Stripe's own receipt carries none of this and is not a substitute:
+	// a US contemporaneous written acknowledgment needs the charity's legal
+	// name and EIN, the amount, and a goods-and-services statement.
+	//
+	// Separate from `publicName` on purpose — an org fundraises as "Habitat
+	// Tulsa" and acknowledges as "Habitat for Humanity of Tulsa County, Inc."
+	legalName: v.optional(v.string()),
+	ein: v.optional(v.string()),
+	// Overrides the default "No goods or services were provided in exchange for
+	// this contribution." Orgs whose gifts do carry a benefit must say so
+	// themselves, in their own words.
+	acknowledgmentText: v.optional(v.string())
 })
 	// unique(orgId), unique(slug)
 	.index('by_orgId', ['orgId'])
@@ -558,6 +572,264 @@ const allocations = defineTable({
 	.index('by_campaignId', ['campaignId'])
 	.index('by_orgId', ['orgId']);
 
+// ============================================================
+// Online giving — Stripe Connect
+// ============================================================
+// Money still lands in `transactions` and `allocations`; nothing below
+// duplicates the ledger. These tables hold the Stripe-shaped state around it:
+// which account an org charges through, the lifecycle of a gift before it
+// becomes a ledger row, and which webhook deliveries we have already seen.
+//
+// Direct charges, so the nonprofit is merchant of record. That is why every
+// row here carries a `stripeAccountId` — the platform's own account never
+// holds the money, and a webhook arrives knowing only the connected account
+// it came from. See PLAN-stripe.md.
+
+// The derived onboarding state, one step removed from Stripe's raw flags so
+// the product surface never reads `details_submitted` and mistakes a finished
+// form for a working account. `charges_only` is the one worth naming: KYC
+// passed but the bank account did not, so gifts keep arriving into a balance
+// the org cannot withdraw.
+const stripeAccountStatus = v.union(
+	v.literal('onboarding'),
+	v.literal('pending_review'),
+	v.literal('action_required'),
+	v.literal('charges_only'),
+	v.literal('active'),
+	v.literal('restricted'),
+	v.literal('rejected')
+);
+
+// One org's Connect account, one row per livemode — test and live `acct_` ids
+// are different objects and must not overwrite each other.
+//
+// Deliberately NOT denormalized onto campaigns: whether a campaign can accept
+// gifts is derived from this row's `status`, because Stripe owns that fact and
+// a copy of it would drift the moment an account got restricted.
+const stripeAccounts = defineTable({
+	orgId: v.string(),
+	stripeAccountId: v.string(),
+	livemode: v.boolean(),
+
+	// Mirrored from account.updated / accounts.retrieve. Never authoritative on
+	// their own — `status` is what the app reads.
+	chargesEnabled: v.boolean(),
+	payoutsEnabled: v.boolean(),
+	detailsSubmitted: v.boolean(),
+	// active | pending | inactive | unrequested. Text rather than a union so a
+	// new Stripe capability state does not fail a write.
+	capabilityCardPayments: v.optional(v.string()),
+	capabilityTransfers: v.optional(v.string()),
+	// Bounded sets of Stripe requirement keys ('company.tax_id'), not unbounded
+	// lists — they shrink to empty as onboarding completes.
+	requirementsCurrentlyDue: v.array(v.string()),
+	requirementsPastDue: v.array(v.string()),
+	requirementsPendingVerification: v.array(v.string()),
+	requirementsDisabledReason: v.optional(v.string()),
+	requirementsCurrentDeadline: v.optional(v.number()),
+
+	status: stripeAccountStatus,
+
+	// Platform-owned config, not mirrored from Stripe.
+	// The processing rate used to gross up a fee-covering gift. Per-org because
+	// an org that wins Stripe's nonprofit discount pays ~2.2% while its
+	// neighbour still pays 2.9%, and a constant here would silently overcharge
+	// every donor of every discounted org.
+	feeRate: v.number(),
+	feeFixedCents: v.number(),
+	// Our cut, in basis points. Zero today — the plumbing exists so switching it
+	// on is a config change rather than a schema migration and a re-onboarding.
+	platformFeeBps: v.number(),
+	// Apple Pay / Google Pay / Link are invisible when unregistered: the Payment
+	// Element simply omits the button. Registration is per connected account,
+	// per domain, so what succeeded has to be recorded somewhere visible.
+	walletDomainsRegistered: v.array(v.string()),
+
+	// account.updated is chatty and arrives out of order. Guard applies against
+	// this before overwriting mirrored state.
+	lastEventCreatedAt: v.number(),
+	lastSyncedAt: v.number()
+})
+	// unique(orgId, livemode), unique(stripeAccountId)
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_livemode', ['orgId', 'livemode'])
+	// The webhook's only way home: an event knows its account, not our org.
+	.index('by_stripeAccountId', ['stripeAccountId']);
+
+// A gift from "donor pressed give" until it settles. The ledger never holds
+// pending money — a `transactions` row is written only on success, and
+// `transactionId` is the link back.
+const donationIntents = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+	// Absent means a campaign-level gift, matching how allocations treat a
+	// missing projectId.
+	projectId: v.optional(v.id('projects')),
+
+	status: v.union(
+		v.literal('pending'),
+		// ACH in flight. Emphatically not money yet, and never receipted.
+		v.literal('processing'),
+		v.literal('succeeded'),
+		v.literal('failed'),
+		v.literal('refunded'),
+		v.literal('disputed')
+	),
+
+	// Three different numbers, all of which matter: what the donor meant to
+	// give, what we actually charged once fee-cover was grossed up, and what
+	// the org received after Stripe and we took ours.
+	intendedCents: v.number(),
+	chargedCents: v.number(),
+	coverFees: v.boolean(),
+	// Actuals, from the charge's balance_transaction. Optional because they
+	// arrive after the intent succeeds, sometimes on a later charge.updated.
+	stripeFeeCents: v.optional(v.number()),
+	platformFeeCents: v.optional(v.number()),
+	netCents: v.optional(v.number()),
+
+	stripeAccountId: v.string(),
+	stripePaymentIntentId: v.optional(v.string()),
+	stripeChargeId: v.optional(v.string()),
+	// Set when this gift is one installment of a recurring pledge, in which
+	// case the invoice — not the payment intent — is the idempotency key.
+	stripeInvoiceId: v.optional(v.string()),
+	recurringGiftId: v.optional(v.id('recurringGifts')),
+
+	contactId: v.optional(v.id('contacts')),
+	donorName: v.optional(v.string()),
+	donorEmail: v.optional(v.string()),
+	// "Do not show my name publicly" — NOT "we do not know who this was".
+	// The manual ledger models anonymity as a missing contactId and cannot tell
+	// those apart; an online gift always knows the donor, because it has to
+	// email them a receipt.
+	anonymous: v.boolean(),
+	designation: v.optional(v.string()),
+	dedicationType: v.optional(v.union(v.literal('honor'), v.literal('memory'))),
+	dedicationName: v.optional(v.string()),
+	message: v.optional(v.string()),
+
+	transactionId: v.optional(v.id('transactions')),
+	failureMessage: v.optional(v.string()),
+
+	// Tax acknowledgment state. The number is immutable once assigned and
+	// sequential per org per year ('2026-0007'), because a receipt series with
+	// gaps or reuse is the first thing an auditor pulls on.
+	receiptNumber: v.optional(v.string()),
+	acknowledgedAt: v.optional(v.number()),
+	// Set when a gift is refunded or disputed after we already told the donor
+	// their contribution was deductible. The row is kept, not deleted — the
+	// donor may have already filed on it.
+	acknowledgmentVoidedAt: v.optional(v.number())
+})
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	.index('by_campaignId', ['campaignId'])
+	// unique. The webhook resolves by this first; metadata is fallback only,
+	// because an org admin can edit metadata in their own Stripe dashboard.
+	.index('by_stripePaymentIntentId', ['stripePaymentIntentId'])
+	.index('by_stripeInvoiceId', ['stripeInvoiceId'])
+	.index('by_contactId', ['contactId']);
+
+// A monthly (or annual) pledge: one Stripe Subscription living on the
+// connected account, alongside its Customer. Each successful installment
+// writes its own `donationIntents` row, so this table holds the standing
+// arrangement and never the money.
+const recurringGifts = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+	projectId: v.optional(v.id('projects')),
+	contactId: v.optional(v.id('contacts')),
+
+	status: v.union(
+		v.literal('incomplete'),
+		v.literal('active'),
+		v.literal('past_due'),
+		v.literal('paused'),
+		v.literal('canceled')
+	),
+	amountCents: v.number(),
+	interval: v.union(v.literal('month'), v.literal('year')),
+	coverFees: v.boolean(),
+	designation: v.optional(v.string()),
+	anonymous: v.boolean(),
+
+	stripeAccountId: v.string(),
+	// Both live on the CONNECTED account, not ours — a consequence of direct
+	// charges, and the reason a donor giving to four orgs has four customers.
+	stripeCustomerId: v.string(),
+	// Absent for the moment between this row being created and the
+	// Subscription existing at Stripe. The row has to come first because its id
+	// is the subscription's idempotency key, so this cannot be required.
+	stripeSubscriptionId: v.optional(v.string()),
+	currentPeriodEnd: v.optional(v.number()),
+	cancelAtPeriodEnd: v.boolean(),
+
+	donorEmail: v.optional(v.string()),
+	donorName: v.optional(v.string())
+})
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	// unique
+	.index('by_stripeSubscriptionId', ['stripeSubscriptionId'])
+	.index('by_contactId', ['contactId']);
+
+// One Stripe Product per campaign per connected account, because a
+// subscription's inline `price_data` requires a Product id — it will not
+// accept a bare name.
+//
+// A table rather than a column on `campaigns` for two reasons: the product
+// lives on the CONNECTED account, so a test and a live account hold different
+// ids for the same campaign, and `campaigns` should not grow a Stripe-shaped
+// field for a feature most campaigns never turn on.
+const stripeCampaignProducts = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+	stripeAccountId: v.string(),
+	stripeProductId: v.string()
+})
+	// unique(campaignId, stripeAccountId)
+	.index('by_campaignId_and_stripeAccountId', ['campaignId', 'stripeAccountId']);
+
+// The next receipt number to hand out, per org per calendar year.
+//
+// A counter row rather than counting the receipts already issued: Convex has
+// no count operator, and `.collect().length` over a year of an active
+// nonprofit's gifts is both slow and unbounded. Incrementing inside the same
+// mutation that stamps the number is what makes the series gapless under
+// concurrent donations.
+const receiptCounters = defineTable({
+	orgId: v.string(),
+	// Calendar year the series belongs to. Receipts reset each January because
+	// a donor's year-end statement covers one tax year.
+	year: v.number(),
+	nextNumber: v.number()
+})
+	// unique(orgId, year)
+	.index('by_orgId_and_year', ['orgId', 'year']);
+
+// Webhook delivery log, and the dedupe that makes handlers safe to re-run.
+// Stripe guarantees at-least-once delivery and guarantees nothing about order,
+// so both properties have to be handled here rather than assumed away:
+// `stripeEventId` stops the redelivery, `createdAt` (event.created) is what an
+// out-of-order guard compares against.
+const stripeEvents = defineTable({
+	stripeEventId: v.string(),
+	type: v.string(),
+	// Absent on platform events; present on everything arriving via Connect.
+	stripeAccountId: v.optional(v.string()),
+	livemode: v.boolean(),
+	createdAt: v.number(),
+	receivedAt: v.number(),
+	// Unset until a handler finishes. A row with neither handledAt nor error is
+	// in flight or was dropped, which is exactly what a reconciliation sweep
+	// needs to find.
+	handledAt: v.optional(v.number()),
+	error: v.optional(v.string())
+})
+	// unique
+	.index('by_stripeEventId', ['stripeEventId']);
+
 // Where a piece of contact information reaches someone. Mirrors Planning
 // Center's location on its Email/PhoneNumber/Address vertices.
 const contactLocation = v.union(v.literal('home'), v.literal('work'), v.literal('other'));
@@ -911,6 +1183,12 @@ export default defineSchema({
 	updates,
 	transactions,
 	allocations,
+	stripeAccounts,
+	donationIntents,
+	recurringGifts,
+	stripeCampaignProducts,
+	receiptCounters,
+	stripeEvents,
 	contacts,
 	contactEmails,
 	contactPhones,

@@ -12,6 +12,7 @@ import UserCog from '@lucide/svelte/icons/user-cog';
 import Settings from '@lucide/svelte/icons/settings';
 import Building2 from '@lucide/svelte/icons/building-2';
 import Globe from '@lucide/svelte/icons/globe';
+import HandCoins from '@lucide/svelte/icons/hand-coins';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 
 export type NavItem = {
@@ -73,6 +74,15 @@ export const ADMIN_NAV: NavItem[] = [
 		href: '/app/admin/public-site',
 		icon: Globe,
 		capability: 'org:manage'
+	},
+	// Owner-only, one step tighter than the two above it: this is the surface
+	// that decides where an org's donations land, so it sits behind
+	// billing:manage rather than org:manage.
+	{
+		key: 'giving',
+		href: '/app/admin/giving',
+		icon: HandCoins,
+		capability: 'billing:manage'
 	}
 ];
 

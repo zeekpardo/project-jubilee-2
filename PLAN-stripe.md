@@ -3,9 +3,12 @@
 How online giving gets built on this codebase. Written against the repo as of the `portal` branch,
 Aug 2026.
 
-Today there is **no Stripe anything** — no dependency, no env var, no schema field, no HTTP route.
-`DonationForm.svelte` is a complete, styled, permanently-disabled stub whose own header comment says
-"there is no Stripe account wired up yet." This document is the plan for changing that.
+> **Status, 2026-08-04.** This is no longer a plan for future work — steps 1–5, 7 and 8 of §15 are
+> built, deployed and typechecked. What remains is step 6 (refund/dispute/payout admin) and, more
+> importantly, **verification against a real Stripe sandbox**: no API key has been configured, so
+> not one call in this integration has ever left the building. Read §15 for exactly what is done and
+> what to do first once keys exist. The sections below are still accurate as design rationale;
+> where reality diverged from the original plan, the divergence is called out inline.
 
 ---
 
@@ -1055,8 +1058,17 @@ Convex deployment env, via `npx convex env set`. Nothing in the repo.
 | `PUBLIC_STRIPE_PUBLISHABLE_KEY` | SvelteKit / Vercel | Safe to expose |
 | `STRIPE_DONATION_DOMAINS` | Convex | Comma-separated, for wallet registration |
 
-Declare the Convex ones as typed env in `defineApp({ env: { ... } })` per project guidelines, rather
-than `process.env`. Existing modules use `process.env` — leave them.
+> **Corrected 2026-08-04.** Typed env is not available on this repo. The guidelines target Convex
+> `^1.41.0`, but the repo is pinned to **1.36.1**, whose `defineApp` accepts `{ httpPrefix }` and
+> nothing else — there is no `env` option and no `env` export from `_generated/server`. So the Stripe
+> secrets follow the existing `email.ts` convention instead: read at module scope, throw at the point
+> of use. That is confined to [`stripe/env.ts`](svelte/src/convex/stripe/env.ts), which is the only
+> file touching `process.env` for Stripe, so switching to typed env after a Convex upgrade is a
+> one-file change. (`npx convex dev` reports 1.43.0 available; the upgrade is its own decision,
+> because `@convex-dev/better-auth` is pinned at 0.12.0.)
+
+`isLivemode()` derives test-vs-live from the `sk_live_` key prefix rather than adding a fifth env var
+that could disagree with the key it describes.
 
 Webhook URLs are `https://<deployment>.convex.site/stripe/connect-webhook` and `/stripe/webhook`.
 
@@ -1102,39 +1114,68 @@ Assert `charges_enabled` in our own code path.
 
 ## 15. Build sequence
 
-1. **Schema + `billing:manage` admin shell.** Four tables, migration, an owner-only page under
-   `/app/admin/giving` showing "not connected."
-2. **Connect onboarding.** Account creation, Account Links, `return`/`refresh` routes, `deriveStatus`,
-   `account.updated` handling. End state: an org can onboard and we know it.
-3. **Wallet domain registration** on `charges_enabled`, with status surfaced in admin.
-4. **One-time giving.** `createDonationIntent`, Payment Element, `payment_intent.succeeded` →
-   ledger. Flip `disabled` on `DonationForm` to derive from account status. End state: money moves.
-5. **Receipting.** Acknowledgment email, org legal name / EIN / statement fields, void-on-refund.
-6. **Refunds, disputes, payouts** in admin; embedded Stripe components in the org portal.
-7. **Recurring.** Subscriptions, `invoice.paid`, donor self-service (change / pause / cancel).
-8. **Reconciliation cron** (`crons.interval`) sweeping Stripe as source of truth against our ledger.
+1. ~~**Schema + `billing:manage` admin shell.**~~ **Done 2026-08-04.** Four tables plus the
+   `orgSettings` receipting fields in [schema.ts](svelte/src/convex/schema.ts); `stripe/env.ts`,
+   `stripe/client.ts` and `stripe/queries.ts`; an owner-only `/app/admin/giving` showing "not
+   connected", wired into `ADMIN_NAV`. No migration was needed — every addition is a new table or an
+   optional field, so existing rows validate unchanged. `billing:manage` now has its first call site.
+2. ~~**Connect onboarding.**~~ **Done.** `stripe/accounts.ts` (create, Account Links, sync),
+   `stripe/onboarding.ts`, `/app/admin/giving` with `return` and `refresh` routes, `deriveStatus`
+   under unit test.
+3. ~~**Wallet domain registration**~~ **Done.** Fires on reaching `charges_enabled`, per-domain
+   outcome stored on the row and surfaced in admin.
+4. ~~**One-time giving.**~~ **Done.** `createDonationIntent` with server-side money recomputation
+   and rate limiting, Payment Element mounted directly, `payment_intent.succeeded` → ledger,
+   reactive thanks page. `DonationForm`'s `disabled` now derives from account status.
+5. ~~**Receipting.**~~ **Done.** IRC §170(f)(8) acknowledgment via Resend, per-org legal name / EIN /
+   goods-and-services statement, gapless per-org-per-year receipt numbers, void-on-refund.
+6. **Refunds, disputes, payouts** in admin; embedded Stripe components in the org portal. **Not
+   built.** The webhook records `charge.refunded` and `charge.dispute.created` and unwinds the
+   ledger, but there is no admin UI to *initiate* a refund and no payout view.
+7. ~~**Recurring.**~~ **Done, unverified.** Subscriptions on the connected account with a per-campaign
+   Product, `invoice.paid` → installment → ledger, cancel-on-deauthorize, and donor self-service
+   (change amount / cancel / cancel-at-period-end) built ourselves rather than via the Billing
+   portal — see §16.4, which is still unverified.
+8. ~~**Reconciliation cron.**~~ **Done.** Four `crons.interval` sweeps: retry failed events, resync
+   accounts, reconcile unsettled gifts against Stripe, expire abandoned intents.
 
-Steps 1–4 are the minimum viable path to accepting a donation. Step 5 is not optional before real
-donors — a 501(c)(3) that can't substantiate gifts has a compliance problem, not a feature gap.
+**Nothing above has been exercised against Stripe.** Every path is written, typechecked, deployed
+and unit-tested where it is pure, but no API key has been set, so no call has ever left the
+building. §14 is the next step, in this order: set the four Convex env vars and the publishable key,
+`stripe listen --forward-connect-to`, onboard a sandbox account with `company.tax_id 000000001`,
+then walk a card gift end to end. Expect the first real run to surface shape mismatches the types
+could not — particularly around invoice → subscription resolution (`getSubscriptionId` in
+`stripe/events.ts`), which Stripe has moved between API versions and which is guarded by an
+accessor rather than assumed.
 
 ---
 
 ## 16. Open questions
 
-**Blocking — resolve before step 1:**
+**Blocking — RESOLVED 2026-08-04, before step 1. Reopening any of these costs a re-onboarding of
+every org, so treat them as settled.**
 
-1. **Can a single donation ever be split across multiple orgs?** If yes, direct charges are the wrong
-   architecture. This also decides the escrow/DAF question.
-2. **What is our platform fee, and do we take one at all?** Affects `application_fee_amount`, the
-   fee-cover disclosure copy, and the tax-deductibility conversation.
-3. **`controller.stripe_dashboard.type` is immutable.** Confirm Standard-equivalent (full dashboard)
-   is right before any org onboards.
+1. ~~Can a single donation ever be split across multiple orgs?~~ **No — one gift, one org.** Direct
+   charges confirmed; no escrow and no DAF structure. A donor giving to three orgs makes three
+   charges and pays the 30¢ fixed fee three times, and that is accepted.
+2. ~~What is our platform fee?~~ **Zero, with the plumbing built.** `platformFeeBps` sits on the
+   `stripeAccounts` row and `application_fee_amount` is passed on every intent, so turning a fee on
+   later is a config change rather than a schema migration. Question #10 (tax treatment of the
+   covered fee that becomes our revenue) stays open but is not blocking while the rate is zero.
+3. ~~Confirm `controller.stripe_dashboard.type`.~~ **Full dashboard**, Standard-equivalent. Orgs get
+   their own Stripe relationship and pay fees at their own discounted rate; Stripe owns losses and
+   1099-K filing. This is what forces hosted Account Links for initial onboarding (§6).
 
 **Verify in a sandbox before building on them:**
 
 4. Billing customer portal sessions with `Stripe-Account` on a direct-charge connected account —
    Stripe's docs describe only the `on_behalf_of` (destination) pattern.
-5. Whether Convex's bundler resolves `stripe@22`'s `worker` export without `"use node"`.
+5. ~~Whether Convex's bundler resolves `stripe@22`'s `worker` export without `"use node"`.~~
+   **Verified 2026-08-04: yes.** `stripe@22.4.0` installed and pushed with `npx convex dev --once`;
+   the bundle resolved clean with no `"use node"` anywhere. Its `worker` entrypoint initializes
+   `WebPlatformFunctions` (fetch transport, SubtleCrypto signatures), both of which the default
+   Convex runtime provides. The `constructEventAsync` rule in §1 stands — the synchronous
+   `constructEvent` still reaches for Node's `crypto`.
 6. Whether Subscription `metadata` reliably propagates to each invoice's PaymentIntent, or must be
    set separately.
 7. The `buttonType: 'donate'` enum on the Express Checkout Element (Apple's HIG effectively requires

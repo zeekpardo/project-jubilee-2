@@ -254,7 +254,12 @@
 			<Dialog.Title>{m.publicSite_giveNow()}</Dialog.Title>
 		</Dialog.Header>
 		<div class="w-full">
-			<DonationForm disabled {remainingCents} />
+			<DonationForm
+				orgSlug={data.orgProfile.slug}
+				campaignSlug={campaign.slug}
+				projectNumber={project.number}
+				{remainingCents}
+			/>
 		</div>
 	</Dialog.Content>
 </Dialog.Root>

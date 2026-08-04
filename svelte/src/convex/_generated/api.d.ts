@@ -96,6 +96,7 @@ import type * as stripe_queries from "../stripe/queries.js";
 import type * as stripe_receipts from "../stripe/receipts.js";
 import type * as stripe_reconcile from "../stripe/reconcile.js";
 import type * as stripe_recurring from "../stripe/recurring.js";
+import type * as stripe_refunds from "../stripe/refunds.js";
 import type * as stripe_webhooks from "../stripe/webhooks.js";
 import type * as taskTemplates_mutations from "../taskTemplates/mutations.js";
 import type * as taskTemplates_queries from "../taskTemplates/queries.js";
@@ -207,6 +208,7 @@ declare const fullApi: ApiFromModules<{
   "stripe/receipts": typeof stripe_receipts;
   "stripe/reconcile": typeof stripe_reconcile;
   "stripe/recurring": typeof stripe_recurring;
+  "stripe/refunds": typeof stripe_refunds;
   "stripe/webhooks": typeof stripe_webhooks;
   "taskTemplates/mutations": typeof taskTemplates_mutations;
   "taskTemplates/queries": typeof taskTemplates_queries;

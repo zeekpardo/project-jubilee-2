@@ -11,3 +11,12 @@ import type { api } from '$convex/_generated/api';
 export type ConnectAccount = NonNullable<
 	FunctionReturnType<typeof api.stripe.queries.getConnectAccount>
 >;
+
+/** One row of the gifts table, as `listOnlineGifts` projects it. */
+export type OnlineGift = FunctionReturnType<
+	typeof api.stripe.queries.listOnlineGifts
+>['page'][number];
+
+export type Payout = FunctionReturnType<typeof api.stripe.queries.listPayouts>[number];
+
+export type Dispute = FunctionReturnType<typeof api.stripe.queries.listDisputes>[number];

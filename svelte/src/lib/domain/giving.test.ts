@@ -5,6 +5,7 @@ import {
 	computeGiftAmounts,
 	giftAmountProblem,
 	grossUpForFees,
+	planRefund,
 	platformFeeCents
 } from './giving';
 
@@ -120,6 +121,107 @@ describe('computeGiftAmounts', () => {
 		});
 		expect(amounts.chargedCents).toBe(10256);
 		expect(amounts.platformFeeCents).toBe(205);
+	});
+});
+
+describe('planRefund', () => {
+	// The case that motivated extracting this. Stripe fires `charge.refunded`
+	// for a partial refund exactly as it does for a full one, so treating the
+	// event as "the gift is gone" erases money the nonprofit still holds.
+	it('keeps the remainder on a partial refund', () => {
+		const plan = planRefund({
+			chargedCents: 10000,
+			refundedCents: 1000,
+			allocationCents: [10000]
+		});
+		expect(plan.remainingCents).toBe(9000);
+		expect(plan.removeTransaction).toBe(false);
+		expect(plan.allocationCents).toEqual([9000]);
+	});
+
+	it('removes the transaction only when nothing is left', () => {
+		const plan = planRefund({
+			chargedCents: 10000,
+			refundedCents: 10000,
+			allocationCents: [10000]
+		});
+		expect(plan.remainingCents).toBe(0);
+		expect(plan.removeTransaction).toBe(true);
+		expect(plan.allocationCents).toEqual([0]);
+	});
+
+	it('is idempotent, because refundedCents is a running total', () => {
+		// A redelivered webhook must recompute the same end state, not subtract
+		// a second time. This is the property the whole cumulative-amount choice
+		// exists to get.
+		const once = planRefund({ chargedCents: 10000, refundedCents: 2500, allocationCents: [10000] });
+		const twice = planRefund({
+			chargedCents: 10000,
+			refundedCents: 2500,
+			allocationCents: [10000]
+		});
+		expect(twice).toEqual(once);
+	});
+
+	it('handles refunds arriving in stages', () => {
+		const first = planRefund({
+			chargedCents: 10000,
+			refundedCents: 3000,
+			allocationCents: [10000]
+		});
+		expect(first.remainingCents).toBe(7000);
+		// The second event reports the cumulative 5000, not another 2000.
+		const second = planRefund({
+			chargedCents: 10000,
+			refundedCents: 5000,
+			allocationCents: [first.allocationCents[0]]
+		});
+		expect(second.remainingCents).toBe(5000);
+		expect(second.allocationCents).toEqual([5000]);
+	});
+
+	it('clamps a refund larger than the charge rather than going negative', () => {
+		const plan = planRefund({
+			chargedCents: 5000,
+			refundedCents: 9999,
+			allocationCents: [5000]
+		});
+		expect(plan.refundedCents).toBe(5000);
+		expect(plan.remainingCents).toBe(0);
+		expect(plan.removeTransaction).toBe(true);
+	});
+
+	it('drains split allocations in order and never leaves a negative one', () => {
+		// Only reachable if a human split the gift's allocation in the admin UI.
+		const plan = planRefund({
+			chargedCents: 10000,
+			refundedCents: 7000,
+			allocationCents: [6000, 4000]
+		});
+		expect(plan.allocationCents).toEqual([3000, 0]);
+		// The invariant that matters: allocations never exceed the transaction.
+		const total = plan.allocationCents.reduce((sum, amount) => sum + amount, 0);
+		expect(total).toBe(plan.remainingCents);
+	});
+
+	it('preserves sum(allocations) <= remaining across a sweep', () => {
+		for (let refunded = 0; refunded <= 10000; refunded += 137) {
+			const plan = planRefund({
+				chargedCents: 10000,
+				refundedCents: refunded,
+				allocationCents: [7000, 3000]
+			});
+			const total = plan.allocationCents.reduce((sum, amount) => sum + amount, 0);
+			expect(total).toBeLessThanOrEqual(plan.remainingCents);
+			expect(plan.allocationCents.every((amount) => amount >= 0)).toBe(true);
+		}
+	});
+
+	it('treats a zero refund as a no-op that keeps everything', () => {
+		const plan = planRefund({ chargedCents: 10000, refundedCents: 0, allocationCents: [10000] });
+		expect(plan.remainingCents).toBe(10000);
+		expect(plan.removeTransaction).toBe(false);
+		expect(plan.allocationCents).toEqual([10000]);
 	});
 });
 

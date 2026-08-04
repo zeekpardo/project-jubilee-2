@@ -712,6 +712,12 @@ const donationIntents = defineTable({
 	transactionId: v.optional(v.id('transactions')),
 	failureMessage: v.optional(v.string()),
 
+	// How much of this gift has been given back. Stripe fires `charge.refunded`
+	// for PARTIAL refunds too, so a boolean here would quietly erase the
+	// remaining nine tenths of a gift the donor only clawed back a tenth of.
+	// Zero and absent both mean "nothing refunded".
+	refundedCents: v.optional(v.number()),
+
 	// Tax acknowledgment state. The number is immutable once assigned and
 	// sequential per org per year ('2026-0007'), because a receipt series with
 	// gaps or reuse is the first thing an auditor pulls on.
@@ -790,6 +796,76 @@ const stripeCampaignProducts = defineTable({
 })
 	// unique(campaignId, stripeAccountId)
 	.index('by_campaignId_and_stripeAccountId', ['campaignId', 'stripeAccountId']);
+
+// Money leaving an org's Stripe balance for their bank account.
+//
+// Mirrored from `payout.*` webhooks rather than fetched live, so the admin
+// surface is one indexed read instead of a Stripe API call per page view — and
+// so it still renders when Stripe is having a bad morning.
+//
+// `failed` is the row that earns this table its place. A failed payout means
+// donations are piling up in a balance the org cannot reach, usually because a
+// bank account was mistyped, and nothing else in the product would ever
+// surface it.
+const stripePayouts = defineTable({
+	orgId: v.string(),
+	stripeAccountId: v.string(),
+	stripePayoutId: v.string(),
+
+	amountCents: v.number(),
+	currency: v.string(),
+	status: v.union(
+		v.literal('pending'),
+		v.literal('in_transit'),
+		v.literal('paid'),
+		v.literal('canceled'),
+		v.literal('failed')
+	),
+	// When Stripe expects it to land, in ms. Not when it was created.
+	arrivalDate: v.optional(v.number()),
+	failureCode: v.optional(v.string()),
+	failureMessage: v.optional(v.string()),
+	statementDescriptor: v.optional(v.string()),
+	// `payout.created` time in ms, which is what the list is ordered by — the
+	// row's own `_creationTime` is when the webhook reached us, which drifts.
+	createdAt: v.number()
+})
+	// unique(stripePayoutId)
+	.index('by_stripePayoutId', ['stripePayoutId'])
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_createdAt', ['orgId', 'createdAt']);
+
+// A donor's bank taking money back, and the clock that comes with it.
+//
+// Under direct charges this debits the NONPROFIT's balance, not ours, which is
+// exactly why it has to be visible in our admin: we are not the ones who will
+// be told, and `evidenceDueBy` is a real deadline that passes silently.
+const stripeDisputes = defineTable({
+	orgId: v.string(),
+	stripeAccountId: v.string(),
+	stripeDisputeId: v.string(),
+
+	stripeChargeId: v.string(),
+	stripePaymentIntentId: v.optional(v.string()),
+	// Absent when the disputed charge is not one we recorded — possible if an
+	// org takes payments through the same Stripe account by other means.
+	donationIntentId: v.optional(v.id('donationIntents')),
+
+	amountCents: v.number(),
+	currency: v.string(),
+	// Stripe's own vocabulary ('fraudulent', 'product_not_received', …). Text
+	// rather than a union so a new reason code cannot fail a write on a row we
+	// need to record precisely when things are going wrong.
+	reason: v.string(),
+	status: v.string(),
+	evidenceDueBy: v.optional(v.number()),
+	createdAt: v.number()
+})
+	// unique(stripeDisputeId)
+	.index('by_stripeDisputeId', ['stripeDisputeId'])
+	.index('by_orgId', ['orgId'])
+	.index('by_orgId_and_createdAt', ['orgId', 'createdAt'])
+	.index('by_donationIntentId', ['donationIntentId']);
 
 // The next receipt number to hand out, per org per calendar year.
 //
@@ -1187,6 +1263,8 @@ export default defineSchema({
 	donationIntents,
 	recurringGifts,
 	stripeCampaignProducts,
+	stripePayouts,
+	stripeDisputes,
 	receiptCounters,
 	stripeEvents,
 	contacts,

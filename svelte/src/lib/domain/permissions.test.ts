@@ -22,6 +22,7 @@ describe('owner', () => {
 		expect(can(owner, 'billing:manage')).toBe(true);
 		expect(can(owner, 'members:manage')).toBe(true);
 		expect(can(owner, 'money:write', 'any-campaign')).toBe(true);
+		expect(can(owner, 'content:publish', 'any-campaign')).toBe(true);
 	});
 });
 
@@ -37,6 +38,7 @@ describe('admin', () => {
 		expect(can(admin, 'members:manage')).toBe(true);
 		expect(can(admin, 'campaign:create')).toBe(true);
 		expect(can(admin, 'projects:write', 'campaign-nobody-assigned-them-to')).toBe(true);
+		expect(can(admin, 'content:publish', 'campaign-nobody-assigned-them-to')).toBe(true);
 	});
 });
 
@@ -47,11 +49,13 @@ describe('campaign manager', () => {
 		expect(can(manager, 'campaign:edit', 'c1')).toBe(true);
 		expect(can(manager, 'projects:write', 'c1')).toBe(true);
 		expect(can(manager, 'money:write', 'c1')).toBe(true);
+		expect(can(manager, 'content:publish', 'c1')).toBe(true);
 	});
 
 	it('stops at the campaigns it is assigned to', () => {
 		expect(can(manager, 'campaign:edit', 'c2')).toBe(false);
 		expect(can(manager, 'projects:read', 'c2')).toBe(false);
+		expect(can(manager, 'content:publish', 'c2')).toBe(false);
 	});
 
 	it('cannot create, delete or configure the org', () => {
@@ -75,6 +79,16 @@ describe('team leader', () => {
 	it('cannot change the campaign itself, which is what separates it from a manager', () => {
 		expect(can(leader, 'campaign:edit', 'c1')).toBe(false);
 		expect(can(access('campaign_manager', ['c1']), 'campaign:edit', 'c1')).toBe(true);
+	});
+
+	it('may write in its campaigns but never publish, which is the safety split', () => {
+		// The whole point of content:publish. A team leader writes the post about
+		// the family they visited; someone else decides it goes to the public
+		// site. Free prose cannot be policed by a denylist, so a second pair of
+		// eyes is the control.
+		expect(can(leader, 'projects:write', 'c1')).toBe(true);
+		expect(can(leader, 'content:publish', 'c1')).toBe(false);
+		expect(can(leader, 'content:publish')).toBe(false);
 	});
 
 	it('cannot do org-wide things', () => {
@@ -180,6 +194,13 @@ describe('the grant table itself', () => {
 		// own row, and a capability nobody was granted is held by nobody.
 		expect(ROLES.filter((role) => can(access(role, ['c1']), 'billing:manage'))).toEqual(['owner']);
 		expect(ROLES.filter((role) => can(access(role, ['c1']), 'campaign:edit', 'c1'))).toEqual([
+			'owner',
+			'admin',
+			'campaign_manager'
+		]);
+		// Publishing is held by exactly the three roles that were written down,
+		// and by no role that merely happens to work in the campaign.
+		expect(ROLES.filter((role) => can(access(role, ['c1']), 'content:publish', 'c1'))).toEqual([
 			'owner',
 			'admin',
 			'campaign_manager'

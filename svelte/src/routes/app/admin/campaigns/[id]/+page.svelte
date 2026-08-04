@@ -21,6 +21,7 @@
 	import CampaignGeneralCard from '$lib/features/campaigns/CampaignGeneralCard.svelte';
 	import CampaignPublicCard from '$lib/features/campaigns/CampaignPublicCard.svelte';
 	import CampaignStatsCard from '$lib/features/campaigns/CampaignStatsCard.svelte';
+	import UpdatesPanel from '$lib/features/updates/UpdatesPanel.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
 
@@ -65,6 +66,11 @@
 
 			<CampaignGeneralCard {campaign} {canWrite} />
 			<CampaignPublicCard {campaign} {canWrite} {orgSlug} />
+			<!-- The same panel the record screen mounts, with no project named, so
+			these are the campaign's own posts. Writing one is `campaign:edit` here
+			rather than `projects:write`, because an update is governed by the thing
+			it is about. -->
+			<UpdatesPanel {campaignId} />
 			<CampaignStatsCard {campaign} {canWrite} />
 			<CampaignMediaCard {campaign} {canWrite} />
 			<CampaignEmbedCard {campaign} {orgSlug} />

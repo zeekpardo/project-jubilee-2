@@ -433,6 +433,59 @@ const documents = defineTable({
 	.index('by_projectId_and_stage', ['projectId', 'stage'])
 	.index('by_orgId', ['orgId']);
 
+// A post about what happened: what the money did, who was freed. Written by
+// staff, read by donors. One table serves both parents, and exactly one of them
+// is the subject: a campaign update is org-wide news, a project update is about
+// one family.
+//
+// This is the first thing in this schema that stores FREE PROSE ABOUT A NAMED
+// FAMILY, which is why publishing is its own decision rather than a property of
+// the parent. `isProtectedFieldKey` can police custom fields because they have
+// keys; a paragraph has none, so the control here is a capability
+// (`content:publish`) held by fewer roles than the one that may write.
+const updates = defineTable({
+	orgId: v.string(),
+
+	// Carried directly on BOTH kinds, never reached by traversal — the same
+	// choice `tasks` makes and for the same reason: a project update needs its
+	// campaign for the campaign feed and for capability gating, and a query that
+	// had to traverse could pick up a row belonging to another campaign.
+	// projectId absent means campaign-level.
+	campaignId: v.id('campaigns'),
+	projectId: v.optional(v.id('projects')),
+
+	title: v.string(),
+	// Markdown, and the only representation. Raw HTML is never parsed, so
+	// nothing typed here can become executable markup. Nothing is derived from
+	// this string, so nothing can drift out of step with it — the reference
+	// app's block-JSON-plus-derived-markdown pair could only be kept in step by
+	// the one save path that wrote both.
+	body: v.string(),
+
+	// Every storage id the body references. Denormalized because a blob named
+	// only from inside a string is unreachable by model/cascade.ts, which keys
+	// off columns — these ids are the only handle for deletion, and deleting the
+	// blob is the only way to revoke a storage URL that has already gone out.
+	assetIds: v.array(v.id('_storage')),
+
+	// The publish decision, independent of the parent's isPublished. A draft is
+	// unreadable through the public query layer, not merely hidden by it.
+	status: v.union(v.literal('draft'), v.literal('published')),
+	// A real column, not _creationTime: the moment publishing happened, stamped
+	// by the mutation from an argument. Presenting creation time as the publish
+	// date is how the reference app made unpublishing and republishing invisible
+	// to a reader.
+	publishedAt: v.optional(v.number()),
+	// Better Auth user id. "Posted by" is what makes an update feel written by a
+	// person rather than emitted by a system.
+	authorUserId: v.string()
+})
+	// Both feeds read status-first and newest-first; Convex appends
+	// _creationTime as the final key, so a published feed needs no JS sort.
+	.index('by_campaignId_and_status_and_publishedAt', ['campaignId', 'status', 'publishedAt'])
+	.index('by_projectId_and_status_and_publishedAt', ['projectId', 'status', 'publishedAt'])
+	.index('by_orgId', ['orgId']);
+
 // The money ledger. Amounts are integer cents, always.
 const transactions = defineTable({
 	orgId: v.string(),
@@ -828,6 +881,7 @@ export default defineSchema({
 	projects,
 	budgets,
 	documents,
+	updates,
 	transactions,
 	allocations,
 	contacts,

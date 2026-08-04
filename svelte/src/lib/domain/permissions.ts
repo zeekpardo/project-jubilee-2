@@ -58,6 +58,9 @@ export type Capability =
 	| 'contacts:write'
 	| 'money:read'
 	| 'money:write'
+	// Deciding that something written goes out to the public site. Separate
+	// from writing it — see TEAM_LEADER_DENIED.
+	| 'content:publish'
 	| 'settings:manage';
 
 const OWNER_ONLY: Capability[] = ['org:manage', 'billing:manage'];
@@ -76,8 +79,30 @@ const CAMPAIGN_SCOPED: Capability[] = [
 	'contacts:read',
 	'contacts:write',
 	'money:read',
-	'money:write'
+	'money:write',
+	'content:publish'
 ];
+
+/**
+ * Campaign-scoped work a team leader does NOT hold. Two capabilities, for two
+ * different reasons.
+ *
+ * `campaign:edit` is seniority: a team leader works in a campaign, a campaign
+ * manager runs it.
+ *
+ * `content:publish` is a SAFETY CONTROL, and the reason it exists. Writing an
+ * update rides the existing capability of its parent — `projects:write` for a
+ * project update, `campaign:edit` for a campaign one — so the field team leader
+ * who visited the family can write the post. Deciding it goes public is a
+ * separate right, which means someone else decides. That split is deliberate:
+ * an update is free prose and photographs about a named family, and this app
+ * serves people escaping forced labour. `isProtectedFieldKey` can police custom
+ * fields because fields have keys; a paragraph has none, so no denylist can
+ * look at a sentence naming a brick kiln, and no sanitizer can look at a face
+ * in a photograph, and decide either is safe to publish. A second pair of eyes
+ * before the post goes out is the only control that actually exists here.
+ */
+const TEAM_LEADER_DENIED: Capability[] = ['campaign:edit', 'content:publish'];
 
 /** Every capability there is, assembled from the three reach buckets. */
 const ALL: Capability[] = [...OWNER_ONLY, ...ORG_WIDE, ...CAMPAIGN_SCOPED];
@@ -107,9 +132,9 @@ const GRANTS: Record<Role, Capability[]> = {
 	admin: ALL.filter((capability) => !OWNER_ONLY.includes(capability)),
 	// The campaigns they are assigned to, including the campaign's own settings.
 	campaign_manager: CAMPAIGN_SCOPED,
-	// The same campaigns, but not the campaign's important details — the one
-	// capability that separates the two roles.
-	team_leader: CAMPAIGN_SCOPED.filter((capability) => capability !== 'campaign:edit'),
+	// The same campaigns, but neither the campaign's important details nor the
+	// decision to publish — the two capabilities that separate the roles.
+	team_leader: CAMPAIGN_SCOPED.filter((capability) => !TEAM_LEADER_DENIED.includes(capability)),
 	// Only the items they are part of, and that is an ownership question rather
 	// than a capability one — see the header.
 	portal_member: [],
@@ -193,7 +218,7 @@ export const ROLE_DESCRIPTIONS: Record<Role, string> = {
 	admin: 'Full access except organization settings and billing.',
 	campaign_manager: 'Runs the campaigns they are assigned to, settings included.',
 	team_leader:
-		'Works in the campaigns they are assigned to, but cannot change the campaign itself.',
+		'Works in the campaigns they are assigned to. Cannot change the campaign itself, and cannot publish an update to the public site.',
 	portal_member: 'No admin access. Sees only their own items, in the portal.',
 	member: 'No admin access.'
 };

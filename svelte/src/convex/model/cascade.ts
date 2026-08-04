@@ -1,5 +1,6 @@
 import type { MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
+import { deleteUpdateAssets } from './updates';
 
 /**
  * Convex has no foreign keys or ON DELETE CASCADE, so every dependent row must
@@ -49,6 +50,20 @@ export async function deleteProjectCascade(
 			await ctx.storage.delete(document.storageId);
 		}
 		await ctx.db.delete('documents', document._id);
+	}
+
+	// Posts about this record go with it, and their PHOTOGRAPHS GO FIRST: once
+	// the row is gone its assetIds are gone with it, and those ids are the only
+	// handle anything has on the blobs. Deleting the blob is also the only way to
+	// revoke a storage URL that has already been handed to a visitor — there is
+	// no expiry — so this is what actually takes a published photo down.
+	const updates = await ctx.db
+		.query('updates')
+		.withIndex('by_projectId_and_status_and_publishedAt', (q) => q.eq('projectId', projectId))
+		.collect();
+	for (const update of updates) {
+		await deleteUpdateAssets(ctx, update.assetIds);
+		await ctx.db.delete('updates', update._id);
 	}
 
 	// Allocations are CLEARED, never deleted: the money still moved, so the
@@ -213,6 +228,21 @@ export async function deleteCampaignCascade(
 		.collect();
 	for (const task of tasks) {
 		await ctx.db.delete('tasks', task._id);
+	}
+
+	// Updates go by campaignId for the same reason tasks do: a campaign-level
+	// post carries no projectId at all, so the per-project cascade below could
+	// never reach it. Every post's PHOTOGRAPHS GO BEFORE ITS ROW — assetIds are
+	// the only handle on those blobs, and deleting the blob is the only way to
+	// revoke a storage URL already handed out. Doing it here also means the
+	// project cascade finds nothing left, as with the allocations above.
+	const updates = await ctx.db
+		.query('updates')
+		.withIndex('by_campaignId_and_status_and_publishedAt', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const update of updates) {
+		await deleteUpdateAssets(ctx, update.assetIds);
+		await ctx.db.delete('updates', update._id);
 	}
 
 	const projects = await ctx.db

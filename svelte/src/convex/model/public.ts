@@ -39,6 +39,19 @@
 //   - campaign summary cards: slug, name, summary, coverImageUrl,
 //     objectSlug, objectLabelPlural — a subset of toPublicCampaign, for list
 //     views that don't need the full detail shape
+//   - a PUBLISHED update's `title`, `body` and `publishedAt`, plus an `assets`
+//     map of storage id to resolved URL for the photographs its body names.
+//     The body is markdown authored by staff and is the only FREE PROSE ABOUT A
+//     NAMED FAMILY this wall carries, which is why the decision to let it
+//     through is a capability of its own (`content:publish`, held by fewer
+//     roles than may write one) rather than a property of the parent: a draft
+//     is not a public record and `toPublicUpdate` returns null for one, ON TOP
+//     of every caller reading only the published half of the index. Asset URLs
+//     are resolved for published rows ONLY — a storage URL cannot be revoked
+//     once handed out, so a draft's photographs must never acquire one.
+//     What is NOT here matters as much: no update id, no authorUserId, no
+//     orgId, campaignId or projectId. Public records are addressed by `number`
+//     and ids do not travel.
 //   - campaign stat counts — whole-number aggregates only, and only the
 //     stats a campaign has configured for its public surface. Which
 //     aggregates may go out is decided by the engine in model/stats.ts
@@ -84,6 +97,7 @@ import { isPersonReachedRole } from '../../lib/domain/campaign-stats';
 import { resolveProjectFieldDefs } from './fields';
 import { loadPublicPolicy } from './policy';
 import { computeStats, type ResolvedStat } from './stats';
+import { resolveUpdateAssets } from './updates';
 
 /**
  * The org a public URL is talking about, resolved from its slug alone.
@@ -383,6 +397,46 @@ export function toPublicOrgProfile(
 		// settings was resolved BY slug, so this is always the same string as
 		// orgSlug; the fallback only guards the optional-field type.
 		slug: settings.slug ?? orgSlug
+	};
+}
+
+export type PublicUpdate = {
+	title: string;
+	/** Markdown. Rendered server-side; no editor bytes reach a public page. */
+	body: string;
+	/** The moment publishing happened, never the moment the row was created. */
+	publishedAt: number | null;
+	/** Storage id to resolved URL, for the photographs the body names. */
+	assets: Record<string, string>;
+};
+
+/**
+ * Public view of an update. Built field by field like everything else here, so
+ * the id, the author and the parents stay behind the wall.
+ *
+ * NULL FOR A DRAFT, and that is not belt-and-braces — it is the wall making the
+ * publish decision itself rather than trusting that every caller remembered to
+ * ask for the published half of an index. Nothing in this codebase treats "the
+ * parent is published" as authorization for a child row, and an update carries
+ * its own publish decision precisely because free prose about a named family is
+ * the riskiest thing this platform emits.
+ *
+ * The photographs are resolved only once that check has passed. A storage URL
+ * does not expire — deleting the blob is the only revocation there is — so a
+ * URL minted for a draft would be a permanent public address for a photo nobody
+ * had yet agreed to publish.
+ */
+export async function toPublicUpdate(
+	ctx: QueryCtx,
+	update: Doc<'updates'>
+): Promise<PublicUpdate | null> {
+	if (update.status !== 'published') return null;
+
+	return {
+		title: update.title,
+		body: update.body,
+		publishedAt: update.publishedAt ?? null,
+		assets: await resolveUpdateAssets(ctx, update.assetIds)
 	};
 }
 

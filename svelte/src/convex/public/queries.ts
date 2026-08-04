@@ -14,10 +14,12 @@ import {
 	toPublicCampaignSummary,
 	toPublicOrgProfile,
 	toPublicProject,
+	toPublicUpdate,
 	type PublicCampaignSummary,
 	type PublicOrgProfile,
 	type PublicProject,
-	type PublicStat
+	type PublicStat,
+	type PublicUpdate
 } from '../model/public';
 import { publicStatSections, type PublicStatSection } from '../model/stats';
 
@@ -101,6 +103,88 @@ export const getProject = query({
 		if (!project || !project.isPublished) return null;
 
 		return toPublicProject(ctx, project, campaign);
+	}
+});
+
+/**
+ * The campaign's own published posts, newest first. Campaign-level ONLY: an
+ * update about one family belongs on that record's page, where the project's
+ * own publish check applies to it — see listProjectUpdates below.
+ *
+ * Drafts cannot come out of here twice over. The index range asks for published
+ * rows, and `toPublicUpdate` returns null for anything else, because a draft
+ * reachable through the token-less public client would be a wall breach by
+ * construction rather than a display bug.
+ */
+export const listCampaignUpdates = query({
+	args: { orgSlug: v.string(), campaignSlug: v.string(), limit: v.optional(v.number()) },
+	handler: async (ctx, args): Promise<PublicUpdate[]> => {
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return [];
+
+		const updates = await ctx.db
+			.query('updates')
+			.withIndex('by_campaignId_and_status_and_publishedAt', (q) =>
+				q.eq('campaignId', campaign._id).eq('status', 'published')
+			)
+			.order('desc')
+			// Campaign-level means projectId ABSENT, which no index can express
+			// alongside the campaign. Applied before the take, so a page is still
+			// `limit` campaign-level posts rather than whatever survived a trim.
+			.filter((q) => q.eq(q.field('projectId'), undefined))
+			.take(clampLimit(args.limit));
+
+		const out: PublicUpdate[] = [];
+		for (const update of updates) {
+			const publicUpdate = await toPublicUpdate(ctx, update);
+			if (publicUpdate) out.push(publicUpdate);
+		}
+		return out;
+	}
+});
+
+/**
+ * Published posts about one record, newest first.
+ *
+ * The project's OWN publish check stays explicit, exactly as `getProject` keeps
+ * it: the index this reads is scoped to the update's status and knows nothing
+ * about the record. A published update on an unpublished project is not public
+ * — nothing in this codebase treats a parent's state as authorization for a
+ * child row, and here the child would be prose about the family.
+ */
+export const listProjectUpdates = query({
+	args: {
+		orgSlug: v.string(),
+		campaignSlug: v.string(),
+		number: v.string(),
+		limit: v.optional(v.number())
+	},
+	handler: async (ctx, args): Promise<PublicUpdate[]> => {
+		const campaign = await resolvePublishedCampaign(ctx, args.orgSlug, args.campaignSlug);
+		if (!campaign) return [];
+
+		const project = await ctx.db
+			.query('projects')
+			.withIndex('by_campaignId_and_number', (q) =>
+				q.eq('campaignId', campaign._id).eq('number', args.number)
+			)
+			.first();
+		if (!project || !project.isPublished) return [];
+
+		const updates = await ctx.db
+			.query('updates')
+			.withIndex('by_projectId_and_status_and_publishedAt', (q) =>
+				q.eq('projectId', project._id).eq('status', 'published')
+			)
+			.order('desc')
+			.take(clampLimit(args.limit));
+
+		const out: PublicUpdate[] = [];
+		for (const update of updates) {
+			const publicUpdate = await toPublicUpdate(ctx, update);
+			if (publicUpdate) out.push(publicUpdate);
+		}
+		return out;
 	}
 });
 

@@ -6,6 +6,7 @@
 	import ProjectCard from '$lib/features/public-site/ProjectCard.svelte';
 	import ArticleBody from '$lib/features/public-site/ArticleBody.svelte';
 	import YourGivingNote from '$lib/features/public-site/YourGivingNote.svelte';
+	import UpdatesFeed from '$lib/features/public-site/UpdatesFeed.svelte';
 
 	let { data } = $props();
 	const campaign = $derived(data.campaign);
@@ -108,6 +109,13 @@
 				<ArticleBody text={campaign.story} />
 			</div>
 		{/if}
+
+		<!-- And then what has happened since. The story is the case for giving,
+		     written once; the updates are the answer to the question a donor asks
+		     after they have given, so they continue that column at the same
+		     measure rather than opening a new region of the page. Renders nothing
+		     at all when the campaign has posted nothing. -->
+		<UpdatesFeed updates={data.updates} class="mt-10 max-w-2xl sm:mt-12" />
 	</div>
 </section>
 

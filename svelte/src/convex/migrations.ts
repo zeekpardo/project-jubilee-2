@@ -323,5 +323,194 @@ export const runAll = migrations.runner([
 	// Reads `transparency`, so it must run before the one that drops it.
 	internal.migrations.renameTransparency,
 	internal.migrations.dropTransparency,
-	internal.migrations.backfillUpdateSlugs
+	internal.migrations.backfillUpdateSlugs,
+	internal.migrations.backfillLedgerTotals,
+	internal.migrations.backfillContactSearch
 ]);
+
+// ------------------------------------------------------------------
+// The budget page stops reading the whole ledger
+// ------------------------------------------------------------------
+// `getReconciliation` and `listUnallocated` used to load EVERY transaction and
+// EVERY allocation in an org, on every subscription tick, to produce five
+// numbers and an inbox. That is a scan whose cost grows with everything the
+// organization has ever done, and Convex caps documents read per query — so it
+// does not degrade gracefully, it eventually fails outright. Online giving is
+// about to make donations the highest-volume row type in the system.
+//
+// Both now read denormalized state instead: `transactions.allocatedCents` and
+// `isFullyAllocated` per row, and one `orgMoneyTotals` row per org. Going
+// forward those are maintained by the triggers in `functions.ts`, so no write
+// site has to remember anything. This backfills what already exists.
+//
+// DO NOT ADD `parallelize: true` TO THIS ONE, for a different reason than
+// `backfillUpdateSlugs` above but with the same shape of consequence. Every
+// transaction in an org accumulates into that org's single totals row, so
+// parallel rows would read-modify-write the same document concurrently and
+// lose contributions. Nothing would fail — the org's Received figure would
+// simply be too low, silently and permanently, which is the worst way for a
+// money number to be wrong.
+//
+// Idempotent by the per-row guard: a transaction that already carries
+// `isFullyAllocated` is skipped entirely, contribution included, so a re-run
+// costs no writes and cannot double-count. To rebuild from scratch, run
+// `migrations:resetLedgerTotals` first.
+export const backfillLedgerTotals = migrations.define({
+	table: 'transactions',
+	migrateOne: async (ctx, transaction) => {
+		// Already migrated. Skipping BEFORE touching the totals is what makes a
+		// second pass safe.
+		if (transaction.isFullyAllocated !== undefined) return;
+
+		const allocations = await ctx.db
+			.query('allocations')
+			.withIndex('by_transactionId', (q) => q.eq('transactionId', transaction._id))
+			.take(200);
+
+		const allocatedCents = allocations.reduce((sum, row) => sum + row.amountCents, 0);
+		// Clamped for the same reason the trigger clamps: the invariant says
+		// sum(allocations) <= amount, but a total that can go negative from one
+		// bad legacy row is not a total worth trusting.
+		const unallocated = Math.max(0, transaction.amountCents - allocatedCents);
+
+		const totals = await ctx.db
+			.query('orgMoneyTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', transaction.orgId))
+			.unique();
+
+		const base = totals ?? {
+			receivedCents: 0,
+			sentCents: 0,
+			spentCents: 0,
+			unallocatedDonationCents: 0,
+			unallocatedTransferCents: 0,
+			unallocatedExpenditureCents: 0
+		};
+
+		const next = {
+			receivedCents:
+				base.receivedCents + (transaction.type === 'donation' ? transaction.amountCents : 0),
+			sentCents: base.sentCents + (transaction.type === 'transfer' ? transaction.amountCents : 0),
+			spentCents:
+				base.spentCents + (transaction.type === 'expenditure' ? transaction.amountCents : 0),
+			unallocatedDonationCents:
+				base.unallocatedDonationCents + (transaction.type === 'donation' ? unallocated : 0),
+			unallocatedTransferCents:
+				base.unallocatedTransferCents + (transaction.type === 'transfer' ? unallocated : 0),
+			unallocatedExpenditureCents:
+				base.unallocatedExpenditureCents + (transaction.type === 'expenditure' ? unallocated : 0)
+		};
+
+		if (totals) {
+			await ctx.db.patch('orgMoneyTotals', totals._id, next);
+		} else {
+			await ctx.db.insert('orgMoneyTotals', { orgId: transaction.orgId, ...next });
+		}
+
+		// `isFullyAllocated` is written explicitly rather than left to a default,
+		// including for rows that ARE fully allocated. `listUnallocated` ranges on
+		// `isFullyAllocated: false`, and a row whose attribution we never
+		// established belongs in that inbox rather than silently outside it.
+		return { allocatedCents, isFullyAllocated: allocatedCents >= transaction.amountCents };
+	}
+});
+
+/**
+ * Clears the denormalized ledger state so `backfillLedgerTotals` can rebuild it.
+ *
+ * The repair path. These numbers are derived, so the source rows are always
+ * recoverable — but a total that has drifted has no way to notice on its own,
+ * and "delete it and recompute" is a far better answer than trying to work out
+ * by how much it is wrong.
+ *
+ * Run this, then `backfillLedgerTotals`, then check the result against
+ * `transactions:auditLedgerTotals`.
+ */
+export const resetLedgerTotals = migrations.define({
+	table: 'transactions',
+	migrateOne: async (ctx, transaction) => {
+		const totals = await ctx.db
+			.query('orgMoneyTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', transaction.orgId))
+			.unique();
+		if (totals) await ctx.db.delete('orgMoneyTotals', totals._id);
+		return { allocatedCents: undefined, isFullyAllocated: undefined } as Partial<
+			Doc<'transactions'>
+		>;
+	}
+});
+
+// ------------------------------------------------------------------
+// Contacts stop being loaded in full to be searched or counted
+// ------------------------------------------------------------------
+// `listContacts` had two unbounded paths. Without a `limit` it collected the
+// org; WITH a search it collected the org regardless, then filtered in
+// JavaScript and sliced — so the limit never bounded the read at all, and the
+// admin directory ran that on every keystroke.
+//
+// Search now goes through a full-text index over `contacts.searchText`, and
+// the dashboard's People tile reads a maintained count instead of taking
+// `.length` of every person in the organization. Both are derived and both are
+// maintained by the trigger in `functions.ts`; this backfills what exists.
+//
+// DO NOT ADD `parallelize: true`, for the same reason as
+// `backfillLedgerTotals`: every contact in an org increments that org's single
+// count row, so parallel rows would read-modify-write the same document and
+// lose increments. A headcount that is quietly low is worse than a slow
+// migration.
+//
+// Idempotent by the per-row guard. A contact that already has `searchText` is
+// skipped entirely, count included, so a re-run costs nothing and cannot
+// double-count. `resetContactSearch` rebuilds from scratch.
+export const backfillContactSearch = migrations.define({
+	table: 'contacts',
+	migrateOne: async (ctx, contact) => {
+		if (contact.searchText !== undefined) return;
+
+		const totals = await ctx.db
+			.query('orgContactTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', contact.orgId))
+			.unique();
+
+		if (totals) {
+			await ctx.db.patch('orgContactTotals', totals._id, {
+				contactCount: totals.contactCount + 1
+			});
+		} else {
+			await ctx.db.insert('orgContactTotals', { orgId: contact.orgId, contactCount: 1 });
+		}
+
+		// Duplicated from `buildSearchText` in `functions.ts` rather than
+		// imported, deliberately: a migration is a snapshot of what the schema
+		// meant WHEN IT RAN. Importing the live helper would silently change what
+		// an already-executed backfill did the next time someone edits the
+		// haystack, and the trigger will recompute every row it touches anyway.
+		const searchText = [
+			contact.firstName,
+			contact.lastName,
+			contact.givenName,
+			contact.middleName,
+			contact.nickname,
+			contact.emailLower,
+			contact.organization
+		]
+			.filter(Boolean)
+			.join(' ')
+			.toLowerCase();
+
+		return { searchText };
+	}
+});
+
+/** The repair path for the above. Run this, then `backfillContactSearch`. */
+export const resetContactSearch = migrations.define({
+	table: 'contacts',
+	migrateOne: async (ctx, contact) => {
+		const totals = await ctx.db
+			.query('orgContactTotals')
+			.withIndex('by_orgId', (q) => q.eq('orgId', contact.orgId))
+			.unique();
+		if (totals) await ctx.db.delete('orgContactTotals', totals._id);
+		return { searchText: undefined } as Partial<Doc<'contacts'>>;
+	}
+});

@@ -1,5 +1,5 @@
 import { ConvexError, v } from 'convex/values';
-import { mutation } from '../_generated/server';
+import { mutation } from '../functions';
 import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { canSetStage } from '../../lib/domain/stages';

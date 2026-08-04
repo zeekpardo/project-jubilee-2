@@ -102,6 +102,70 @@ export function computeGiftAmounts(input: {
 	};
 }
 
+export type RefundPlan = {
+	/** What the org keeps. Zero means the whole gift came back. */
+	remainingCents: number;
+	/** How much was refunded in total, clamped to what was actually charged. */
+	refundedCents: number;
+	/** Whether the ledger transaction and its allocations should be removed. */
+	removeTransaction: boolean;
+	/**
+	 * New amount for each allocation, positionally matching the input. A zero
+	 * means that allocation should be deleted.
+	 */
+	allocationCents: number[];
+};
+
+/**
+ * How a refund lands on the ledger.
+ *
+ * Extracted from the mutation and kept pure because this is money arithmetic
+ * that has to be right, and it is far easier to be sure of it against a table
+ * of cases than against a database.
+ *
+ * `refundedCents` is Stripe's CUMULATIVE `amount_refunded`, not the size of the
+ * latest refund. Taking the running total is what makes applying this
+ * idempotent: a redelivered `charge.refunded` recomputes the same end state
+ * rather than subtracting twice.
+ *
+ * The partial case is the one worth being careful about. Stripe fires
+ * `charge.refunded` for a $10 refund of a $100 gift exactly as it does for the
+ * full amount, so treating the event as "this gift is gone" would erase ninety
+ * dollars the nonprofit still holds.
+ *
+ * Allocations are drained in order rather than reduced proportionally. An
+ * online gift always has exactly one allocation for its whole amount, so the
+ * distinction only arises if a human has since split it in the admin UI —
+ * and in that case taking the refund off the front is at least deterministic,
+ * where a proportional split would have to invent a rounding rule.
+ */
+export function planRefund(input: {
+	chargedCents: number;
+	refundedCents: number;
+	allocationCents: number[];
+}): RefundPlan {
+	const refundedCents = Math.max(0, Math.min(input.refundedCents, input.chargedCents));
+	const remainingCents = input.chargedCents - refundedCents;
+
+	if (remainingCents <= 0) {
+		return {
+			remainingCents: 0,
+			refundedCents,
+			removeTransaction: true,
+			allocationCents: input.allocationCents.map(() => 0)
+		};
+	}
+
+	let left = remainingCents;
+	const allocationCents = input.allocationCents.map((amount) => {
+		const next = Math.min(amount, left);
+		left -= next;
+		return next;
+	});
+
+	return { remainingCents, refundedCents, removeTransaction: false, allocationCents };
+}
+
 /** Whether an amount is one we can actually charge. Null when it is fine. */
 export function giftAmountProblem(cents: number): 'invalid' | 'tooSmall' | 'tooLarge' | null {
 	if (!Number.isInteger(cents)) return 'invalid';

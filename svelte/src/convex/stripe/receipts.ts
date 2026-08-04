@@ -226,7 +226,9 @@ export const sendAcknowledgment = internalAction({
 export const voidAcknowledgment = internalAction({
 	args: {
 		donationIntentId: v.id('donationIntents'),
-		reason: v.union(v.literal('refunded'), v.literal('disputed'))
+		reason: v.union(v.literal('refunded'), v.literal('disputed')),
+		// What the donor still gave. Zero means the whole gift came back.
+		remainingCents: v.optional(v.number())
 	},
 	handler: async (ctx, args): Promise<null> => {
 		const context = await ctx.runQuery(internal.stripe.receipts.getAcknowledgmentContext, {
@@ -235,16 +237,26 @@ export const voidAcknowledgment = internalAction({
 		if (!context || !context.alreadyAcknowledged || !context.receiptNumber) return null;
 		if (!context.donorEmail) return null;
 
+		const remaining = args.remainingCents ?? 0;
+		const partial = remaining > 0;
+
 		await resend.sendEmail(ctx, {
 			from: emailSendFrom(),
 			to: context.donorEmail,
-			subject: `Receipt ${context.receiptNumber} has been voided`,
+			subject: partial
+				? `Receipt ${context.receiptNumber} has been amended`
+				: `Receipt ${context.receiptNumber} has been voided`,
 			html: renderDonationAcknowledgmentVoid({
 				orgLegalName: context.orgLegalName,
 				donorName: context.donorName,
+				// The amount as originally receipted, so the donor can match this
+				// against the document in their records. `chargedCents` is the
+				// right source: a refund reduces the ledger transaction, never
+				// what was actually charged at the time.
 				amountFormatted: formatCents(context.amountCents),
 				receiptNumber: context.receiptNumber,
 				reason: args.reason,
+				remainingFormatted: partial ? formatCents(remaining) : undefined,
 				...emailBrand()
 			})
 		});

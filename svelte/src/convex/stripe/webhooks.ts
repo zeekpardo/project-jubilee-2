@@ -18,7 +18,8 @@
 // account id, resolved against our own table.
 
 import { ConvexError, v } from 'convex/values';
-import { internalMutation, internalQuery } from '../_generated/server';
+import { internalQuery } from '../_generated/server';
+import { internalMutation } from '../functions';
 import type { MutationCtx } from '../_generated/server';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -266,27 +267,150 @@ export const recordGiftFees = internalMutation({
 });
 
 /**
- * A refund or a dispute: the ledger rows come back out.
+ * A refund or a dispute: the ledger comes back out, in whole or in part.
  *
- * Also voids the tax acknowledgment. A donor holding a valid written
- * acknowledgment for a gift that was refunded is not a cosmetic problem — it
- * is a deduction they are not entitled to, on a document the nonprofit signed.
+ * `refundedCents` is Stripe's CUMULATIVE `amount_refunded`, which is what
+ * makes this safe to re-run — a redelivery recomputes the same end state
+ * rather than subtracting a second time. The early return compares that total
+ * rather than only the status, because a gift refunded twice in stages is
+ * already `refunded` after the first and must still be reduced again.
+ *
+ * Also corrects the tax acknowledgment. A donor holding a written
+ * acknowledgment for money they got back is not a cosmetic problem: it is a
+ * deduction they are not entitled to, on a document the nonprofit issued.
  */
 export const recordGiftReversed = internalMutation({
 	args: {
 		stripePaymentIntentId: v.string(),
-		status: v.union(v.literal('refunded'), v.literal('disputed'))
+		status: v.union(v.literal('refunded'), v.literal('disputed')),
+		refundedCents: v.number()
 	},
 	handler: async (ctx, args) => {
 		const intent = await giftByPaymentIntent(ctx, args.stripePaymentIntentId);
 		if (!intent) return null;
-		if (intent.status === args.status) return null;
 
-		await reverseGiftInLedger(ctx, intent, args.status);
+		const alreadyRefunded = intent.refundedCents ?? 0;
+		if (intent.status === args.status && alreadyRefunded >= args.refundedCents) return null;
 
+		await reverseGiftInLedger(ctx, intent, args.status, args.refundedCents);
+
+		// Only worth an email if the donor was ever sent a receipt. A gift
+		// refunded before its acknowledgment went out needs no correction, and
+		// `voidAcknowledgment` checks that for itself.
 		await ctx.scheduler.runAfter(0, internal.stripe.receipts.voidAcknowledgment, {
 			donationIntentId: intent._id,
-			reason: args.status
+			reason: args.status,
+			remainingCents: Math.max(0, intent.chargedCents - args.refundedCents)
+		});
+		return null;
+	}
+});
+
+// ------------------------------------------------------------
+// Payouts and disputes
+// ------------------------------------------------------------
+
+/**
+ * Money moving from the org's Stripe balance to their bank.
+ *
+ * Upserted by payout id, because Stripe reports the same payout several times
+ * as it moves `pending` → `in_transit` → `paid`, and each delivery is the
+ * current truth rather than an increment.
+ */
+export const recordPayout = internalMutation({
+	args: {
+		stripeAccountId: v.string(),
+		stripePayoutId: v.string(),
+		amountCents: v.number(),
+		currency: v.string(),
+		status: v.union(
+			v.literal('pending'),
+			v.literal('in_transit'),
+			v.literal('paid'),
+			v.literal('canceled'),
+			v.literal('failed')
+		),
+		arrivalDate: v.optional(v.number()),
+		failureCode: v.optional(v.string()),
+		failureMessage: v.optional(v.string()),
+		statementDescriptor: v.optional(v.string()),
+		createdAt: v.number()
+	},
+	handler: async (ctx, args) => {
+		const account = await accountByStripeId(ctx, args.stripeAccountId);
+		// A payout on an account we do not know about. Nothing to attribute it
+		// to, and metadata is not an acceptable substitute for the account id.
+		if (!account) return null;
+
+		const { stripeAccountId: _account, ...fields } = args;
+		const existing = await ctx.db
+			.query('stripePayouts')
+			.withIndex('by_stripePayoutId', (q) => q.eq('stripePayoutId', args.stripePayoutId))
+			.unique();
+
+		if (existing) {
+			await ctx.db.patch('stripePayouts', existing._id, fields);
+			return null;
+		}
+
+		await ctx.db.insert('stripePayouts', {
+			orgId: account.orgId,
+			stripeAccountId: args.stripeAccountId,
+			...fields
+		});
+		return null;
+	}
+});
+
+/**
+ * A dispute, and the deadline attached to it.
+ *
+ * Upserted by dispute id for the same reason payouts are: a dispute is
+ * reported again on every status change, all the way to `won` or `lost`.
+ *
+ * Linked back to the gift where we can, so admin can show which donation is
+ * being clawed back rather than an opaque charge id.
+ */
+export const recordDispute = internalMutation({
+	args: {
+		stripeAccountId: v.string(),
+		stripeDisputeId: v.string(),
+		stripeChargeId: v.string(),
+		stripePaymentIntentId: v.optional(v.string()),
+		amountCents: v.number(),
+		currency: v.string(),
+		reason: v.string(),
+		status: v.string(),
+		evidenceDueBy: v.optional(v.number()),
+		createdAt: v.number()
+	},
+	handler: async (ctx, args) => {
+		const account = await accountByStripeId(ctx, args.stripeAccountId);
+		if (!account) return null;
+
+		const intent = args.stripePaymentIntentId
+			? await giftByPaymentIntent(ctx, args.stripePaymentIntentId)
+			: null;
+
+		const { stripeAccountId: _account, ...fields } = args;
+		const existing = await ctx.db
+			.query('stripeDisputes')
+			.withIndex('by_stripeDisputeId', (q) => q.eq('stripeDisputeId', args.stripeDisputeId))
+			.unique();
+
+		if (existing) {
+			await ctx.db.patch('stripeDisputes', existing._id, {
+				...fields,
+				donationIntentId: intent?._id ?? existing.donationIntentId
+			});
+			return null;
+		}
+
+		await ctx.db.insert('stripeDisputes', {
+			orgId: account.orgId,
+			stripeAccountId: args.stripeAccountId,
+			donationIntentId: intent?._id,
+			...fields
 		});
 		return null;
 	}

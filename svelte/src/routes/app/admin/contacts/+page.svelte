@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { useQuery, useConvexClient } from '@mmailaender/convex-svelte';
+	import { usePaginatedQuery, useConvexClient } from '@mmailaender/convex-svelte';
 	import { useAuth } from '@mmailaender/convex-better-auth-svelte/svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	import { toast } from 'svelte-sonner';
@@ -28,12 +28,25 @@
 	const canWrite = $derived(access.can('contacts:write'));
 
 	let search = $state('');
+	let appliedSearch = $state('');
 
-	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
-		auth.isAuthenticated && canRead ? { search: search || undefined } : 'skip'
+	// The subscription's args are what re-run the query, so binding it to the
+	// input directly would open a new server subscription on every keystroke.
+	$effect(() => {
+		const next = search;
+		const timer = setTimeout(() => (appliedSearch = next), 250);
+		return () => clearTimeout(timer);
+	});
+
+	// Paginated, not bounded: this is the only screen for finding a specific
+	// person, so a cap that silently hid contacts past it would defeat the page.
+	const contactsPage = usePaginatedQuery(
+		api.contacts.queries.pageContacts,
+		() => (auth.isAuthenticated && canRead ? { search: appliedSearch || undefined } : 'skip'),
+		{ initialNumItems: 25 }
 	);
-	const contacts = $derived(contactsResponse?.data ?? []);
-	const loading = $derived(contactsResponse?.isLoading ?? false);
+	const contacts = $derived(contactsPage.results ?? []);
+	const loading = $derived(contactsPage.status === 'LoadingFirstPage');
 
 	let formOpen = $state(false);
 	let editing = $state<ContactRow | null>(null);
@@ -129,6 +142,19 @@
 				</Table.Body>
 			</Table.Root>
 		</div>
+
+		{#if contactsPage.status === 'CanLoadMore' || contactsPage.status === 'LoadingMore'}
+			<div class="flex justify-center pt-3">
+				<Button
+					variant="outline"
+					onclick={() => contactsPage.loadMore(25)}
+					loading={contactsPage.status === 'LoadingMore'}
+					disabled={contactsPage.status === 'LoadingMore'}
+				>
+					{m.donations_loadMore()}
+				</Button>
+			</div>
+		{/if}
 	{/if}
 </PageContainer>
 

@@ -4,7 +4,14 @@
 	// `renderRichText` in the page's load function — this component never sees
 	// markdown and never imports the renderer, which is what keeps the whole
 	// markdown pipeline out of a bundle served to strangers.
-	import { RichTextBody } from '$lib/features/rich-text';
+	// Imported from its own module rather than through the package barrel, and
+	// that is load-bearing rather than a style preference. The barrel also
+	// re-exports `RichTextEditor`, which pulls in Carta and its Shiki
+	// highlighter, so importing the renderer through it puts the whole editor in
+	// this page's module graph — and this page is the CDN-cached donor page the
+	// markdown-over-JSON decision existed to keep empty. The barrel is for the
+	// admin side, where the editor is wanted anyway.
+	import RichTextBody from '$lib/features/rich-text/RichTextBody.svelte';
 	import * as m from '$lib/i18n/messages';
 
 	type Update = {

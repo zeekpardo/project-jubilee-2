@@ -15,6 +15,14 @@ export type TaskTemplate = FunctionReturnType<
 
 export type TaskTemplateItem = TaskTemplate['items'][number];
 
+/**
+ * Which checklist a template version belongs to. A campaign keeps one active
+ * version of EACH — its record checklist and its trip checklist are different
+ * lists of different work. Re-exported from the model so the settings UI and
+ * the write path cannot drift apart on the spelling.
+ */
+export type { TaskTemplateScope } from '$convex/model/tasks';
+
 export type FieldCategory = FunctionReturnType<
 	typeof api.customFields.queries.listCategories
 >[number];

@@ -155,6 +155,90 @@ export const listPayouts = query({
 });
 
 /**
+ * Every payout, newest first.
+ *
+ * The paginated twin of `listPayouts` above, which deliberately stops at the
+ * last few weeks. That answers "did our money arrive"; this one answers "show
+ * me the year", which is the question a bookkeeper closing a month or an
+ * auditor asking about a bank deposit actually has — and the reason it can be
+ * answered here at all is `reconcilePayout`, which fills in the gross, the fees
+ * and the donation count that Stripe's payout event does not carry.
+ *
+ * Rows go out whole rather than projected. A payout row is Stripe-shaped
+ * bookkeeping about this org's own bank transfer; there is nothing on it that
+ * a person holding `money:read` should not see, and dropping columns here would
+ * mean editing two files every time the payout surface grows one.
+ */
+export const pagePayouts = query({
+	args: { paginationOpts: paginationOptsValidator },
+	handler: async (ctx, args) => {
+		const orgId = await readableOrgId(ctx, 'money:read');
+		if (!orgId) {
+			return { page: [], isDone: true, continueCursor: '' };
+		}
+
+		return await ctx.db
+			.query('stripePayouts')
+			.withIndex('by_orgId_and_createdAt', (q) => q.eq('orgId', orgId))
+			.order('desc')
+			.paginate(args.paginationOpts);
+	}
+});
+
+/**
+ * The individual gifts one payout settled.
+ *
+ * The ownership check is the point of this function, not a formality around it.
+ * `by_stripePayoutId` is a global index — it is keyed on a Stripe id and knows
+ * nothing about orgs — and a `po_` id is not a secret. Reading the payout first
+ * and comparing its `orgId` is what stops a guessed or borrowed id returning
+ * another nonprofit's donor names and email addresses. Same shape as
+ * `refunds.ts`: a row belonging to someone else is indistinguishable from one
+ * that does not exist.
+ *
+ * Bounded rather than paginated. A payout containing more than this is a payout
+ * whose detail nobody is reading row by row anyway, and the row's own
+ * `donationCount` is the honest total to compare against — if it exceeds what
+ * comes back here, the list is a sample and the summary is still right.
+ */
+export const listPayoutDonations = query({
+	args: { stripePayoutId: v.string() },
+	handler: async (ctx, args) => {
+		const orgId = await readableOrgId(ctx, 'money:read');
+		if (!orgId) return [];
+
+		const payout = await ctx.db
+			.query('stripePayouts')
+			.withIndex('by_stripePayoutId', (q) => q.eq('stripePayoutId', args.stripePayoutId))
+			.unique();
+		if (!payout || payout.orgId !== orgId) return [];
+
+		const gifts = await ctx.db
+			.query('donationIntents')
+			.withIndex('by_stripePayoutId', (q) => q.eq('stripePayoutId', args.stripePayoutId))
+			.take(500);
+
+		return gifts.map((gift) => ({
+			_id: gift._id,
+			_creationTime: gift._creationTime,
+			chargedCents: gift.chargedCents,
+			stripeFeeCents: gift.stripeFeeCents,
+			netCents: gift.netCents,
+			// Shown for the same reason `listOnlineGifts` shows them: `anonymous`
+			// withholds a donor's name from the PUBLIC site, not from the finance
+			// staff who have to tie a payout back to who gave.
+			donorName: gift.donorName,
+			donorEmail: gift.donorEmail,
+			stripePaymentIntentId: gift.stripePaymentIntentId,
+			// Usually `succeeded`, but not always: a gift refunded after it was
+			// paid out still settled in this payout, and the refund comes back out
+			// of a later one. Hiding that would leave the numbers unexplainable.
+			status: gift.status
+		}));
+	}
+});
+
+/**
  * Open and recently closed disputes.
  *
  * Surfaced prominently because under direct charges the debit lands on the

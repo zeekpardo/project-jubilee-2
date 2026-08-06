@@ -94,6 +94,7 @@ import type * as stripe_env from "../stripe/env.js";
 import type * as stripe_events from "../stripe/events.js";
 import type * as stripe_mutations from "../stripe/mutations.js";
 import type * as stripe_onboarding from "../stripe/onboarding.js";
+import type * as stripe_payouts from "../stripe/payouts.js";
 import type * as stripe_queries from "../stripe/queries.js";
 import type * as stripe_receipts from "../stripe/receipts.js";
 import type * as stripe_reconcile from "../stripe/reconcile.js";
@@ -216,6 +217,7 @@ declare const fullApi: ApiFromModules<{
   "stripe/events": typeof stripe_events;
   "stripe/mutations": typeof stripe_mutations;
   "stripe/onboarding": typeof stripe_onboarding;
+  "stripe/payouts": typeof stripe_payouts;
   "stripe/queries": typeof stripe_queries;
   "stripe/receipts": typeof stripe_receipts;
   "stripe/reconcile": typeof stripe_reconcile;

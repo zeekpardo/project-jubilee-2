@@ -820,6 +820,11 @@ const donationIntents = defineTable({
 	// Zero and absent both mean "nothing refunded".
 	refundedCents: v.optional(v.number()),
 
+	// Which payout this gift was settled in, stamped by `reconcilePayout` once
+	// the money actually reaches the org's bank. Absent means the gift has not
+	// been paid out yet — which is a real and common state, not a gap.
+	stripePayoutId: v.optional(v.string()),
+
 	// Tax acknowledgment state. The number is immutable once assigned and
 	// sequential per org per year ('2026-0007'), because a receipt series with
 	// gaps or reuse is the first thing an auditor pulls on.
@@ -837,6 +842,7 @@ const donationIntents = defineTable({
 	// because an org admin can edit metadata in their own Stripe dashboard.
 	.index('by_stripePaymentIntentId', ['stripePaymentIntentId'])
 	.index('by_stripeInvoiceId', ['stripeInvoiceId'])
+	.index('by_stripePayoutId', ['stripePayoutId'])
 	.index('by_contactId', ['contactId']);
 
 // A monthly (or annual) pledge: one Stripe Subscription living on the
@@ -930,7 +936,26 @@ const stripePayouts = defineTable({
 	statementDescriptor: v.optional(v.string()),
 	// `payout.created` time in ms, which is what the list is ordered by — the
 	// row's own `_creationTime` is when the webhook reached us, which drifts.
-	createdAt: v.number()
+	createdAt: v.number(),
+
+	// The breakdown behind `amountCents`, which Stripe does not send.
+	//
+	// A payout event carries only the net figure that reaches the bank. What it
+	// was made of — which gifts, and what Stripe took — lives in the balance
+	// transactions the payout settled, and has to be fetched and summed. That
+	// is what `reconcilePayout` does, and why these are optional: a payout is
+	// recorded the moment it is announced and enriched a moment later.
+	//
+	// `grossCents` and `feeCents` cover the DONATIONS in the payout only.
+	// A payout also settles refunds, disputes and adjustments, so
+	// `grossCents - feeCents` deliberately does NOT have to equal
+	// `amountCents` — `otherCents` carries the difference rather than letting
+	// the three columns silently fail to add up.
+	grossCents: v.optional(v.number()),
+	feeCents: v.optional(v.number()),
+	otherCents: v.optional(v.number()),
+	donationCount: v.optional(v.number()),
+	reconciledAt: v.optional(v.number())
 })
 	// unique(stripePayoutId)
 	.index('by_stripePayoutId', ['stripePayoutId'])

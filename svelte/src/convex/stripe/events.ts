@@ -251,18 +251,41 @@ async function dispatch(ctx: ActionCtx, event: Stripe.Event): Promise<void> {
 		case 'payout.canceled': {
 			const payout = event.data.object;
 			if (!event.account) return;
+			const status = mapPayoutStatus(payout.status);
+
 			await ctx.runMutation(internal.stripe.webhooks.recordPayout, {
 				stripeAccountId: event.account,
 				stripePayoutId: payout.id,
 				amountCents: payout.amount,
 				currency: payout.currency,
-				status: mapPayoutStatus(payout.status),
+				status,
 				arrivalDate: payout.arrival_date ? payout.arrival_date * 1000 : undefined,
 				failureCode: payout.failure_code ?? undefined,
 				failureMessage: payout.failure_message ?? undefined,
 				statementDescriptor: payout.statement_descriptor ?? undefined,
 				createdAt: payout.created * 1000
 			});
+
+			// What was just recorded is the whole of what Stripe sent: one net
+			// figure. Which gifts it settled and what was taken out of them are
+			// not in the payload at all — they live in the balance transactions
+			// the payout settled, which have to be listed off the connected
+			// account and summed. Hence an action rather than more of this
+			// handler.
+			//
+			// Only once `paid`. Balance transactions are not attached to a payout
+			// that is still pending or in transit, so reconciling early would read
+			// an empty list and learn nothing.
+			//
+			// Scheduled rather than awaited: Stripe times out a webhook in
+			// seconds, and paging a busy month's payout is not work to do inside
+			// one.
+			if (status === 'paid') {
+				await ctx.scheduler.runAfter(0, internal.stripe.payouts.reconcilePayout, {
+					stripeAccountId: event.account,
+					stripePayoutId: payout.id
+				});
+			}
 			return;
 		}
 

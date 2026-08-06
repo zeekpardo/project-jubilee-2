@@ -23,6 +23,10 @@ export type TaskTemplateItem = TaskTemplate['items'][number];
  */
 export type { TaskTemplateScope } from '$convex/model/tasks';
 
+export type TripBudgetTemplate = FunctionReturnType<
+	typeof api.tripBudgetTemplates.queries.listTripBudgetTemplates
+>[number];
+
 export type FieldCategory = FunctionReturnType<
 	typeof api.customFields.queries.listCategories
 >[number];

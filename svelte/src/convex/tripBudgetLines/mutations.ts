@@ -155,3 +155,57 @@ export const reorderTripBudgetLines = mutation({
 		return null;
 	}
 });
+
+/**
+ * Start this trip's budget from one of the campaign's presets.
+ *
+ * APPENDS, never replaces. A planner who has already typed two lines and then
+ * reaches for a preset means "and the usual ones too" — wiping their work
+ * would be the destructive reading of an additive-sounding action, and it is
+ * not recoverable through undo. Applying twice therefore duplicates, which is
+ * visible and one delete away; the alternative failure is silent.
+ *
+ * The lines are COPIED, which is the whole reason `tripBudgetTemplates` needs
+ * no versioning: from here on the trip owns its rows, and editing the preset
+ * later cannot reach them. See the note on that table in schema.ts.
+ */
+export const applyTripBudgetTemplate = mutation({
+	args: { tripId: v.id('trips'), templateId: v.id('tripBudgetTemplates') },
+	handler: async (ctx, args) => {
+		const { orgId } = await requireCapability(ctx, 'projects:write');
+		const trip = await requireTrip(ctx, orgId, args.tripId);
+		await requireCapability(ctx, 'projects:write', trip.campaignId);
+
+		const template = await ctx.db.get('tripBudgetTemplates', args.templateId);
+		if (!template || template.orgId !== orgId) throw new ConvexError('Template not found');
+		// A preset belongs to the campaign that wrote it. Applying another
+		// campaign's would price this trip off a rate card its planners cannot
+		// see, and quietly leak what that campaign spends.
+		if (template.campaignId !== trip.campaignId) throw new ConvexError('Template not found');
+
+		const existing = await ctx.db
+			.query('tripBudgetLines')
+			.withIndex('by_tripId', (q) => q.eq('tripId', trip._id))
+			.collect();
+		// Appended after whatever is already there, so existing rows keep their
+		// order and the new ones arrive in the preset's own sequence.
+		let order = existing.reduce((max, line) => Math.max(max, line.order + 1), 0);
+
+		const lines = [...template.lines].sort((a, b) => a.order - b.order);
+		for (const line of lines) {
+			assertNonNegativeCents(line.label, line.amountCents);
+			await ctx.db.insert('tripBudgetLines', {
+				orgId,
+				tripId: trip._id,
+				label: line.label,
+				amountCents: line.amountCents,
+				perAttendee: line.perAttendee,
+				notes: line.notes,
+				order
+			});
+			order += 1;
+		}
+
+		return lines.length;
+	}
+});

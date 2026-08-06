@@ -113,6 +113,8 @@ import type * as tripAttendees_mutations from "../tripAttendees/mutations.js";
 import type * as tripAttendees_queries from "../tripAttendees/queries.js";
 import type * as tripBudgetLines_mutations from "../tripBudgetLines/mutations.js";
 import type * as tripBudgetLines_queries from "../tripBudgetLines/queries.js";
+import type * as tripBudgetTemplates_mutations from "../tripBudgetTemplates/mutations.js";
+import type * as tripBudgetTemplates_queries from "../tripBudgetTemplates/queries.js";
 import type * as tripSegments_mutations from "../tripSegments/mutations.js";
 import type * as tripSegments_queries from "../tripSegments/queries.js";
 import type * as trips_mutations from "../trips/mutations.js";
@@ -236,6 +238,8 @@ declare const fullApi: ApiFromModules<{
   "tripAttendees/queries": typeof tripAttendees_queries;
   "tripBudgetLines/mutations": typeof tripBudgetLines_mutations;
   "tripBudgetLines/queries": typeof tripBudgetLines_queries;
+  "tripBudgetTemplates/mutations": typeof tripBudgetTemplates_mutations;
+  "tripBudgetTemplates/queries": typeof tripBudgetTemplates_queries;
   "tripSegments/mutations": typeof tripSegments_mutations;
   "tripSegments/queries": typeof tripSegments_queries;
   "trips/mutations": typeof trips_mutations;

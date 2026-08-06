@@ -22,6 +22,7 @@
 	import PipelineStagesTab from '$lib/features/settings/PipelineStagesTab.svelte';
 	import CostTemplatesTab from '$lib/features/settings/CostTemplatesTab.svelte';
 	import TaskTemplatesTab from '$lib/features/settings/TaskTemplatesTab.svelte';
+	import TripBudgetTemplatesTab from '$lib/features/settings/TripBudgetTemplatesTab.svelte';
 	import CustomFieldsTab from '$lib/features/settings/CustomFieldsTab.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
@@ -59,6 +60,7 @@
 		{ value: 'pipeline', label: () => m.settings_pipeline() },
 		{ value: 'costTemplates', label: () => m.settings_costTemplates() },
 		{ value: 'taskTemplates', label: () => m.settings_checklistAndImpact() },
+		{ value: 'tripBudgets', label: () => m.settings_tripBudgets() },
 		{ value: 'customFields', label: () => m.settings_customFields(), orgWide: true }
 	] as const;
 
@@ -98,6 +100,9 @@
 			</Tabs.Content>
 			<Tabs.Content value="costTemplates">
 				<CostTemplatesTab {campaignId} />
+			</Tabs.Content>
+			<Tabs.Content value="tripBudgets">
+				<TripBudgetTemplatesTab {campaignId} />
 			</Tabs.Content>
 			<Tabs.Content value="taskTemplates">
 				<div class="flex flex-col gap-6">

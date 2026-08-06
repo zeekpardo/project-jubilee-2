@@ -23,7 +23,7 @@
 	import type { Id } from '$convex/_generated/dataModel';
 
 	import TaskTemplateVersionDialog from './TaskTemplateVersionDialog.svelte';
-	import type { TaskTemplate, TaskTemplateItem } from './types';
+	import type { TaskTemplate, TaskTemplateItem, TaskTemplateScope } from './types';
 	import * as m from '$lib/i18n/messages';
 
 	let { campaignId }: { campaignId: Id<'campaigns'> } = $props();
@@ -32,8 +32,17 @@
 	const auth = useAuth();
 	const client = useConvexClient();
 
+	/**
+	 * Which checklist is being edited. A campaign keeps one active version of
+	 * EACH — the record checklist it always had, and the trip checklist that
+	 * feeds a trip's Checklist tab (PLAN-trips.md §6). Without this switch the
+	 * trip list is unauthorable and a trip's checklist stays empty forever.
+	 */
+	let scope = $state<TaskTemplateScope>('project');
+	const isTrip = $derived(scope === 'trip');
+
 	const templatesResponse = useQuery(api.taskTemplates.queries.listTaskTemplates, () =>
-		auth.isAuthenticated ? { campaignId } : 'skip'
+		auth.isAuthenticated ? { campaignId, scope } : 'skip'
 	);
 	// The query reads an isActive index, so the rows arrive grouped by flag rather
 	// than by age; newest first is what a version history should read as.
@@ -115,12 +124,39 @@
 		<Alert.Description>{m.settings_taskAppendOnlyNote()}</Alert.Description>
 	</Alert.Root>
 
-	<div class="flex justify-end">
+	<!--
+		Two checklists, switched here rather than merged into one list: they are
+		different work with different rules, and the one-active-version rule is
+		per scope, so showing both at once would make "Active" ambiguous.
+	-->
+	<div class="flex flex-wrap items-center justify-between gap-2">
+		<div class="bg-muted inline-flex rounded-md p-1">
+			<Button
+				variant={isTrip ? 'ghost' : 'secondary'}
+				size="sm"
+				aria-pressed={!isTrip}
+				onclick={() => (scope = 'project')}
+			>
+				{m.settings_scopeRecordChecklist()}
+			</Button>
+			<Button
+				variant={isTrip ? 'secondary' : 'ghost'}
+				size="sm"
+				aria-pressed={isTrip}
+				onclick={() => (scope = 'trip')}
+			>
+				{m.settings_scopeTripChecklist()}
+			</Button>
+		</div>
 		<Button onclick={openNew}>
 			<PlusIcon />
 			{m.settings_versionNew()}
 		</Button>
 	</div>
+
+	{#if isTrip}
+		<p class="text-muted-foreground text-xs">{m.settings_scopeTripHelp()}</p>
+	{/if}
 
 	{#if isLoading}
 		<div class="flex flex-col gap-3">
@@ -244,4 +280,4 @@
 	{/if}
 </div>
 
-<TaskTemplateVersionDialog bind:open={dialogOpen} {campaignId} template={editing} />
+<TaskTemplateVersionDialog bind:open={dialogOpen} {campaignId} template={editing} {scope} />

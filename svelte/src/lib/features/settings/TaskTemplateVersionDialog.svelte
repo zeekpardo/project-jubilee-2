@@ -19,7 +19,7 @@
 	import { getAuthContext } from '$lib/auth/context.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
 
-	import type { TaskTemplate } from './types';
+	import type { TaskTemplate, TaskTemplateScope } from './types';
 	import * as m from '$lib/i18n/messages';
 
 	const { api } = getAuthContext();
@@ -28,15 +28,23 @@
 	let {
 		open = $bindable(false),
 		campaignId,
-		template = null
+		template = null,
+		scope = 'project'
 	}: {
 		open?: boolean;
 		campaignId: Id<'campaigns'>;
 		/** Null creates a new version; a template edits that one in place. */
 		template?: TaskTemplate | null;
+		/**
+		 * Which checklist this version belongs to. A campaign keeps one active
+		 * version of EACH, and they are different lists of different work — see
+		 * PLAN-trips.md §6.
+		 */
+		scope?: TaskTemplateScope;
 	} = $props();
 
 	const isEdit = $derived(template !== null);
+	const isTrip = $derived(scope === 'trip');
 
 	// `existingKey` is set for a row that was already saved. Its key is then
 	// immutable — the key is how a project's tasks are matched back to the
@@ -46,6 +54,13 @@
 		key: string;
 		label: string;
 		impactTag: string;
+		/**
+		 * Trip scope only: answered once PER TRAVELLER rather than once per trip.
+		 * "Book group lodging" is one tick; "passport valid 6 months past return"
+		 * is one per person, and a single shared tick would hide the one traveller
+		 * who cannot board.
+		 */
+		perAttendee: boolean;
 		existingKey: string | null;
 	};
 
@@ -78,7 +93,7 @@
 
 	function blankRow(): Row {
 		nextRowId += 1;
-		return { id: nextRowId, key: '', label: '', impactTag: '', existingKey: null };
+		return { id: nextRowId, key: '', label: '', impactTag: '', perAttendee: false, existingKey: null };
 	}
 
 	/** The stat settings for a tag, defaulting to "tracked but shown nowhere". */
@@ -108,6 +123,7 @@
 							key: item.key,
 							label: item.label,
 							impactTag: item.impactTag ?? '',
+							perAttendee: item.perAttendee ?? false,
 							existingKey: item.key
 						};
 					})
@@ -194,11 +210,17 @@
 		event.preventDefault();
 		if (isSaving || !canSubmit) return;
 
+		// The two scope-only fields are sent as UNSET rather than false/empty on the
+		// scope that cannot hold them. The write path refuses `impactTag` on a trip
+		// item and `perAttendee` on a project one, and sending an explicit `false`
+		// for a field the row is not allowed to carry is how a harmless default
+		// turns into a rejected save.
 		const items = filled.map((row, index) => ({
 			key: row.key.trim(),
 			label: row.label.trim(),
 			order: index,
-			impactTag: row.impactTag.trim() || undefined
+			impactTag: isTrip ? undefined : row.impactTag.trim() || undefined,
+			perAttendee: isTrip && row.perAttendee ? true : undefined
 		}));
 
 		// One save: the items and where each tag's number shows go together, and a
@@ -222,7 +244,8 @@
 					items,
 					statSurfaces,
 					effectiveFrom: effectiveFrom.trim() || undefined,
-					activate
+					activate,
+					scope
 				});
 				toast.success(m.settings_taskCreated());
 			}
@@ -273,16 +296,22 @@
 
 			<div class="flex flex-col gap-2">
 				<Label>{m.nav_tasks()}</Label>
-				<p class="text-muted-foreground text-xs">{m.settings_impactTagHelp()}</p>
+				<p class="text-muted-foreground text-xs">
+					{isTrip ? m.settings_perAttendeeHelp() : m.settings_impactTagHelp()}
+				</p>
 
 				<div
 					class="text-muted-foreground flex items-center gap-2 text-[11px] font-medium tracking-wide uppercase"
 				>
 					<span class="w-40 shrink-0">{m.settings_taskItemKey()}</span>
 					<span class="flex-1">{m.settings_taskItemLabel()}</span>
-					<span class="w-36 shrink-0">{m.settings_impactTag()}</span>
-					<span class="w-9 shrink-0 text-center">{m.campaignStats_onPublicShort()}</span>
-					<span class="w-9 shrink-0 text-center">{m.campaignStats_onDashboardShort()}</span>
+					{#if isTrip}
+						<span class="w-28 shrink-0 text-center">{m.settings_perAttendeeShort()}</span>
+					{:else}
+						<span class="w-36 shrink-0">{m.settings_impactTag()}</span>
+						<span class="w-9 shrink-0 text-center">{m.campaignStats_onPublicShort()}</span>
+						<span class="w-9 shrink-0 text-center">{m.campaignStats_onDashboardShort()}</span>
+					{/if}
 					<span class="w-9 shrink-0"></span>
 				</div>
 
@@ -310,30 +339,49 @@
 								placeholder={m.settings_taskItemLabel()}
 								aria-label={m.settings_taskItemLabel()}
 							/>
-							<Input
-								bind:value={row.impactTag}
-								class="w-36 shrink-0"
-								placeholder={m.settings_impactTag()}
-								aria-label={m.settings_impactTag()}
-							/>
-							<Switch
-								checked={surfacesFor(tag).showOnPublic}
-								disabled={tag === ''}
-								aria-label={m.campaignStats_onPublic()}
-								title={m.campaignStats_onPublic()}
-								onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
-									setSurface(tag, 'showOnPublic', details.checked);
-								}}
-							/>
-							<Switch
-								checked={surfacesFor(tag).showOnDashboard}
-								disabled={tag === ''}
-								aria-label={m.campaignStats_onDashboard()}
-								title={m.campaignStats_onDashboard()}
-								onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
-									setSurface(tag, 'showOnDashboard', details.checked);
-								}}
-							/>
+							{#if isTrip}
+								<!--
+									One tick per traveller instead of one for the trip. A trip
+									item carries no impact tag at all — a tagged task counts
+									DISTINCT records and a trip names none, so the write path
+									refuses it rather than letting it count zero forever.
+								-->
+								<div class="flex w-28 shrink-0 justify-center">
+									<Switch
+										checked={row.perAttendee}
+										aria-label={m.settings_perAttendee()}
+										title={m.settings_perAttendeeHelp()}
+										onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
+											row.perAttendee = details.checked;
+										}}
+									/>
+								</div>
+							{:else}
+								<Input
+									bind:value={row.impactTag}
+									class="w-36 shrink-0"
+									placeholder={m.settings_impactTag()}
+									aria-label={m.settings_impactTag()}
+								/>
+								<Switch
+									checked={surfacesFor(tag).showOnPublic}
+									disabled={tag === ''}
+									aria-label={m.campaignStats_onPublic()}
+									title={m.campaignStats_onPublic()}
+									onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
+										setSurface(tag, 'showOnPublic', details.checked);
+									}}
+								/>
+								<Switch
+									checked={surfacesFor(tag).showOnDashboard}
+									disabled={tag === ''}
+									aria-label={m.campaignStats_onDashboard()}
+									title={m.campaignStats_onDashboard()}
+									onCheckedChange={(details: SwitchCheckedChangeDetails): void => {
+										setSurface(tag, 'showOnDashboard', details.checked);
+									}}
+								/>
+							{/if}
 							<Button
 								type="button"
 								variant="ghost"

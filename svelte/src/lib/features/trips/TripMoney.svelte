@@ -26,9 +26,13 @@
 	// API
 	import { useQuery, useConvexClient } from '@mmailaender/convex-svelte';
 	import { getAuthContext } from '$lib/auth/context.svelte';
-	import type { Doc } from '$convex/_generated/dataModel';
+	import type { Doc, Id } from '$convex/_generated/dataModel';
 
 	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
+	import * as Select from '$lib/primitives/ui/select';
+	import { createListCollection } from '@ark-ui/svelte/select';
+	import { toast } from 'svelte-sonner';
+	import { ConvexError } from 'convex/values';
 	import { formatCents } from '$lib/features/money/format';
 	import { buildTripBudget } from '$lib/domain/trip-budget';
 	import * as m from '$lib/i18n/messages';
@@ -39,6 +43,46 @@
 
 	const { api } = getAuthContext();
 	const client = useConvexClient();
+
+	// The campaign's named presets. Applying one COPIES its lines onto this trip,
+	// so the preset is a starting point and never a live dependency — editing it
+	// later cannot reach a budget already built from it.
+	const templatesResponse = useQuery(api.tripBudgetTemplates.queries.listTripBudgetTemplates, () => ({
+		campaignId: trip.campaignId
+	}));
+	const templates = $derived(templatesResponse.data ?? []);
+	const templateCollection = $derived(
+		createListCollection({
+			items: templates.map((t) => ({ value: t._id as string, label: t.name }))
+		})
+	);
+	let applyingId = $state('');
+	let isApplying = $state(false);
+
+	async function applyTemplate(templateId: string): Promise<void> {
+		if (isApplying || templateId === '') return;
+		isApplying = true;
+		try {
+			const added = await client.mutation(
+				api.tripBudgetLines.mutations.applyTripBudgetTemplate,
+				{ tripId: trip._id, templateId: templateId as Id<'tripBudgetTemplates'> }
+			);
+			// Appends rather than replaces, so say how many arrived — applying twice
+			// duplicates, and the count is what makes that visible immediately.
+			toast.success(m.tripDetail_budgetTemplateApplied({ count: added }));
+		} catch (error: unknown) {
+			toast.error(
+				error instanceof ConvexError
+					? String(error.data)
+					: error instanceof Error
+						? error.message
+						: m.state_saveFailed()
+			);
+		} finally {
+			isApplying = false;
+			applyingId = '';
+		}
+	}
 
 	const linesResponse = useQuery(api.tripBudgetLines.queries.listTripBudgetLines, () => ({
 		tripId: trip._id
@@ -121,10 +165,42 @@
 			</Card.Description>
 			{#if canWrite}
 				<Card.Action>
-					<Button variant="outline" size="sm" onclick={openAdd}>
-						<PlusIcon class="size-4" aria-hidden="true" />
-						{m.tripDetail_addLine()}
-					</Button>
+					<div class="flex items-center gap-2">
+						<!--
+							Applying APPENDS. A planner who already typed two lines and then
+							reaches for a preset means "and the usual ones too", so this never
+							wipes their work — which is also why the toast reports how many
+							lines arrived.
+						-->
+						{#if templateCollection.items.length > 0}
+							<Select.Root
+								collection={templateCollection}
+								value={applyingId === '' ? [] : [applyingId]}
+								onValueChange={(details: { value: string[] }): void => {
+									const picked = details.value[0] ?? '';
+									applyingId = picked;
+									void applyTemplate(picked);
+								}}
+							>
+								<Select.Trigger
+									class="w-52"
+									disabled={isApplying}
+									placeholder={m.tripDetail_applyBudgetTemplate()}
+								/>
+								<Select.Content>
+									{#each templateCollection.items as option (option.value)}
+										<Select.Item item={option}>
+											<Select.ItemText>{option.label}</Select.ItemText>
+										</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						{/if}
+						<Button variant="outline" size="sm" onclick={openAdd}>
+							<PlusIcon class="size-4" aria-hidden="true" />
+							{m.tripDetail_addLine()}
+						</Button>
+					</div>
 				</Card.Action>
 			{/if}
 		</Card.Header>

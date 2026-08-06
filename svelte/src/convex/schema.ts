@@ -1534,6 +1534,42 @@ const tripBudgetLines = defineTable({
 	.index('by_tripId', ['tripId'])
 	.index('by_tripId_and_order', ['tripId', 'order']);
 
+// A named set of budget lines a new trip can start from — "Standard Pakistan
+// trip" as airfare, lodging, ground transport and visas, already priced.
+//
+// Deliberately NOT versioned, which is the one place this departs from
+// `costTemplates` and `taskTemplates`. Those are append-only with an active
+// version because a project's budget and a ticked checklist item must not be
+// rewritten by a later edit to the thing they came from. Applying one of these
+// COPIES its lines into `tripBudgetLines`, so the trip's own rows are the
+// record from that moment on and there is nothing left to protect: editing the
+// template afterwards cannot reach a trip that already used it, because no
+// trip references it. No `isActive` either — a campaign may keep several
+// (a one-week trip and a three-week one) and the planner picks.
+//
+// `lines` is inline for the same reason taskTemplates.items is: bounded at a
+// handful of entries and always read as a whole.
+const tripBudgetTemplates = defineTable({
+	orgId: v.string(),
+	campaignId: v.id('campaigns'),
+	name: v.string(),
+	lines: v.array(
+		v.object({
+			label: v.string(),
+			// Integer cents, always — the rule the whole ledger follows.
+			amountCents: v.number(),
+			// Carried onto the copied line, so "per seat" survives the copy. A
+			// preset that forgot this would silently price a twelve-person trip as
+			// though one airfare covered everybody.
+			perAttendee: v.boolean(),
+			notes: v.optional(v.string()),
+			order: v.number()
+		})
+	)
+})
+	.index('by_campaignId', ['campaignId'])
+	.index('by_orgId', ['orgId']);
+
 // Custom fields engine. One pair of tables powers custom fields for every
 // entity and both scopes. A record's applicable fields are all org-scope fields
 // for its entity, plus its campaign's own — see resolveFieldDefinitions in
@@ -1656,6 +1692,7 @@ export default defineSchema({
 	tripAttendees,
 	tripSegments,
 	tripBudgetLines,
+	tripBudgetTemplates,
 	customFieldCategories,
 	customFieldDefinitions,
 	campaignAssignments,

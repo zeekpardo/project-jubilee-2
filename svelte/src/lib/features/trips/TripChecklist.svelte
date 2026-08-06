@@ -37,6 +37,7 @@
 		EDITABLE_TASK_COLUMNS,
 		type TaskColumn
 	} from '$lib/features/tasks/TaskTable.svelte';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/i18n/messages';
 
 	let { trip, canWrite }: { trip: Doc<'trips'>; canWrite: boolean } = $props();
@@ -180,6 +181,19 @@
 			>
 				{#snippet icon()}
 					<ListChecksIcon />
+				{/snippet}
+				{#snippet action()}
+					<!--
+						Authoring lives in campaign settings, where every other template
+						does. Linking out rather than editing inline keeps one place to
+						change a campaign-level object — editing it from inside one trip
+						is how every future trip gets changed by accident.
+					-->
+					{#if !hasTemplate && canWrite}
+						<Button variant="outline" size="sm" href={resolve('/app/settings')}>
+							{m.tripDetail_editTripChecklist()}
+						</Button>
+					{/if}
 				{/snippet}
 			</EmptyState>
 		{:else if !response.isLoading && visible.length === 0}

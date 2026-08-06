@@ -363,6 +363,18 @@ export async function deleteCampaignCascade(
 		await deleteTripCascade(ctx, trip._id);
 	}
 
+	// The campaign's budget presets. Not reached by deleteTripCascade and never
+	// could be: a preset belongs to the campaign, not to any trip, and a trip
+	// holds a COPY of its lines rather than a reference. So this is the only
+	// thing that deletes them, and without it they outlive the campaign.
+	const budgetTemplates = await ctx.db
+		.query('tripBudgetTemplates')
+		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const template of budgetTemplates) {
+		await ctx.db.delete('tripBudgetTemplates', template._id);
+	}
+
 	const projects = await ctx.db
 		.query('projects')
 		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))

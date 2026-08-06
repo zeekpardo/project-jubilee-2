@@ -36,13 +36,34 @@ export type StatFormat = 'count' | 'money';
 // A donor attached to a record is not a person that record reached. Counting
 // them would inflate the public impact number with the very people being
 // asked to give, and inflate a project's household size with strangers.
-// projectMembers.role is free text so a campaign can use its own vocabulary,
-// which makes this a denylist: an unrecognized role describes someone the
-// project serves or involves, and only a donor role is excluded.
+//
+// This is now the FALLBACK for rows with no `side`, not the mechanism.
+// `projectMembers.side` says outright which side of the work a person is on;
+// this denylist only decides rows written before that column existed. It stays
+// a denylist because `projectMembers.role` is free text — a campaign uses its
+// own vocabulary, so an unrecognized role describes someone the project serves
+// or involves, and only a donor role is excluded.
 const DONOR_ROLES = new Set(['sponsor', 'donor']);
 
-/** Whether a projectMembers row counts as a person the project reached. */
-export function isPersonReachedRole(role: string): boolean {
+/**
+ * Whether a projectMembers row counts as a person the project reached.
+ *
+ * The row's own `side` decides when it has one: `team` is the organization's
+ * own people — staff, volunteers, trip goers — and they are not people the
+ * project reached. Absent `side` falls back to DONOR_ROLES, because every row
+ * written before that column existed was entered as a person on a record, and
+ * reading those as `team` would silently drop them out of an already-published
+ * impact number.
+ *
+ * One caller deliberately passes NO `side`: `convex/model/portal.ts` reuses
+ * this gate to decide whether a signed-in person may see a record's name and
+ * story in their own portal. That is an access decision, not a count, and
+ * gating it on `side` would revoke portal visibility from anyone marked
+ * `team`. It is an open question — see PLAN-trips.md §14.1 — so do not "fix"
+ * that call site by passing `link.side` to it.
+ */
+export function isPersonReachedRole(role: string, side?: 'served' | 'team'): boolean {
+	if (side) return side === 'served';
 	return !DONOR_ROLES.has(role.trim().toLowerCase());
 }
 

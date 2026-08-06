@@ -23,7 +23,12 @@ import type { MutationCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import { requireCapability } from '../model/access';
 import { campaignStages } from '../model/projects';
-import { instantiateTasks, requireTaskProject } from '../model/tasks';
+import {
+	instantiateTasks,
+	instantiateTripTasks,
+	requireTaskProject,
+	requireTaskTrip
+} from '../model/tasks';
 import {
 	BULK_TASK_MAX,
 	TASK_VIEW_MAX,
@@ -125,20 +130,46 @@ async function requireTaskProjectInCampaign(
 	return project;
 }
 
+/** The trip a task may name, under the same rule. Twin of the above. */
+async function requireTaskTripInCampaign(
+	ctx: MutationCtx,
+	orgId: string,
+	campaignId: Id<'campaigns'>,
+	tripId: Id<'trips'>
+): Promise<Doc<'trips'>> {
+	const trip = await requireTaskTrip(ctx, orgId, tripId);
+	if (trip.campaignId !== campaignId) {
+		throw new ConvexError('That trip belongs to a different campaign');
+	}
+	return trip;
+}
+
 /**
- * Where a new manual task sits in a project's checklist: after everything
- * already there. Campaign-level tasks get 0 — nothing orders them, the list
- * sorts by whatever the URL says, and `compareTasks` breaks the tie on label.
+ * Where a new manual task sits in its checklist: after everything already
+ * there. Campaign-level tasks get 0 — nothing orders them, the list sorts by
+ * whatever the URL says, and `compareTasks` breaks the tie on label.
+ *
+ * A task naming both a project and a trip — "visit the Rahman family" — is
+ * ordered by its PROJECT. The project checklist is the numbered list someone
+ * reads top to bottom; the trip page groups the same row under its trip.
  */
 async function nextTaskOrder(
 	ctx: MutationCtx,
-	projectId: Id<'projects'> | undefined
+	projectId: Id<'projects'> | undefined,
+	tripId?: Id<'trips'>
 ): Promise<number> {
-	if (!projectId) return 0;
-	const existing = await ctx.db
-		.query('tasks')
-		.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
-		.collect();
+	const existing = projectId
+		? await ctx.db
+				.query('tasks')
+				.withIndex('by_projectId', (q) => q.eq('projectId', projectId))
+				.collect()
+		: tripId
+			? await ctx.db
+					.query('tasks')
+					.withIndex('by_tripId', (q) => q.eq('tripId', tripId))
+					.collect()
+			: [];
+	if (existing.length === 0) return 0;
 	return existing.reduce((highest, task) => Math.max(highest, task.order), -1) + 1;
 }
 
@@ -158,6 +189,34 @@ export const syncProjectTasks = mutation({
 		await requireCapability(ctx, 'projects:write', project.campaignId);
 
 		return await instantiateTasks(ctx, project);
+	}
+});
+
+/**
+ * The same offer for a trip: give it the travel-readiness items its campaign's
+ * active TRIP checklist defines and it does not have yet, including one row per
+ * traveller for the per-person items.
+ *
+ * This is the third of `instantiateTripTasks`'s three call sites — the other
+ * two are trip create and adding an attendee — and it exists because the other
+ * two cannot cover a checklist that changed after the fact. Additive-only is
+ * what makes pressing it twice, or pressing it a week after a new version was
+ * activated, the same safe operation.
+ *
+ * NO NEW CAPABILITY: trips are `projects:write` scoped to the trip's campaign,
+ * per §9. A team leader assigned to the campaign does the campaign's
+ * operational work, including the trip they are on.
+ */
+export const syncTripTasks = mutation({
+	args: { tripId: v.id('trips') },
+	handler: async (ctx, args) => {
+		// The campaign is only known after the trip is read, so the org gate comes
+		// first and the campaign-scoped one straight after — same shape as above.
+		const { orgId } = await requireCapability(ctx, 'projects:write');
+		const trip = await requireTaskTrip(ctx, orgId, args.tripId);
+		await requireCapability(ctx, 'projects:write', trip.campaignId);
+
+		return await instantiateTripTasks(ctx, trip);
 	}
 });
 
@@ -195,6 +254,12 @@ export const setTaskStatus = mutation({
  * `projectId` is optional: without one this is campaign-level work belonging to
  * no record, which is the case that made the column optional in the first
  * place.
+ *
+ * `tripId` is optional for the same reason and is NOT the alternative to it.
+ * The two are independent: "visit the Rahman family" is a stop on the trip AND
+ * about a record, and that pair is the one shape in which a trip's work
+ * legitimately feeds an impact tag — because the tag's rule is about the
+ * project, not about the trip.
  */
 export const createTask = mutation({
 	args: {
@@ -205,6 +270,7 @@ export const createTask = mutation({
 		dueOn: v.optional(v.string()),
 		priority: v.optional(taskPriorityValidator),
 		projectId: v.optional(v.id('projects')),
+		tripId: v.optional(v.id('trips')),
 		stageKey: v.optional(v.string()),
 		impactTag: v.optional(v.string())
 	},
@@ -219,6 +285,10 @@ export const createTask = mutation({
 		const label = args.label.trim();
 		if (!label) throw new ConvexError('A task needs a title');
 
+		// The rule is about the PROJECT and nothing else: a trip task with no record
+		// behind it is refused a tag exactly as a campaign-level one is, and a task
+		// carrying both a trip and a project may have one exactly as a plain record
+		// task may. Naming a trip neither grants nor costs anything here.
 		const impactTag = args.impactTag?.trim() || undefined;
 		if (impactTag && !args.projectId) {
 			throw new ConvexError(IMPACT_TAG_NEEDS_PROJECT);
@@ -226,6 +296,9 @@ export const createTask = mutation({
 
 		if (args.projectId) {
 			await requireTaskProjectInCampaign(ctx, orgId, args.campaignId, args.projectId);
+		}
+		if (args.tripId) {
+			await requireTaskTripInCampaign(ctx, orgId, args.campaignId, args.tripId);
 		}
 		assertDueOn(args.dueOn);
 		if (args.stageKey) await assertStageKey(ctx, args.campaignId, args.stageKey);
@@ -235,13 +308,14 @@ export const createTask = mutation({
 			orgId,
 			campaignId: args.campaignId,
 			projectId: args.projectId,
+			tripId: args.tripId,
 			// No templateVersion and no key: this task agreed to no wording but its
 			// own, and manual tasks have no natural key, so duplicates among them
 			// are allowed and are the user's business.
 			source: 'manual' as const,
 			label,
 			description: args.description?.trim() || undefined,
-			order: await nextTaskOrder(ctx, args.projectId),
+			order: await nextTaskOrder(ctx, args.projectId, args.tripId),
 			impactTag,
 			stageKey: args.stageKey,
 			assignee: args.assignee,

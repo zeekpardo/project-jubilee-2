@@ -4,6 +4,7 @@ import {
 	CHILD_AGE_MAX,
 	defaultStatConfigs,
 	isChildMember,
+	isPersonReachedRole,
 	memberStatLabel,
 	isStatMetricKey,
 	resolveStatConfigs,
@@ -57,6 +58,52 @@ describe('isStatMetricKey', () => {
 	it('rejects unknown keys', () => {
 		expect(isStatMetricKey('small_businesses_started')).toBe(false);
 		expect(isStatMetricKey('')).toBe(false);
+	});
+});
+
+describe('isPersonReachedRole', () => {
+	it('counts a row explicitly marked served, whatever its role says', () => {
+		// `side` is the mechanism now, so it wins over the role text entirely —
+		// even a role the denylist would have rejected on its own.
+		expect(isPersonReachedRole('member', 'served')).toBe(true);
+		expect(isPersonReachedRole('volunteer', 'served')).toBe(true);
+		expect(isPersonReachedRole('sponsor', 'served')).toBe(true);
+	});
+
+	it('does not count a row marked team, whatever its role says', () => {
+		// The headline fix: the organization's own people — the staffer, the
+		// trip goer standing in the photograph — stop inflating a published
+		// impact number and a published household size.
+		expect(isPersonReachedRole('team_lead', 'team')).toBe(false);
+		expect(isPersonReachedRole('attendee', 'team')).toBe(false);
+		// A role the denylist would have COUNTED, now correctly excluded.
+		expect(isPersonReachedRole('member', 'team')).toBe(false);
+	});
+
+	it('falls back to the donor denylist when the row has no side', () => {
+		// Absent means served: every row written before the column existed was
+		// entered as a person on a record, and reading those as `team` would
+		// silently drop them out of an already-published number.
+		expect(isPersonReachedRole('member')).toBe(true);
+		expect(isPersonReachedRole('head')).toBe(true);
+		// The legacy denylist still excludes a donor role, case and padding
+		// insensitively, because the role text is free.
+		expect(isPersonReachedRole('sponsor')).toBe(false);
+		expect(isPersonReachedRole('  Donor  ')).toBe(false);
+	});
+
+	it('still counts a legacy volunteer row that carries no side', () => {
+		// This is the pre-existing behaviour, asserted deliberately rather than
+		// left to chance. A volunteer entered before `side` existed is counted
+		// as a person reached, which is wrong — but correcting it silently would
+		// move an already-published number with nobody watching. It must stay
+		// until an admin marks the row `team` from the migration report
+		// (PLAN-trips.md §13), which is the point at which the number moves
+		// with someone looking at it.
+		expect(isPersonReachedRole('volunteer')).toBe(true);
+		expect(isPersonReachedRole('team_lead')).toBe(true);
+		// And explicitly marking that same row flips it, which is the fix.
+		expect(isPersonReachedRole('volunteer', 'team')).toBe(false);
 	});
 });
 

@@ -5,13 +5,18 @@ import { can } from '../../lib/domain/permissions';
 import type { Doc, Id } from '../_generated/dataModel';
 
 /**
- * Everyone connected to a campaign, from BOTH directions: people explicitly
- * added to it, and people on one of its records. Someone put on a record is
- * plainly part of that campaign, so deriving the second source here avoids
- * asking anyone to add them twice and keeps the two from drifting apart.
+ * Everyone connected to a campaign, from ALL THREE directions: people
+ * explicitly added to it, people on one of its records, and people travelling
+ * on one of its trips. Someone put on a record — or on a trip — is plainly part
+ * of that campaign, so deriving the other two sources here avoids asking anyone
+ * to add them twice and keeps them from drifting apart.
  *
- * A row with no `membershipId` exists only through a record; its role cannot
- * be edited here because there is no membership to edit.
+ * Nothing writes a `campaignMemberships` row on their behalf: a derived row is
+ * always current, while a copied one is a second fact that can go stale the
+ * moment somebody leaves the trip.
+ *
+ * A row with no `membershipId` exists only through a record or a trip; its role
+ * cannot be edited here because there is no membership to edit.
  */
 export const listCampaignMembers = query({
 	args: { campaignId: v.id('campaigns') },
@@ -29,6 +34,7 @@ export const listCampaignMembers = query({
 			membershipId: Id<'campaignMemberships'> | null;
 			role: string | null;
 			viaProjects: { number: string; name: string; role: string }[];
+			viaTrips: { tripId: Id<'trips'>; name: string; startOn: string; role: string | null }[];
 		};
 
 		const byContact = new Map<string, Row>();
@@ -44,7 +50,8 @@ export const listCampaignMembers = query({
 				contact: await ctx.db.get('contacts', membership.contactId),
 				membershipId: membership._id,
 				role: membership.role,
-				viaProjects: []
+				viaProjects: [],
+				viaTrips: []
 			});
 		}
 
@@ -72,9 +79,58 @@ export const listCampaignMembers = query({
 					contact: await ctx.db.get('contacts', link.contactId),
 					membershipId: null,
 					role: null,
-					viaProjects: [via]
+					viaProjects: [via],
+					viaTrips: []
 				});
 			}
+		}
+
+		// The third source: people travelling on one of this campaign's trips.
+		// Read by `campaignId`, which the attendee row carries directly rather
+		// than reaching for through its trip — traversing could pick up a row
+		// belonging to another campaign, which is exactly why the column is there.
+		const attendees = await ctx.db
+			.query('tripAttendees')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', args.campaignId))
+			.collect();
+
+		// One person may be on several trips in this campaign (the whole point of
+		// keying attendance to the trip), so trips are cached rather than fetched
+		// once per attendee row.
+		const tripsById = new Map<string, Doc<'trips'> | null>();
+
+		for (const attendee of attendees) {
+			if (attendee.orgId !== access.orgId) continue;
+
+			const tripKey = attendee.tripId as string;
+			if (!tripsById.has(tripKey)) {
+				tripsById.set(tripKey, await ctx.db.get('trips', attendee.tripId));
+			}
+			const trip = tripsById.get(tripKey);
+			if (!trip) continue;
+
+			const key = attendee.contactId as string;
+			const existing = byContact.get(key);
+			const via = {
+				tripId: attendee.tripId,
+				name: trip.name,
+				startOn: trip.startOn,
+				// Free text and optional — "Coordinator", or nothing at all. Unlike a
+				// project link's role, there is no default worth inventing here.
+				role: attendee.role ?? null
+			};
+			if (existing) {
+				existing.viaTrips.push(via);
+				continue;
+			}
+			byContact.set(key, {
+				contactId: attendee.contactId,
+				contact: await ctx.db.get('contacts', attendee.contactId),
+				membershipId: null,
+				role: null,
+				viaProjects: [],
+				viaTrips: [via]
+			});
 		}
 
 		return [...byContact.values()];

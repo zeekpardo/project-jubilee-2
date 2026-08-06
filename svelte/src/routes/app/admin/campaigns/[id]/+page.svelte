@@ -21,6 +21,7 @@
 	import CampaignGeneralCard from '$lib/features/campaigns/CampaignGeneralCard.svelte';
 	import CampaignPublicCard from '$lib/features/campaigns/CampaignPublicCard.svelte';
 	import CampaignStatsCard from '$lib/features/campaigns/CampaignStatsCard.svelte';
+	import TripsCard from '$lib/features/campaigns/TripsCard.svelte';
 	import UpdatesPanel from '$lib/features/updates/UpdatesPanel.svelte';
 	import type { Id } from '$convex/_generated/dataModel';
 	import * as m from '$lib/i18n/messages';
@@ -71,6 +72,12 @@
 			rather than `projects:write`, because an update is governed by the thing
 			it is about. -->
 			<UpdatesPanel {campaignId} />
+			<!-- Only when the campaign actually runs trips. `tripsEnabled` is
+			optional and absent means false (PLAN-trips.md §2) — most campaigns never
+			run one, and they must not grow an empty block. -->
+			{#if campaign.tripsEnabled === true}
+				<TripsCard {campaign} />
+			{/if}
 			<CampaignStatsCard {campaign} {canWrite} />
 			<CampaignMediaCard {campaign} {canWrite} />
 			<CampaignEmbedCard {campaign} {orgSlug} />

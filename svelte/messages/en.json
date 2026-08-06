@@ -1300,6 +1300,7 @@
 	"trips_projectNone": "None",
 	"trips_projectHelp": "Optional. Picking one seeds the trip name and links the first record; you can add more on the trip page afterwards.",
 	"trips_allStatuses": "All statuses",
+	"trips_onARecord": "On a record",
 	"trips_traveller": "Traveller",
 	"trips_viewAll": "View all trips",
 	"trips_total": "Trips planned",

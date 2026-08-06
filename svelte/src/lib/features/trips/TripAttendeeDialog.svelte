@@ -24,6 +24,7 @@
 	import type { Id } from '$convex/_generated/dataModel';
 
 	import { contactDisplayName } from '$lib/features/contacts/contact-name';
+	import { Badge } from '$lib/primitives/ui/badge';
 	import * as m from '$lib/i18n/messages';
 	import {
 		TRIP_ATTENDEE_STATUSES,
@@ -60,10 +61,18 @@
 	let phone = $state('');
 	let isSaving = $state(false);
 
-	const contactsResponse = useQuery(api.contacts.queries.listContacts, () =>
-		auth.isAuthenticated && open ? { search: search.trim() || undefined, limit: 50 } : 'skip'
+	// Ranked and labelled rather than the raw contact book: a trip roster is the
+	// organization's own people, and the families a campaign serves sit in the
+	// same book. The query sorts org-side people first and flags the rest —
+	// see listTripCandidates for why it ranks instead of filtering.
+	const contactsResponse = useQuery(api.tripAttendees.queries.listTripCandidates, () =>
+		auth.isAuthenticated && open
+			? { tripId, search: search.trim() || undefined, limit: 50 }
+			: 'skip'
 	);
 	const contacts = $derived(contactsResponse.data ?? []);
+	// The query already excludes this trip's roster; this covers a parent that
+	// knows about a row the subscription has not caught up with yet.
 	const available = $derived(
 		contacts.filter((contact) => !rosterContactIds.includes(contact._id as string))
 	);
@@ -72,7 +81,8 @@
 		createListCollection({
 			items: available.map((contact) => ({
 				value: contact._id as string,
-				label: contactDisplayName(contact)
+				label: contactDisplayName(contact),
+				servesOnRecord: contact.servesOnRecord
 			}))
 		})
 	);
@@ -214,6 +224,12 @@
 								{#each contactCollection.items as option (option.value)}
 									<Select.Item item={option}>
 										<Select.ItemText>{option.label}</Select.ItemText>
+										<!-- Someone this campaign SERVES. Selectable on purpose — a
+										person a campaign serves does sometimes travel with the team —
+										but never silently, because the common case is a misclick. -->
+										{#if option.servesOnRecord}
+											<Badge variant="outline" class="ml-2">{m.trips_onARecord()}</Badge>
+										{/if}
 									</Select.Item>
 								{/each}
 							</Select.Content>

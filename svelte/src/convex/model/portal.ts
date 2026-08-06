@@ -417,3 +417,137 @@ export async function toPortalRecord(
 		own
 	};
 }
+
+// ============================================================
+// TRIPS, as a traveller sees their own
+// ============================================================
+// A NARROWING OF RULE 3, MADE DELIBERATELY AND WRITTEN DOWN.
+//
+// Rule 3 above says personal data is only ever the viewer's own, and the
+// never-exposed list says "any other person's contact row". A trip roster is
+// the one place this module returns anything about another person, and it is
+// allowed only in the shape below: a DISPLAY NAME and a ROLE, assembled field
+// by field, from people who are travelling together as the organization's own
+// team. No email, no phone, no address, no contact document, no id that could
+// be fed back to another query.
+//
+// The justification, so a later reader can weigh it rather than guess: a
+// traveller who cannot see who they are going with has a roster that is useless
+// to them, and the people on it are colleagues rather than the people this app
+// protects. The protection that matters is the one below.
+//
+// WHAT A TRAVELLER MUST NEVER SEE, and why each is worse than it looks:
+//
+//   - THE TRIP'S LINKED RECORDS. This is the §12 correlation exactly: a
+//     country, a fortnight, and the families who will be visited. Each fact is
+//     mild; together they say who was visited, where, and when. The whole trips
+//     feature is internal-only for this reason, and a portal is not a smaller
+//     staff app — it is a phone that can be taken.
+//   - THE BUDGET. "Internal ledger structure" on the never-exposed list.
+//   - ANY OTHER TRAVELLER'S CONTACT DETAILS, notes, or attendee id.
+//   - ANY TRIP THEY ARE NOT ON. Membership is the filter, applied by the query.
+// ============================================================
+
+/** One fellow traveller, as a name and a role and nothing else. */
+export interface PortalTripCompanion {
+	name: string;
+	role: string | null;
+	isLeader: boolean;
+}
+
+/** A flight leg, as a traveller reads it off their own ticket. */
+export interface PortalTripSegment {
+	id: string;
+	direction: 'outbound' | 'return';
+	order: number;
+	airline: string;
+	flightNumber: string;
+	departureAirport: string | null;
+	arrivalAirport: string | null;
+	departureAt: string;
+	arrivalAt: string;
+	departureTimeZone: string | null;
+	arrivalTimeZone: string | null;
+	confirmationCode: string | null;
+	/** True when this leg is the viewer's own, and therefore theirs to edit. */
+	isOwn: boolean;
+}
+
+export interface PortalTripSummary {
+	id: string;
+	name: string;
+	startOn: string;
+	endOn: string;
+	destination: string;
+	status: string;
+	/** The viewer's own place on this trip. */
+	myRole: string | null;
+	myStatus: string;
+	amLeader: boolean;
+}
+
+/**
+ * A trip document reduced to what a traveller may read.
+ *
+ * Assembled field by field, never spread — `notes` is staff-facing and
+ * `campaignId` is a handle a portal caller has no business holding.
+ */
+export function toPortalTripSummary(
+	trip: Doc<'trips'>,
+	attendee: Doc<'tripAttendees'>
+): PortalTripSummary {
+	return {
+		id: trip._id as string,
+		name: trip.name,
+		startOn: trip.startOn,
+		endOn: trip.endOn,
+		destination: trip.destination,
+		status: trip.status,
+		myRole: attendee.role ?? null,
+		myStatus: attendee.status,
+		amLeader: attendee.isLeader
+	};
+}
+
+/**
+ * A fellow traveller. `contact` may be null if the row was deleted mid-read;
+ * the caller drops those rather than rendering a nameless entry.
+ *
+ * Uses the contact's DISPLAY name — the same first/last a staff roster shows —
+ * rather than `publicFirstName`. This is not the public site: these people are
+ * the organization's own team, and a colleague list that says "Eman" and
+ * withholds the surname helps nobody standing in an airport.
+ */
+export function toPortalTripCompanion(
+	contact: Doc<'contacts'> | null,
+	attendee: Doc<'tripAttendees'>
+): PortalTripCompanion | null {
+	if (!contact) return null;
+	const name = [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim();
+	if (!name) return null;
+	return { name, role: attendee.role ?? null, isLeader: attendee.isLeader };
+}
+
+/** A leg, with `isOwn` deciding whether the portal offers an edit control. */
+export function toPortalTripSegment(
+	segment: Doc<'tripSegments'>,
+	ownAttendeeId: Id<'tripAttendees'>
+): PortalTripSegment {
+	return {
+		id: segment._id as string,
+		direction: segment.direction,
+		order: segment.order,
+		airline: segment.airline,
+		flightNumber: segment.flightNumber,
+		departureAirport: segment.departureAirport ?? null,
+		arrivalAirport: segment.arrivalAirport ?? null,
+		departureAt: segment.departureAt,
+		arrivalAt: segment.arrivalAt,
+		departureTimeZone: segment.departureTimeZone ?? null,
+		arrivalTimeZone: segment.arrivalTimeZone ?? null,
+		// A confirmation code is the traveller's OWN booking reference. Another
+		// traveller's is not theirs to read, and the group itinerary carries none.
+		confirmationCode: segment.attendeeId === ownAttendeeId ? (segment.confirmationCode ?? null) : null,
+		isOwn: segment.attendeeId === ownAttendeeId
+	};
+}

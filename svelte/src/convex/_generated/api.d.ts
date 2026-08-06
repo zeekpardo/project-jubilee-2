@@ -74,6 +74,7 @@ import type * as pipelineStages_mutations from "../pipelineStages/mutations.js";
 import type * as pipelineStages_queries from "../pipelineStages/queries.js";
 import type * as portal_mutations from "../portal/mutations.js";
 import type * as portal_queries from "../portal/queries.js";
+import type * as portal_trips from "../portal/trips.js";
 import type * as projectMembers_audit from "../projectMembers/audit.js";
 import type * as projectMembers_mutations from "../projectMembers/mutations.js";
 import type * as projectMembers_queries from "../projectMembers/queries.js";
@@ -199,6 +200,7 @@ declare const fullApi: ApiFromModules<{
   "pipelineStages/queries": typeof pipelineStages_queries;
   "portal/mutations": typeof portal_mutations;
   "portal/queries": typeof portal_queries;
+  "portal/trips": typeof portal_trips;
   "projectMembers/audit": typeof projectMembers_audit;
   "projectMembers/mutations": typeof projectMembers_mutations;
   "projectMembers/queries": typeof projectMembers_queries;

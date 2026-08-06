@@ -23,6 +23,7 @@
 		{ route: '/(me)/[orgSlug]/me/giving', exact: false, label: () => m.portal_navGiving() },
 		{ route: '/(me)/[orgSlug]/me/records', exact: false, label: () => m.portal_navRecords() },
 		{ route: '/(me)/[orgSlug]/me/tasks', exact: false, label: () => m.portal_navTasks() },
+		{ route: '/(me)/[orgSlug]/me/trips', exact: false, label: () => m.portal_navTrips() },
 		{ route: '/(me)/[orgSlug]/me/profile', exact: false, label: () => m.portal_navProfile() }
 	] as const;
 

@@ -14,6 +14,11 @@ apart. See §1 — everything else follows from it.
 Extends [PLAN.md](PLAN.md), [PLAN-tasks.md](PLAN-tasks.md), and
 [PLAN-impact-stats.md](PLAN-impact-stats.md).
 
+> **§1–§17 were written before any of this was built, and are kept as written.** The feature has
+> since shipped, and in four places the result differs from the plan — one of them a reversal of a
+> stated non-goal. **[§18](#18-what-actually-shipped-and-where-it-differs) records those
+> differences.** Read it before trusting anything above it.
+
 ---
 
 ## Decisions
@@ -32,10 +37,12 @@ Extends [PLAN.md](PLAN.md), [PLAN-tasks.md](PLAN-tasks.md), and
 | Per-person legs                      | **In v1**, as duplicate-and-edit off the group itinerary — §5                 |
 | Travel readiness (passports etc.)    | **A checklist, not stored documents.** Reuses `tasks` — §6                    |
 | Trip money                           | **Planned budget only.** Actuals are a documented integration — §7            |
+| Trip budget presets                  | Named, **unversioned**, applied by copying. Added after — §18b               |
 | Trip name                            | Prefilled `{Campaign} — {Project} — {startOn}`, editable — §15                |
 | Public surface                       | **None.** Trips are internal-only — §12                                       |
 | New capability                       | **No.** Reuses `projects:read` / `projects:write` — §9                        |
 | Custom fields on trips               | Not in v1 — §17                                                               |
+| Travellers in the portal             | **Ships.** Own trip, own flights, names-only roster — §18a (reverses §17)     |
 | Portal visibility for `team` people  | **Open.** The one call site §8 deliberately does not touch — §14.1            |
 
 ---
@@ -822,7 +829,99 @@ to review carefully. Nothing in any step edits `transactions` or `allocations`.
 - **No airport timezone database.** `departureTimeZone` is entered or absent; §5 degrades rather than
   guesses. A picker seeded with the couple of dozen airports an org actually flies is a later,
   cheaper answer than a full dataset.
-- **No attendee self-service.** Trip goers do not confirm attendance or tick their own readiness
-  items through the portal. The portal today answers "is this row mine", and trips are not in it —
-  though §6's per-attendee tasks are already assigned to contacts, so this is a smaller step later
-  than it looks.
+- ~~**No attendee self-service.**~~ **REVERSED — see §18.** This said trip goers would not reach
+  trips through the portal. They now do.
+- **No attendee status self-service.** Reversing the above did NOT extend to letting a traveller
+  confirm or decline their own attendance. That field feeds the roster count and the per-attendee
+  checklist fan-out, so a portal member writing it changes what staff see and how many tasks exist.
+  Available if wanted; deliberately not taken.
+
+---
+
+## 18. What actually shipped, and where it differs
+
+Written after the fact. Everything in §16 is built and merged; this section records the four places
+the result differs from the plan above, so a reader who trusts §1–§17 is not misled by them.
+
+### 18a. The portal reversal
+
+§17 said "no attendee self-service", and that is now wrong. A traveller reaching the portal sees the
+trips they are on: dates, destination, the itinerary they are actually flying, and who else is
+going — and may add, edit and delete **their own flight legs**.
+
+The reason for reversing it is plain: a traveller who cannot see their own dates, or record the
+flight they just booked, has to ask a member of staff to do it for them, which is the coordination
+cost the feature exists to remove.
+
+The reason it needed care is §12. **Two things a traveller may not see, and both are refusals rather
+than omissions:**
+
+- **The trip's linked records.** The §12 correlation exactly — a country, a fortnight, and the
+  families who will be visited. A portal is not a smaller staff app; it is a phone that can be taken.
+- **The budget.** Already on `model/portal.ts`'s never-exposed list as internal ledger structure.
+
+**The roster is shown, and that narrows a stated rule.** The portal module's rule 3 is "personal data
+is only ever the viewer's own". A fellow traveller's name and role is not the viewer's own data. The
+narrowing is deliberate, is limited to a display name and a role assembled field by field — no email,
+phone, address, contact document, or id that could be fed to another query — and is written into
+`model/portal.ts`'s own header where the rules live, rather than left implicit here. Declined and
+cancelled attendees are omitted; another traveller's confirmation code is not shown, because a
+booking reference belongs to one person.
+
+Writes are the traveller's own legs only. `attendeeId` is stamped from the attendee row resolved
+from the session, never from an argument, and a segment with no `attendeeId` — the group itinerary —
+is refused.
+
+One thing needed no work at all: per-attendee checklist tasks were **already** appearing in the
+portal's task list, because that query filters by assignee and §6's fan-out assigns to contacts.
+
+### 18b. Trip budget presets
+
+§7 shipped as written — planned costs only, no ledger writes — and then grew a second table the plan
+never mentions: `tripBudgetTemplates`, a campaign's named sets of budget lines that a new trip can
+start from.
+
+It is **unversioned**, which is the interesting part, because `costTemplates` and `taskTemplates` are
+both append-only with an active version. They have to be: a project's budget and a ticked checklist
+item must not be rewritten by a later edit to their source. A preset has no such duty — applying it
+**copies** its lines into `tripBudgetLines`, so no trip references the preset it came from and
+nothing is downstream of it. Nothing to protect, so plain edit-in-place and plain delete are both
+safe, and a campaign may keep several presets rather than one active one.
+
+Applying **appends** rather than replaces: someone who has typed two lines and then reaches for a
+preset means "and the usual ones too". Applying twice duplicates, which is visible and one delete
+away; silently wiping typed work is the failure that is not recoverable.
+
+### 18c. The attendee picker ranks by side
+
+Not in the plan, and found only by using the feature. The "add a traveller" picker read the raw
+contact book — `orgId` and `contacts:read`, nothing else — so the families a campaign serves sat in
+one flat alphabetical list beside its staff. That is how a tired admin searching "Rahman" puts the
+family they are going to *visit* on the aeroplane.
+
+It now ranks org-side people first and badges anyone the campaign serves. **Ranked, not filtered**: a
+person a campaign serves genuinely does travel with the team sometimes, and a picker that refuses to
+show them makes that unrecordable. The badge is decided by `isPersonReachedRole` itself — the same
+predicate that decides whether someone counts toward a published number — so the picker and the
+statistics can never disagree about the same person.
+
+Worth noting what this was *not*: `tripAttendees` never writes `projectMembers.side`, so a mis-added
+person was always a wrong name on a roster, never a wrong figure on the public site.
+
+### 18d. The staged indexes are committed unstaged
+
+§13 is still the correct deployment advice and is unchanged. What differs is the **committed state**:
+the two `tasks` indexes are in the repository *unstaged*, because a staged index cannot be queried
+and the cascade, the instantiation and the trip page all read them — committing them staged would
+have made the branch unbuildable.
+
+So the rollout is a property of the deploy, not of the file. **The first production deploy of this
+schema should declare both as `{ fields: [...], staged: true }`, and a second deploy should restore
+the committed form.** There is a comment saying so at the index itself. Merging did not do this, and
+no follow-up commit can rescue it.
+
+### Still open, unchanged
+
+Both items in §14 survive. §14.1 — whether a trip goer keeps portal visibility of the record they
+served — is now *more* pointed rather than less, because there is a real traveller-facing portal
+surface for it to land on. `portal.ts:377` remains untouched and still passes no `side`.

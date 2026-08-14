@@ -19,6 +19,7 @@
 	import ProjectInternalPanel from '$lib/features/projects/ProjectInternalPanel.svelte';
 	import ProjectPublicPanel from '$lib/features/projects/ProjectPublicPanel.svelte';
 	import UpdatesPanel from '$lib/features/updates/UpdatesPanel.svelte';
+	import NewMessageDialog from '$lib/features/checkins/NewMessageDialog.svelte';
 	import EditProjectDialog from '$lib/features/projects/EditProjectDialog.svelte';
 	import ConfirmDialog from '$lib/features/settings/ConfirmDialog.svelte';
 	import { Button } from '$lib/primitives/ui/button';
@@ -180,11 +181,32 @@
 				</Tabs.Content>
 
 				<Tabs.Content value="updates">
-					<!-- The same panel the campaign screen mounts, told which record
-					these posts are about. Writing one is `projects:write`, the same
-					capability that authorizes this record's own story; publishing it is
-					not, and the panel says so. -->
-					<UpdatesPanel {campaignId} projectId={project._id} />
+					<div class="flex flex-col gap-4">
+						<!-- Starting a check-in lives HERE, next to the posts, because a
+						check-in's only public-facing output is a draft that lands in the
+						panel below. The conversation itself is read on /app/messages; this
+						is the entry point, not a second place to read it.
+
+						It writes a DRAFT and nothing else — publishing stays where it
+						already was, one panel down, behind `content:publish`. -->
+						<div
+							class="border-border flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3"
+						>
+							<p class="text-muted-foreground text-xs">{m.checkinStart_body()}</p>
+							<NewMessageDialog
+								{campaignId}
+								projectId={project._id}
+								label={m.checkinStart_action()}
+								variant="outline"
+							/>
+						</div>
+
+						<!-- The same panel the campaign screen mounts, told which record
+						these posts are about. Writing one is `projects:write`, the same
+						capability that authorizes this record's own story; publishing it is
+						not, and the panel says so. -->
+						<UpdatesPanel {campaignId} projectId={project._id} />
+					</div>
 				</Tabs.Content>
 
 				<Tabs.Content value="giving">

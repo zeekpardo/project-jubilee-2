@@ -23,14 +23,22 @@
 // ============================================================
 
 import { ConvexError, v } from 'convex/values';
-import { internalMutation } from '../_generated/server';
-import type { MutationCtx } from '../_generated/server';
+import { internalMutation, internalQuery } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import { createCampaignModel } from '../model/campaigns';
 import { createContactModel } from '../model/contacts';
 import { createProjectModel } from '../model/projects';
 import { deleteProjectCascade } from '../model/cascade';
-import { deleteConversationCascade } from '../model/checkins';
+import {
+	activePromptVersions,
+	deleteConversationCascade,
+	familyChildFacts,
+	recordInboundMessage,
+	storedObjectives
+} from '../model/checkins';
+import { bestStates, defaultObjectivesForFamily } from '../../lib/domain/checkin-objectives';
 import { SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
 
 /** Everything this seed creates is tagged, so the wipe can find exactly it. */
@@ -301,5 +309,160 @@ export const wipeSandbox = internalMutation({
 		}
 
 		return { removed: projects.length, campaignId: campaign._id };
+	}
+});
+
+// ============================================================
+// Driving a conversation from the terminal
+// ============================================================
+// The app's own mutations gate on a signed-in staff member, which is right and
+// also means a whole check-in cannot be exercised from a shell. These three do
+// the same work with the capability check removed, so the engine can be run and
+// read end to end without a browser.
+//
+// Internal-only, exactly like `seed:resetOrg` already in this repo: not
+// reachable from a client, callable only with deploy credentials. They are
+// scoped to the sandbox campaign and refuse anything outside it, so the missing
+// capability check cannot be pointed at a real family.
+//
+//   npx convex run seed/sandbox:openSandboxCheckin '{"number":"SB-001"}'
+//   npx convex run seed/sandbox:sandboxReply '{"conversationId":"...","text":"..."}'
+//   npx convex run seed/sandbox:sandboxTranscript '{"conversationId":"..."}'
+// ============================================================
+
+/** Refuses any conversation or record outside the sandbox campaign. */
+async function requireSandboxCampaign(
+	ctx: MutationCtx | QueryCtx,
+	campaignId: Id<'campaigns'>
+): Promise<void> {
+	const campaign = await ctx.db.get('campaigns', campaignId);
+	if (!campaign || campaign.slug !== SANDBOX_SLUG) {
+		throw new ConvexError('That is not the sandbox campaign. These helpers only work there.');
+	}
+}
+
+/** Open a check-in with one sandbox family and write the first message. */
+export const openSandboxCheckin = internalMutation({
+	args: { number: v.optional(v.string()), orgId: v.optional(v.string()) },
+	handler: async (ctx, args) => {
+		const orgId = await resolveOrgId(ctx, args.orgId);
+
+		const campaign = await ctx.db
+			.query('campaigns')
+			.withIndex('by_orgId_and_slug', (q) => q.eq('orgId', orgId).eq('slug', SANDBOX_SLUG))
+			.first();
+		if (!campaign) throw new ConvexError('Seed the sandbox first: seed/sandbox:seedSandbox');
+
+		const projects = await ctx.db
+			.query('projects')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
+			.take(100);
+		const project = args.number ? projects.find((row) => row.number === args.number) : projects[0];
+		if (!project) throw new ConvexError(`No sandbox record ${args.number ?? '(first)'}`);
+
+		const open = projects.length
+			? await ctx.db
+					.query('checkinConversations')
+					.withIndex('by_projectId_and_status', (q) =>
+						q.eq('projectId', project._id).eq('status', 'open')
+					)
+					.first()
+			: null;
+		if (open) return { conversationId: open._id, reused: true, record: project.number };
+
+		const prompts = await activePromptVersions(ctx, orgId);
+		const facts = await familyChildFacts(ctx, project);
+		const now = Date.now();
+
+		const conversationId = await ctx.db.insert('checkinConversations', {
+			orgId,
+			campaignId: campaign._id,
+			projectId: project._id,
+			kind: 'checkin' as const,
+			status: 'open' as const,
+			objectives: defaultObjectivesForFamily(facts),
+			responderPromptVersion: prompts.responder.version,
+			drafterPromptVersion: prompts.drafter.version,
+			judgePromptVersion: prompts.judge.version,
+			locale: 'en',
+			turnsSpent: 0,
+			openedAt: now
+		});
+
+		await ctx.scheduler.runAfter(0, internal.checkins.engine.advanceTurn, { conversationId });
+		return {
+			conversationId,
+			reused: false,
+			record: project.number,
+			objectives: defaultObjectivesForFamily(facts).map((objective) => objective.key)
+		};
+	}
+});
+
+/** Record a reply from the family, exactly as `receiveMessage` would. */
+export const sandboxReply = internalMutation({
+	args: { conversationId: v.id('checkinConversations'), text: v.string() },
+	handler: async (ctx, args) => {
+		const conversation = await ctx.db.get('checkinConversations', args.conversationId);
+		if (!conversation) throw new ConvexError('Conversation not found');
+		await requireSandboxCampaign(ctx, conversation.campaignId);
+
+		const text = args.text.trim();
+		if (!text) throw new ConvexError('A reply needs text');
+
+		// The SAME function the public mutation calls, so the scan-before-model
+		// rule is exercised here rather than reimplemented around.
+		return await recordInboundMessage(ctx, conversation, text, Date.now());
+	}
+});
+
+/** Everything a terminal needs to see what the engine did. */
+export const sandboxTranscript = internalQuery({
+	args: { conversationId: v.id('checkinConversations') },
+	handler: async (ctx, args) => {
+		const conversation = await ctx.db.get('checkinConversations', args.conversationId);
+		if (!conversation) return null;
+
+		const [messages, turns, checks, escalations] = await Promise.all([
+			ctx.db
+				.query('checkinMessages')
+				.withIndex('by_conversationId_and_at', (q) => q.eq('conversationId', conversation._id))
+				.take(100),
+			ctx.db
+				.query('conversationTurns')
+				.withIndex('by_conversationId_and_turnNumber', (q) =>
+					q.eq('conversationId', conversation._id)
+				)
+				.take(100),
+			ctx.db
+				.query('objectiveChecks')
+				.withIndex('by_conversationId', (q) => q.eq('conversationId', conversation._id))
+				.take(100),
+			ctx.db
+				.query('checkinEscalations')
+				.withIndex('by_conversationId', (q) => q.eq('conversationId', conversation._id))
+				.take(20)
+		]);
+
+		return {
+			status: conversation.status,
+			reviewReason: conversation.reviewReason ?? null,
+			turnsSpent: conversation.turnsSpent,
+			hasDraft: Boolean(conversation.updateId),
+			states: [...bestStates(storedObjectives(conversation), checks)].map(
+				([objective, state]) => `${objective}: ${state}`
+			),
+			transcript: messages.map(
+				(row) => `${row.direction === 'outbound' ? 'US ' : 'THEM'} | ${row.text}`
+			),
+			// Input and output are deliberately omitted — a terminal dump of every
+			// full prompt is unreadable, and the app's Model calls tab is where they
+			// belong. What is useful here is that a call happened and whether it worked.
+			calls: turns.map(
+				(row) =>
+					`t${row.turnNumber} ${row.role} ${row.model} ${row.latencyMs}ms${row.error ? ` ERROR: ${row.error}` : ''}`
+			),
+			escalations: escalations.map((row) => `${row.category} (${row.status}) "${row.term}"`)
+		};
 	}
 });

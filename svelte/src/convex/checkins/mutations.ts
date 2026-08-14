@@ -35,10 +35,10 @@ import {
 	deleteConversationCascade,
 	familyChildFacts,
 	isCheckin,
+	recordInboundMessage,
 	requireConversation
 } from '../model/checkins';
 import { defaultObjectivesForFamily } from '../../lib/domain/checkin-objectives';
-import { escalationExcerpt, scanForEscalation } from '../../lib/domain/checkin-escalation';
 import { SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
 
 /**
@@ -442,57 +442,10 @@ export const receiveMessage = mutation({
 		const text = args.text.trim();
 		if (!text) throw new ConvexError('An incoming message needs text');
 
-		// STORED FIRST, unconditionally, whatever state the conversation is in.
-		// A family that keeps writing after an escalation is a family still
-		// saying things, and refusing the write would drop exactly the messages
-		// most worth keeping. What a non-`open` conversation does not get, below,
-		// is another model call.
-		const turnNumber = conversation.turnsSpent + 1;
-		await ctx.db.insert('checkinMessages', {
-			orgId,
-			conversationId: conversation._id,
-			direction: 'inbound' as const,
-			text,
-			turnNumber,
-			at: args.now
-		});
-
-		const scan = scanForEscalation(text);
-		if (scan.escalated) {
-			for (const match of scan.matches) {
-				await ctx.db.insert('checkinEscalations', {
-					orgId,
-					conversationId: conversation._id,
-					projectId: conversation.projectId,
-					campaignId: conversation.campaignId,
-					turnNumber,
-					category: match.category,
-					term: match.term,
-					excerpt: escalationExcerpt(text, match),
-					status: 'open' as const
-				});
-			}
-			await ctx.db.patch('checkinConversations', conversation._id, {
-				status: 'escalated' as const,
-				lastMessageAt: args.now,
-				closedAt: args.now
-			});
-			return { escalated: true, matches: scan.matches.length };
-		}
-
-		// A reply on a DIRECT conversation is the whole point of a direct
-		// conversation — it is stored, it was scanned above, and no model is
-		// called. The same is true of a check-in a person already took over: still
-		// something the family said, still not a reason to restart the machine.
-		if (!isCheckin(conversation) || conversation.status !== 'open') {
-			await ctx.db.patch('checkinConversations', conversation._id, { lastMessageAt: args.now });
-			return { escalated: false, matches: 0 };
-		}
-
-		await ctx.scheduler.runAfter(0, internal.checkins.engine.advanceTurn, {
-			conversationId: conversation._id
-		});
-		return { escalated: false, matches: 0 };
+		// Every decision lives in `recordInboundMessage` — the scan, the
+		// escalation rows, and whether a turn is scheduled. This mutation's job is
+		// the capability check above it.
+		return await recordInboundMessage(ctx, conversation, text, args.now);
 	}
 });
 

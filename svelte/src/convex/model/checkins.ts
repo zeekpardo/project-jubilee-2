@@ -14,8 +14,10 @@
 // ============================================================
 
 import { ConvexError } from 'convex/values';
+import { internal } from '../_generated/api';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
+import { escalationExcerpt, scanForEscalation } from '../../lib/domain/checkin-escalation';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { CheckinObjective, ObjectiveCheck } from '../../lib/domain/checkin-objectives';
 
@@ -326,4 +328,74 @@ export async function deleteProjectCheckins(
 	for (const conversation of conversations) {
 		await deleteConversationCascade(ctx, conversation._id);
 	}
+}
+
+/**
+ * Record a message that arrived from the other side, and decide what happens
+ * next.
+ *
+ * ONE IMPLEMENTATION, deliberately. `receiveMessage` calls it and so does the
+ * sandbox harness, because the rule it encodes — scan before anything else,
+ * and never hand an escalating message to a model — is the rule this whole
+ * design exists to guarantee. A second copy of it in a dev-only path is a
+ * second copy that can drift, and the one that drifts is the one nobody reads.
+ *
+ * The caller has already established who is asking. This does the work.
+ */
+export async function recordInboundMessage(
+	ctx: MutationCtx,
+	conversation: Doc<'checkinConversations'>,
+	text: string,
+	now: number
+): Promise<{ escalated: boolean; matches: number }> {
+	const turnNumber = conversation.turnsSpent + 1;
+
+	// Stored first, unconditionally, whatever state the conversation is in. A
+	// family that keeps writing after an escalation is a family still saying
+	// things, and refusing the write would drop exactly the messages most worth
+	// keeping.
+	await ctx.db.insert('checkinMessages', {
+		orgId: conversation.orgId,
+		conversationId: conversation._id,
+		direction: 'inbound' as const,
+		text,
+		turnNumber,
+		at: now
+	});
+
+	const scan = scanForEscalation(text);
+	if (scan.escalated) {
+		for (const match of scan.matches) {
+			await ctx.db.insert('checkinEscalations', {
+				orgId: conversation.orgId,
+				conversationId: conversation._id,
+				projectId: conversation.projectId,
+				campaignId: conversation.campaignId,
+				turnNumber,
+				category: match.category,
+				term: match.term,
+				excerpt: escalationExcerpt(text, match),
+				status: 'open' as const
+			});
+		}
+		await ctx.db.patch('checkinConversations', conversation._id, {
+			status: 'escalated' as const,
+			lastMessageAt: now,
+			closedAt: now
+		});
+		return { escalated: true, matches: scan.matches.length };
+	}
+
+	// A reply on a DIRECT conversation is the whole point of one — stored,
+	// scanned, and no model called. The same is true of a check-in a person
+	// already took over.
+	if (!isCheckin(conversation) || conversation.status !== 'open') {
+		await ctx.db.patch('checkinConversations', conversation._id, { lastMessageAt: now });
+		return { escalated: false, matches: 0 };
+	}
+
+	await ctx.scheduler.runAfter(0, internal.checkins.engine.advanceTurn, {
+		conversationId: conversation._id
+	});
+	return { escalated: false, matches: 0 };
 }

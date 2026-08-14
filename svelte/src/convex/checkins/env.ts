@@ -29,14 +29,22 @@ export function anthropicApiKey(): string {
  * The model that writes to the family.
  *
  * PLAN-ai-checkin.md §7 leaves the tier open pending real volume, so this is an
- * env override with a deliberate default rather than a hardcode. The default is
- * the top tier because the responder's failure mode is not "a worse sentence" —
- * it is a clumsy message to a family in a fragile situation, and that is not
- * where this system should be economising first. The judge below is where the
- * volume is and where the cheap model belongs.
+ * env override with a deliberate default rather than a hardcode.
+ *
+ * Sonnet 4.6 by choice. The job is two warm sentences to a family, not hard
+ * reasoning — the thinking in this system happens in `decideNext`, in code,
+ * where it can be tested. Note the tier difference that follows: omitting the
+ * `thinking` parameter means NO thinking on Sonnet 4.6, where on the Opus 5
+ * this replaced it would have meant adaptive. That is the intended behaviour
+ * here and it is a real change, not a detail.
+ *
+ * Sonnet also has no published server-side fallback chain, so refusal
+ * fallbacks switch themselves off — see FALLBACK_CAPABLE in client.ts. A
+ * refusal on this tier surfaces as a handoff to a person rather than being
+ * re-served by another model.
  */
 export function responderModel(): string {
-	return CHECKIN_RESPONDER_MODEL?.trim() || 'claude-opus-5';
+	return CHECKIN_RESPONDER_MODEL?.trim() || 'claude-sonnet-4-6';
 }
 
 /**

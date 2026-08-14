@@ -51,12 +51,26 @@ import { anthropicApiKey, judgeModel, responderModel } from './env';
  * refusal is a conversation that needs a person, and a timeout is a turn to
  * retry.
  */
-export class CheckinModelRefusal extends Error {
+export class CheckinModelError extends Error {
 	constructor(
 		message: string,
-		readonly category: string | null
+		/** WHICH call failed. The trace is the audit trail; a judge failure logged
+		 *  as a responder failure makes it a lying one. */
+		readonly role: 'responder' | 'judge',
+		readonly cause?: unknown
 	) {
 		super(message);
+		this.name = 'CheckinModelError';
+	}
+}
+
+export class CheckinModelRefusal extends CheckinModelError {
+	constructor(
+		message: string,
+		role: 'responder' | 'judge',
+		readonly category: string | null
+	) {
+		super(message, role);
 		this.name = 'CheckinModelRefusal';
 	}
 }
@@ -70,6 +84,26 @@ export class CheckinModelRefusal extends Error {
  * decision the API already makes better than a constant in this file can.
  */
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+
+/**
+ * Server-side fallbacks are not accepted by every model — Haiku rejects the
+ * parameter outright with a 400, and so does any tier that has no fallback
+ * chain published for it.
+ *
+ * Found the hard way: sending it on the judge call killed every turn with
+ * `'claude-haiku-4-5-20251001' does not support the `fallbacks` parameter`,
+ * which is a configuration error wearing the costume of a model failure.
+ *
+ * A prefix allowlist rather than a try-and-retry: the set of models with a
+ * fallback chain is small and known, and a retry loop around a 400 would spend
+ * a request to rediscover a fact this constant already states.
+ */
+const FALLBACK_CAPABLE = ['claude-opus-5', 'claude-opus-4-8', 'claude-fable-5', 'claude-mythos-5'];
+
+function fallbackParams(model: string): Record<string, unknown> {
+	if (!FALLBACK_CAPABLE.some((candidate) => model.startsWith(candidate))) return {};
+	return { betas: [FALLBACK_BETA], fallbacks: 'default' as const };
+}
 
 /**
  * Generous relative to the output — a WhatsApp message is two sentences.
@@ -105,10 +139,11 @@ function toolInput(message: BetaMessage, name: string): unknown {
  * indexes into it first breaks on exactly the messages this product exists to
  * handle.
  */
-function assertUsable(message: BetaMessage, what: string): void {
+function assertUsable(message: BetaMessage, what: 'responder' | 'judge'): void {
 	if (message.stop_reason === 'refusal') {
 		throw new CheckinModelRefusal(
 			`The ${what} call was declined by a safety classifier`,
+			what,
 			message.stop_details?.type === 'refusal' ? (message.stop_details.category ?? null) : null
 		);
 	}
@@ -116,7 +151,7 @@ function assertUsable(message: BetaMessage, what: string): void {
 		// Not a refusal, but equally not a usable answer: a half-written message
 		// to a family is worse than none, and a half-written draft would be
 		// reviewed as though it were complete.
-		throw new CheckinModelRefusal(`The ${what} call hit its output limit`, 'max_tokens');
+		throw new CheckinModelRefusal(`The ${what} call hit its output limit`, what, 'max_tokens');
 	}
 }
 
@@ -154,11 +189,11 @@ export function anthropicCheckinModel(): CheckinModel {
 	return {
 		async respond(request: ResponderRequest): Promise<ResponderResult> {
 			const startedAt = Date.now();
+			const model = responderModel();
 			const message = await client.beta.messages.create({
-				model: responderModel(),
+				model,
 				max_tokens: RESPONDER_MAX_TOKENS,
-				betas: [FALLBACK_BETA],
-				fallbacks: 'default',
+				...fallbackParams(model),
 				system: request.system,
 				messages: [{ role: 'user', content: request.user }],
 				// `medium` rather than the default: writing two warm sentences to a
@@ -197,11 +232,11 @@ export function anthropicCheckinModel(): CheckinModel {
 
 		async judge(request: JudgeRequest): Promise<JudgeResult> {
 			const startedAt = Date.now();
+			const judge = judgeModel();
 			const message = await client.beta.messages.create({
-				model: judgeModel(),
+				model: judge,
 				max_tokens: JUDGE_MAX_TOKENS,
-				betas: [FALLBACK_BETA],
-				fallbacks: 'default',
+				...fallbackParams(judge),
 				system: request.system,
 				messages: [{ role: 'user', content: request.user }],
 				tools: [request.tool] as unknown as BetaToolUnion[],
@@ -216,7 +251,7 @@ export function anthropicCheckinModel(): CheckinModel {
 
 			const input = toolInput(message, request.tool.name);
 			if (input === null) {
-				throw new CheckinModelRefusal('The judge did not return a rating', 'no_tool_call');
+				throw new CheckinModelRefusal('The judge did not return a rating', 'judge', 'no_tool_call');
 			}
 
 			return {

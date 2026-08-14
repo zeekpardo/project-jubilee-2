@@ -22,7 +22,7 @@ import { v } from 'convex/values';
 import { internalAction } from '../_generated/server';
 import { internal } from '../_generated/api';
 import { advanceCheckin } from '../../lib/domain/checkin-engine';
-import { anthropicCheckinModel, CheckinModelRefusal } from './client';
+import { anthropicCheckinModel, CheckinModelError, CheckinModelRefusal } from './client';
 import { judgeModel, responderModel } from './env';
 
 /**
@@ -104,12 +104,18 @@ export const advanceTurn = internalAction({
 			// the model declined to engage with what a family said, and the correct
 			// response to that is not to ask it again more loudly.
 			const refused = error instanceof CheckinModelRefusal;
+			// WHICH call failed, from the error itself. Hardcoding `responder` here
+			// logged every judge failure against the wrong call — the trace is the
+			// audit trail, and one that names the wrong model is worse than one
+			// that says nothing.
+			const role = error instanceof CheckinModelError ? error.role : ('responder' as const);
 			await ctx.runMutation(internal.checkins.internal.failTurn, {
 				conversationId: args.conversationId,
 				turnNumber,
-				role: 'responder' as const,
-				promptVersion: context.prompts.responder.version,
-				model: responderModel(),
+				role,
+				promptVersion:
+					role === 'judge' ? context.prompts.judge.version : context.prompts.responder.version,
+				model: role === 'judge' ? judgeModel() : responderModel(),
 				error: error instanceof Error ? error.message : String(error),
 				needsReview: refused,
 				now: Date.now()

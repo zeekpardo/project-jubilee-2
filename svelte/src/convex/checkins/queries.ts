@@ -76,7 +76,9 @@ export const listCheckins = query({
 						.take(limit)
 				: await ctx.db
 						.query('checkinConversations')
-						.withIndex('by_campaignId_and_status', (q) => q.eq('campaignId', args.campaignId!))
+						.withIndex('by_campaignId_and_lastMessageAt', (q) =>
+							q.eq('campaignId', args.campaignId!)
+						)
 						.order('desc')
 						.take(limit)
 			: args.status

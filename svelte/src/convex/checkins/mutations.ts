@@ -203,7 +203,11 @@ export const startCheckin = mutation({
 			judgePromptVersion: prompts.judge.version,
 			locale: args.locale?.trim() || 'en',
 			turnsSpent: 0,
-			openedAt: args.now
+			openedAt: args.now,
+			// Stamped at open, not left until the first message: the inbox sorts on
+			// it, and a conversation that has just been started is the one most
+			// likely to be looked at next.
+			lastMessageAt: args.now
 		});
 
 		// The opening message is a model call, so it happens in an action. Nothing
@@ -307,7 +311,8 @@ export const startConversation = mutation({
 			status: 'open' as const,
 			locale: args.locale?.trim() || 'en',
 			turnsSpent: 0,
-			openedAt: args.now
+			openedAt: args.now,
+			lastMessageAt: args.now
 		});
 	}
 });

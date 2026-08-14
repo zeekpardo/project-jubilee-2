@@ -163,6 +163,10 @@
 	// with a sponsor that nobody asked anything in.
 	const nextDecisionLabel = $derived.by(() => {
 		if (!isCheckin) return null;
+		// Suppressed once the draft exists: `nextDecision` is derived from the
+		// objectives, which stay answered forever, so it keeps reporting `draft`
+		// long after the drafting happened.
+		if (detail?.conversation.status === 'drafted') return null;
 		switch (detail?.nextDecision.kind) {
 			case 'escalated':
 				return m.checkinDetail_nextEscalated();

@@ -1755,6 +1755,12 @@ const checkinConversations = defineTable({
 	.index('by_projectId', ['projectId'])
 	.index('by_projectId_and_status', ['projectId', 'status'])
 	.index('by_campaignId_and_status', ['campaignId', 'status'])
+	// The inbox's default order: most recent activity first. Without it the
+	// unfiltered campaign read ranges on `campaignId` alone against the index
+	// above, and Convex then orders by the NEXT key — `status` — so the queue
+	// comes back sorted alphabetically by state. `lastMessageAt` is stamped at
+	// open so a conversation nobody has written in yet still sorts.
+	.index('by_campaignId_and_lastMessageAt', ['campaignId', 'lastMessageAt'])
 	.index('by_orgId_and_status', ['orgId', 'status'])
 	// The contact cascade's only bounded way in. `contactId` is optional, so
 	// this index also ranges over the rows that have none — which is fine,

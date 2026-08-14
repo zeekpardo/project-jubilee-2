@@ -12,6 +12,7 @@ import * as m from '$lib/i18n/messages';
 import type { BadgeVariant } from '$lib/primitives/ui/badge';
 import { MAX_RESPONDER_TURNS } from '$lib/domain/checkin-objectives';
 import type {
+	CheckinKind,
 	CheckinReviewReason,
 	CheckinStatus,
 	EscalationCategory,
@@ -19,6 +20,34 @@ import type {
 	ObjectiveState,
 	PromptRole
 } from './types';
+
+/** Filter order, and the order the kind options render in. */
+export const CHECKIN_KINDS = ['direct', 'checkin'] as const satisfies readonly CheckinKind[];
+
+export function checkinKindLabel(kind: CheckinKind): string {
+	switch (kind) {
+		case 'direct':
+			return m.messages_kindDirect();
+		case 'checkin':
+			return m.messages_kindCheckin();
+	}
+}
+
+/**
+ * A quiet pair on purpose: the kind badge sits beside the status badge, and
+ * status is the one carrying urgency. `outline` for a conversation between
+ * people, `secondary` for the engine-run one — filled, so a transcript a model
+ * is writing into never looks like plain correspondence, but never louder than
+ * the `warning` and `destructive` a status can reach.
+ */
+export function checkinKindVariant(kind: CheckinKind): BadgeVariant {
+	switch (kind) {
+		case 'direct':
+			return 'outline';
+		case 'checkin':
+			return 'secondary';
+	}
+}
 
 /** List-filter order, and the order the status chips render in. */
 export const CHECKIN_STATUSES = [

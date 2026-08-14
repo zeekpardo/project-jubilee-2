@@ -1,12 +1,13 @@
 <script lang="ts">
 	// The left pane: the conversation queue for one campaign.
 	//
-	// The status filter is server-side, the same contract TripsBrowser keeps. It
-	// matters more here than there: `listCheckins` takes a capped page, so
-	// filtering a truncated list in the browser would quietly report an empty
-	// escalation queue whenever the newest 50 conversations happened to be calm.
+	// Both filters — status and kind — are server-side, the same contract
+	// TripsBrowser keeps. It matters more here than there: `listCheckins` takes a
+	// capped page, so filtering a truncated list in the browser would quietly
+	// report an empty escalation queue whenever the newest 50 conversations
+	// happened to be calm.
 	//
-	// The filter itself is plain `$state`, NOT the URL. Only the selected
+	// The filters themselves are plain `$state`, NOT the URL. Only the selected
 	// conversation is linkable — a link is a link to a family's transcript, not to
 	// how somebody had their queue sorted when they sent it.
 
@@ -26,8 +27,8 @@
 	import type { Id } from '$convex/_generated/dataModel';
 
 	import * as m from '$lib/i18n/messages';
-	import { CHECKIN_STATUSES, checkinStatusLabel } from './labels';
-	import type { CheckinStatus } from './types';
+	import { CHECKIN_KINDS, CHECKIN_STATUSES, checkinKindLabel, checkinStatusLabel } from './labels';
+	import type { CheckinKind, CheckinStatus } from './types';
 	import ConversationRow from './ConversationRow.svelte';
 
 	let {
@@ -44,14 +45,20 @@
 	const auth = useAuth();
 
 	const ALL_STATUSES = 'all';
+	const ALL_KINDS = 'all';
 
 	let statusFilter = $state<CheckinStatus | typeof ALL_STATUSES>(ALL_STATUSES);
+	// Server-side for the same reason the status filter is: the page is capped,
+	// so narrowing a truncated list in the browser would report an empty queue
+	// whenever the newest 50 conversations happened to all be of the other kind.
+	let kindFilter = $state<CheckinKind | typeof ALL_KINDS>(ALL_KINDS);
 
 	const response = useQuery(api.checkins.queries.listCheckins, () =>
 		auth.isAuthenticated
 			? {
 					campaignId,
-					...(statusFilter === ALL_STATUSES ? {} : { status: statusFilter })
+					...(statusFilter === ALL_STATUSES ? {} : { status: statusFilter }),
+					...(kindFilter === ALL_KINDS ? {} : { kind: kindFilter })
 				}
 			: 'skip'
 	);
@@ -77,7 +84,12 @@
 		const needle = search.trim().toLowerCase();
 		if (!needle) return rows;
 		return rows.filter((row) =>
-			`${row.projectName ?? ''} ${row.projectNumber ?? ''}`.toLowerCase().includes(needle)
+			// The contact name is in here too: a conversation with a sponsor has no
+			// record at all, and a search that only read record fields could never
+			// find the row it is headed by.
+			`${row.projectName ?? ''} ${row.projectNumber ?? ''} ${row.contactName ?? ''}`
+				.toLowerCase()
+				.includes(needle)
 		);
 	});
 
@@ -85,6 +97,13 @@
 		items: [
 			{ value: ALL_STATUSES, label: m.checkins_filterAll() },
 			...CHECKIN_STATUSES.map((value) => ({ value, label: checkinStatusLabel(value) }))
+		]
+	});
+
+	const kindCollection = createListCollection({
+		items: [
+			{ value: ALL_KINDS, label: m.checkins_filterKindAll() },
+			...CHECKIN_KINDS.map((value) => ({ value, label: checkinKindLabel(value) }))
 		]
 	});
 </script>
@@ -125,23 +144,45 @@
 		/>
 	</div>
 
-	<Select.Root
-		collection={statusCollection}
-		value={[statusFilter]}
-		onValueChange={(details: { value: string[] }): void => {
-			statusFilter = (details.value[0] as CheckinStatus | typeof ALL_STATUSES) ?? ALL_STATUSES;
-		}}
-	>
-		<Select.Label class="sr-only">{m.field_status()}</Select.Label>
-		<Select.Trigger size="sm" class="w-full" placeholder={m.checkins_filterAll()} />
-		<Select.Content>
-			{#each statusCollection.items as option (option.value)}
-				<Select.Item item={option}>
-					<Select.ItemText>{option.label}</Select.ItemText>
-				</Select.Item>
-			{/each}
-		</Select.Content>
-	</Select.Root>
+	<div class="flex gap-2">
+		<Select.Root
+			class="min-w-0 flex-1"
+			collection={statusCollection}
+			value={[statusFilter]}
+			onValueChange={(details: { value: string[] }): void => {
+				statusFilter = (details.value[0] as CheckinStatus | typeof ALL_STATUSES) ?? ALL_STATUSES;
+			}}
+		>
+			<Select.Label class="sr-only">{m.field_status()}</Select.Label>
+			<Select.Trigger size="sm" class="w-full" placeholder={m.checkins_filterAll()} />
+			<Select.Content>
+				{#each statusCollection.items as option (option.value)}
+					<Select.Item item={option}>
+						<Select.ItemText>{option.label}</Select.ItemText>
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+
+		<Select.Root
+			class="min-w-0 flex-1"
+			collection={kindCollection}
+			value={[kindFilter]}
+			onValueChange={(details: { value: string[] }): void => {
+				kindFilter = (details.value[0] as CheckinKind | typeof ALL_KINDS) ?? ALL_KINDS;
+			}}
+		>
+			<Select.Label class="sr-only">{m.messages_kind()}</Select.Label>
+			<Select.Trigger size="sm" class="w-full" placeholder={m.checkins_filterKindAll()} />
+			<Select.Content>
+				{#each kindCollection.items as option (option.value)}
+					<Select.Item item={option}>
+						<Select.ItemText>{option.label}</Select.ItemText>
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+	</div>
 </div>
 
 <!-- `role="list"` sits on the rows container only. Wrapping the skeletons and

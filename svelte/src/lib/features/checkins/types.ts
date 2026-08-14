@@ -26,6 +26,24 @@ export type ObjectiveStateRow = CheckinDetail['objectiveStates'][number];
 export type CheckinDecision = CheckinDetail['nextDecision'];
 
 export type CheckinStatus = Doc<'checkinConversations'>['status'];
+
+/**
+ * What kind of conversation a row is: `direct` (people talking, staff write
+ * every outbound message) or `checkin` (the engine owns the thread).
+ *
+ * The column is optional on the document because it was added to a table that
+ * already had rows in it, and every one of those was a check-in. `NonNullable`
+ * is therefore the honest type: absent is not a third kind, it is `checkin`
+ * written before the column existed. Read it through `conversationKind` and
+ * never as `row.kind` directly — a bare read types as `undefined` and renders
+ * an engine-run conversation as neither.
+ */
+export type CheckinKind = NonNullable<Doc<'checkinConversations'>['kind']>;
+
+/** The one place the absent-means-`checkin` rule is spelled out. */
+export function conversationKind(row: { kind?: CheckinKind }): CheckinKind {
+	return row.kind ?? 'checkin';
+}
 export type CheckinReviewReason = NonNullable<Doc<'checkinConversations'>['reviewReason']>;
 export type EscalationCategory = Doc<'checkinEscalations'>['category'];
 export type EscalationStatus = Doc<'checkinEscalations'>['status'];

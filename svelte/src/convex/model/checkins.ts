@@ -246,13 +246,20 @@ export async function promptByVersion(
 	return prompt;
 }
 
+/** True when the engine owns this conversation. Absent `kind` means it does. */
+export function isCheckin(conversation: Doc<'checkinConversations'>): boolean {
+	return (conversation.kind ?? 'checkin') === 'checkin';
+}
+
 /**
  * Turn the stored objective set back into the domain shape. A plain map today,
  * and the one place to widen if the stored shape ever gains a field the engine
  * should not see.
  */
 export function storedObjectives(conversation: Doc<'checkinConversations'>): CheckinObjective[] {
-	return conversation.objectives.map((objective) => ({
+	// A `direct` conversation has none — it is people talking, not a check-in
+	// working through a list.
+	return (conversation.objectives ?? []).map((objective) => ({
 		key: objective.key,
 		label: objective.label,
 		description: objective.description

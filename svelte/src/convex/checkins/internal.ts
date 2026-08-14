@@ -72,8 +72,25 @@ export const loadTurnContext = internalQuery({
 		const conversation = await ctx.db.get('checkinConversations', args.conversationId);
 		if (!conversation) return null;
 
+		// No record means no check-in — see the schema note on `projectId`. The
+		// engine has nothing to build a profile from, so the turn does not happen.
+		if (!conversation.projectId) return null;
 		const project = await ctx.db.get('projects', conversation.projectId);
 		if (!project || project.orgId !== conversation.orgId) return null;
+
+		// A `direct` conversation names no prompts and must never reach the engine.
+		// Returning null here is the belt to `advanceTurn`'s braces: the only way
+		// to schedule a turn is `startCheckin`/`startCheckinOnConversation`, both
+		// of which write all three, so a row without them means something else
+		// went wrong and the right answer is to do nothing rather than guess at an
+		// active version.
+		if (
+			!conversation.responderPromptVersion ||
+			!conversation.drafterPromptVersion ||
+			!conversation.judgePromptVersion
+		) {
+			return null;
+		}
 
 		const [responder, drafter, judge] = await Promise.all([
 			promptByVersion(ctx, conversation.orgId, conversation.responderPromptVersion),
@@ -193,7 +210,10 @@ export const commitTurn = internalMutation({
 				conversationId: conversation._id,
 				turnNumber: args.turnNumber,
 				objective: check.objective,
-				promptVersion: conversation.judgePromptVersion,
+				// Present on every conversation the engine runs — see the guard in
+				// `loadTurnContext`. The fallback keeps the write total rather than
+				// dropping a rating on a row that should not exist.
+				promptVersion: conversation.judgePromptVersion ?? 'unknown',
 				rating: check.rating,
 				answer: check.answer,
 				confidence: check.confidence

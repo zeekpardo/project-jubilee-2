@@ -1,7 +1,7 @@
 import type { MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
 import { deleteUpdateAssets } from './updates';
-import { deleteProjectCheckins } from './checkins';
+import { deleteConversationCascade, deleteProjectCheckins } from './checkins';
 
 /**
  * Convex has no foreign keys or ON DELETE CASCADE, so every dependent row must
@@ -393,6 +393,20 @@ export async function deleteCampaignCascade(
 		.collect();
 	for (const template of budgetTemplates) {
 		await ctx.db.delete('tripBudgetTemplates', template._id);
+	}
+
+	// Conversations that name a PERSON rather than a record — a sponsor, an
+	// attendee — hang off the campaign alone, so the per-project cascade below
+	// can never reach them. Same shape as the tasks and updates sweeps above,
+	// and for the same reason: without it they outlive the campaign that gave
+	// them meaning. Record-bound ones are left to deleteProjectCascade, which
+	// finds them by projectId.
+	const conversations = await ctx.db
+		.query('checkinConversations')
+		.withIndex('by_campaignId_and_status', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const conversation of conversations) {
+		await deleteConversationCascade(ctx, conversation._id);
 	}
 
 	const projects = await ctx.db

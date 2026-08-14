@@ -51,6 +51,12 @@ export const listCheckins = query({
 				v.literal('closed')
 			)
 		),
+		// Post-index, unlike `status`: there is no (campaign, kind) index and a
+		// conversation's kind changes when a check-in is started on it, so an
+		// index on it would be a write amplification for a filter the inbox uses
+		// to tint rows rather than to page through. The page cap is what bounds
+		// this, exactly as it does without the filter.
+		kind: v.optional(v.union(v.literal('direct'), v.literal('checkin'))),
 		limit: v.optional(v.number())
 	},
 	handler: async (ctx, args) => {
@@ -87,13 +93,28 @@ export const listCheckins = query({
 						.order('desc')
 						.take(limit);
 
+		const kept =
+			args.kind === undefined
+				? rows
+				: rows.filter((conversation) => (conversation.kind ?? 'checkin') === args.kind);
+
 		return await Promise.all(
-			rows.map(async (conversation) => {
-				const project = await ctx.db.get('projects', conversation.projectId);
+			kept.map(async (conversation) => {
+				// A conversation names a record, a person, or both. The row needs a
+				// heading either way, so both are resolved and the UI picks.
+				const project = conversation.projectId
+					? await ctx.db.get('projects', conversation.projectId)
+					: null;
+				const contact = conversation.contactId
+					? await ctx.db.get('contacts', conversation.contactId)
+					: null;
 				return {
 					...conversation,
 					projectName: project?.name ?? null,
-					projectNumber: project?.number ?? null
+					projectNumber: project?.number ?? null,
+					contactName: contact
+						? [contact.firstName, contact.lastName].filter(Boolean).join(' ')
+						: null
 				};
 			})
 		);
@@ -140,22 +161,34 @@ export const getCheckin = query({
 				.take(LIST_MAX)
 		]);
 
-		const project = await ctx.db.get('projects', conversation.projectId);
+		const project = conversation.projectId
+			? await ctx.db.get('projects', conversation.projectId)
+			: null;
+		const contact = conversation.contactId
+			? await ctx.db.get('contacts', conversation.contactId)
+			: null;
 
 		return {
 			conversation,
 			project: project ? { name: project.name, number: project.number } : null,
+			contact: contact
+				? { name: [contact.firstName, contact.lastName].filter(Boolean).join(' ') }
+				: null,
 			messages,
 			turns,
 			checks,
 			escalations,
 			// Serialized as an array of pairs rather than a Map: a Map is not a
 			// Convex value, and a query that returns one fails at the boundary.
-			objectiveStates: [...bestStates(conversation.objectives, toChecks(checks))].map(
+			objectiveStates: [...bestStates(conversation.objectives ?? [], toChecks(checks))].map(
 				([objective, state]) => ({ objective, state })
 			),
 			nextDecision: decideNext({
-				objectives: conversation.objectives,
+				// A direct conversation has no objectives, so `decideNext` reports
+				// `draft` — nothing outstanding. The UI branches on `kind` before it
+				// shows this, because "ready to draft" is a meaningless thing to say
+				// about a conversation nobody asked anything in.
+				objectives: conversation.objectives ?? [],
 				checks: toChecks(checks),
 				turnsSpent: conversation.turnsSpent,
 				escalated: conversation.status === 'escalated'
@@ -195,7 +228,9 @@ export const listEscalations = query({
 		for (const escalation of rows) {
 			const scoped = await readableOrgId(ctx, 'projects:read', escalation.campaignId);
 			if (!scoped) continue;
-			const project = await ctx.db.get('projects', escalation.projectId);
+			const project = escalation.projectId
+				? await ctx.db.get('projects', escalation.projectId)
+				: null;
 			visible.push({
 				...escalation,
 				projectName: project?.name ?? null,

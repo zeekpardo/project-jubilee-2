@@ -1650,11 +1650,46 @@ const checkinConversations = defineTable({
 	// tripAttendees make, and for the same reason: the admin list reads by
 	// campaign, and a query that traversed could pick up another campaign's row.
 	campaignId: v.id('campaigns'),
-	projectId: v.id('projects'),
-	// Who is actually being messaged. Optional because a conversation can be
-	// opened against a record before anyone has decided which member holds the
-	// phone; cleared rather than cascaded if that contact is deleted.
+
+	// The record this is about, when it is about one.
+	//
+	// OPTIONAL, because a conversation can be with anyone in the campaign — a
+	// sponsor, a trip attendee, a staff member — and most of those people are
+	// not on a record at all. `campaignId` is the only parent every conversation
+	// has, which is why it is the required one.
+	//
+	// A CHECK-IN still requires it. The engine builds its family profile from a
+	// record and its objectives are about a household, so
+	// `startCheckinOnConversation` refuses without one — you can message a
+	// sponsor, you cannot run a family check-in on them.
+	projectId: v.optional(v.id('projects')),
+
+	// Who is actually being messaged. Optional in the other direction: a
+	// conversation can be opened against a record before anyone has decided
+	// which member holds the phone. Cleared rather than cascaded if that contact
+	// is deleted — the transcript is still the record of what was said.
+	//
+	// At least one of `projectId` and `contactId` is always set; the mutations
+	// enforce it, because a conversation with neither is addressed to nobody.
 	contactId: v.optional(v.id('contacts')),
+
+	// What kind of conversation this is.
+	//
+	//   direct  — people talking. Staff write the outbound messages, replies are
+	//             recorded against it, and no model is ever called.
+	//   checkin — the engine owns it: objectives, a responder, a judge, a turn
+	//             cap, and a draft at the end.
+	//
+	// ONE TABLE rather than two, because they are the same thread. A check-in
+	// started on a conversation that already has messages in it should see those
+	// messages — a responder writing to a family a staff member spoke to last
+	// week must not open by introducing itself. Splitting them would make that
+	// one transcript into two and force every reader to stitch them.
+	//
+	// Absent means `checkin`: every row written before this column existed was
+	// one, and reading those as `direct` would take them away from the engine
+	// that is mid-conversation with them.
+	kind: v.optional(v.union(v.literal('direct'), v.literal('checkin'))),
 
 	status: v.union(
 		v.literal('open'),
@@ -1681,19 +1716,26 @@ const checkinConversations = defineTable({
 	// The frozen objective set. Inline rather than a child table for the same
 	// reason taskTemplates.items is: bounded at a handful, always read whole,
 	// and meaningless apart from its parent.
-	objectives: v.array(
-		v.object({
-			key: v.string(),
-			label: v.string(),
-			description: v.string()
-		})
+	//
+	// OPTIONAL, because a `direct` conversation is not asking anything. It is
+	// written when a check-in starts — either at open, or later on a
+	// conversation that began as people talking.
+	objectives: v.optional(
+		v.array(
+			v.object({
+				key: v.string(),
+				label: v.string(),
+				description: v.string()
+			})
+		)
 	),
 
-	// Which prompts this conversation is bound to, frozen at open. A prompt
-	// promoted mid-conversation must not change the voice halfway through.
-	responderPromptVersion: v.string(),
-	drafterPromptVersion: v.string(),
-	judgePromptVersion: v.string(),
+	// Which prompts this conversation is bound to, frozen when the check-in
+	// starts. A prompt promoted mid-conversation must not change the voice
+	// halfway through. Absent on a `direct` conversation, which calls no model.
+	responderPromptVersion: v.optional(v.string()),
+	drafterPromptVersion: v.optional(v.string()),
+	judgePromptVersion: v.optional(v.string()),
 
 	// 'en' | 'es'. Free text rather than a union: the escalation scanner reports
 	// which locales it can actually read, and a conversation in a third one is a
@@ -1711,6 +1753,7 @@ const checkinConversations = defineTable({
 	updateId: v.optional(v.id('updates'))
 })
 	.index('by_projectId', ['projectId'])
+	.index('by_projectId_and_status', ['projectId', 'status'])
 	.index('by_campaignId_and_status', ['campaignId', 'status'])
 	.index('by_orgId_and_status', ['orgId', 'status'])
 	// The contact cascade's only bounded way in. `contactId` is optional, so
@@ -1741,6 +1784,14 @@ const checkinMessages = defineTable({
 	conversationId: v.id('checkinConversations'),
 	direction: v.union(v.literal('outbound'), v.literal('inbound')),
 	text: v.string(),
+
+	// Better Auth user id, on outbound messages a PERSON wrote.
+	//
+	// Absent means the engine wrote it. The distinction is not bookkeeping: a
+	// transcript where a staff member cannot tell their own words from a model's
+	// is a transcript they cannot answer questions about, and the person who has
+	// to explain what the charity said to a family is the one reading it.
+	authorUserId: v.optional(v.string()),
 	// The responder turn this belongs to. An inbound message carries the turn it
 	// will be processed as, so a message and the ratings it produced line up.
 	turnNumber: v.number(),
@@ -1763,8 +1814,11 @@ const conversationTurns = defineTable({
 	orgId: v.string(),
 	conversationId: v.id('checkinConversations'),
 	// Denormalized so the per-family audit view is one indexed read rather than
-	// a join through every conversation the family has had.
-	projectId: v.id('projects'),
+	// a join through every conversation the family has had. Optional for the
+	// same reason the conversation's own is: a turn only exists on a check-in,
+	// which always names a record, but the column mirrors its parent rather
+	// than asserting something the parent does not guarantee.
+	projectId: v.optional(v.id('projects')),
 	turnNumber: v.number(),
 	role: v.union(v.literal('responder'), v.literal('judge')),
 	promptVersion: v.string(),
@@ -1825,7 +1879,11 @@ const objectiveChecks = defineTable({
 const checkinEscalations = defineTable({
 	orgId: v.string(),
 	conversationId: v.id('checkinConversations'),
-	projectId: v.id('projects'),
+	// Absent when the conversation is with a person rather than about a record.
+	// An escalation is raised on ANY inbound message, including one from a
+	// sponsor — the scanner does not ask who is talking before it decides
+	// somebody needs a person.
+	projectId: v.optional(v.id('projects')),
 	campaignId: v.id('campaigns'),
 	// Which incoming message tripped it, by turn number.
 	turnNumber: v.number(),

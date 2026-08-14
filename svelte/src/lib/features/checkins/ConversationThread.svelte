@@ -307,103 +307,110 @@
 			</p>
 		</div>
 
-		<!-- 2. Escalations. Never behind a tab, never collapsed. -->
-		<EscalationBanner escalations={detail.escalations} conversationId={detail.conversation._id} />
+		<!-- The ONE scrolling region, covering everything between the fixed header
+		     and the fixed footer.
+		     Previously only the transcript scrolled, and the escalation banners
+		     above it were fixed siblings. Two banners on one conversation squeezed
+		     the tabs to nothing and clipped the rest against the pane's
+		     `overflow-hidden`, with no scrollbar anywhere to reach it. Scrolling
+		     the whole region is also what a reader expects: the banners are part
+		     of the conversation, not chrome above it. -->
+		<div bind:this={scroller} onscroll={handleScroll} class="min-h-0 flex-1 overflow-y-auto">
+			<!-- 2. Escalations. First in the scroll region, so they are what you see
+			     without scrolling — visible by position rather than by being pinned. -->
+			<EscalationBanner escalations={detail.escalations} conversationId={detail.conversation._id} />
 
-		<!-- 3. A draft is a draft. This says one exists and where to go; it does
+			<!-- 3. A draft is a draft. This says one exists and where to go; it does
 		     not offer to publish it. -->
-		{#if detail.conversation.updateId}
-			<div class="bg-muted border-border flex flex-wrap items-center gap-3 border-b p-3">
-				<div class="min-w-0 flex-1">
-					<p class="text-sm font-medium">{m.checkinDetail_draftReady()}</p>
-					<p class="text-muted-foreground text-xs">{m.checkinDetail_draftReadyBody()}</p>
+			{#if detail.conversation.updateId}
+				<div class="bg-muted border-border flex flex-wrap items-center gap-3 border-b p-3">
+					<div class="min-w-0 flex-1">
+						<p class="text-sm font-medium">{m.checkinDetail_draftReady()}</p>
+						<p class="text-muted-foreground text-xs">{m.checkinDetail_draftReadyBody()}</p>
+					</div>
+					{#if draftHref}
+						<Button variant="outline" size="sm" href={draftHref}>
+							<ExternalLinkIcon class="size-4" aria-hidden="true" />
+							{m.checkinDetail_viewDraft()}
+						</Button>
+					{/if}
 				</div>
-				{#if draftHref}
-					<Button variant="outline" size="sm" href={draftHref}>
-						<ExternalLinkIcon class="size-4" aria-hidden="true" />
-						{m.checkinDetail_viewDraft()}
-					</Button>
-				{/if}
-			</div>
-		{/if}
+			{/if}
 
-		<!-- 4. Tabs -->
-		<Tabs.Root bind:value={activeTab} class="min-h-0 flex-1 gap-3 p-4">
-			<Tabs.List>
-				<Tabs.Trigger value="transcript">{m.checkinDetail_transcript()}</Tabs.Trigger>
-				<!-- Objectives and model calls are check-in concepts. A direct
+			<!-- 4. Tabs -->
+			<Tabs.Root bind:value={activeTab} class="gap-3 p-4">
+				<Tabs.List>
+					<Tabs.Trigger value="transcript">{m.checkinDetail_transcript()}</Tabs.Trigger>
+					<!-- Objectives and model calls are check-in concepts. A direct
 				     conversation has neither, so it gets neither tab rather than two
 				     panes that say "nothing here" about machinery that was never
 				     involved. -->
-				{#if isCheckin}
-					<Tabs.Trigger value="objectives">{m.checkinDetail_objectives()}</Tabs.Trigger>
-					<Tabs.Trigger value="trace">{m.checkinDetail_trace()}</Tabs.Trigger>
-				{/if}
-			</Tabs.List>
+					{#if isCheckin}
+						<Tabs.Trigger value="objectives">{m.checkinDetail_objectives()}</Tabs.Trigger>
+						<Tabs.Trigger value="trace">{m.checkinDetail_trace()}</Tabs.Trigger>
+					{/if}
+				</Tabs.List>
 
-			<Tabs.Content value="transcript" class="flex min-h-0 flex-1 flex-col">
-				{#if messages.length === 0}
-					<EmptyState
-						variant="plain"
-						title={m.checkinDetail_noMessages()}
-						description={m.checkinDetail_noMessagesBody()}
-					/>
-				{:else}
-					<!-- 5. Transcript scroller -->
-					<div class="relative flex min-h-0 flex-1 flex-col">
-						<div
-							bind:this={scroller}
-							onscroll={handleScroll}
-							class="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2"
-						>
-							{#each messages as message, index (message._id)}
-								{#if startsNewDay(message.at, messages[index - 1]?.at)}
-									<div class="flex items-center gap-3 py-1">
-										<span class="bg-border h-px flex-1"></span>
-										<span class="text-muted-foreground text-xs">
-											{messageDayLabel(message.at)}
-										</span>
-										<span class="bg-border h-px flex-1"></span>
-									</div>
-								{/if}
-								<MessageBubble {message} />
-							{/each}
-						</div>
-
-						{#if hasUnseen}
-							<div class="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
-								<Button
-									size="sm"
-									variant="secondary"
-									class="pointer-events-auto shadow-md"
-									onclick={jumpToLatest}
-								>
-									<ArrowDownIcon aria-hidden="true" />
-									{m.checkinDetail_jumpToLatest()}
-								</Button>
+				<Tabs.Content value="transcript" class="flex flex-col">
+					{#if messages.length === 0}
+						<EmptyState
+							variant="plain"
+							title={m.checkinDetail_noMessages()}
+							description={m.checkinDetail_noMessagesBody()}
+						/>
+					{:else}
+						<!-- 5. Transcript scroller -->
+						<div class="relative flex flex-col">
+							<div class="space-y-3 pr-2">
+								{#each messages as message, index (message._id)}
+									{#if startsNewDay(message.at, messages[index - 1]?.at)}
+										<div class="flex items-center gap-3 py-1">
+											<span class="bg-border h-px flex-1"></span>
+											<span class="text-muted-foreground text-xs">
+												{messageDayLabel(message.at)}
+											</span>
+											<span class="bg-border h-px flex-1"></span>
+										</div>
+									{/if}
+									<MessageBubble {message} />
+								{/each}
 							</div>
-						{/if}
-					</div>
-				{/if}
-			</Tabs.Content>
 
-			{#if isCheckin}
-				<Tabs.Content value="objectives" class="min-h-0 flex-1 overflow-y-auto pr-2">
-					<!-- `objectives` is optional on the document now that a direct
+							{#if hasUnseen}
+								<div class="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center">
+									<Button
+										size="sm"
+										variant="secondary"
+										class="pointer-events-auto shadow-md"
+										onclick={jumpToLatest}
+									>
+										<ArrowDownIcon aria-hidden="true" />
+										{m.checkinDetail_jumpToLatest()}
+									</Button>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				</Tabs.Content>
+
+				{#if isCheckin}
+					<Tabs.Content value="objectives" class="pr-2">
+						<!-- `objectives` is optional on the document now that a direct
 					     conversation asks nothing. A check-in always has them; the
 					     fallback is here so the type is honest rather than asserted. -->
-					<ObjectivesPanel
-						objectives={detail.conversation.objectives ?? []}
-						states={detail.objectiveStates}
-						checks={detail.checks}
-					/>
-				</Tabs.Content>
+						<ObjectivesPanel
+							objectives={detail.conversation.objectives ?? []}
+							states={detail.objectiveStates}
+							checks={detail.checks}
+						/>
+					</Tabs.Content>
 
-				<Tabs.Content value="trace" class="min-h-0 flex-1 overflow-y-auto pr-2">
-					<DecisionTrace turns={detail.turns} />
-				</Tabs.Content>
-			{/if}
-		</Tabs.Root>
+					<Tabs.Content value="trace" class="pr-2">
+						<DecisionTrace turns={detail.turns} />
+					</Tabs.Content>
+				{/if}
+			</Tabs.Root>
+		</div>
 
 		<!-- 6. Footer. Recording an inbound reply is offered on EVERY status, not
 		     just `open`, because `receiveMessage` stores the message whatever state
@@ -413,7 +420,7 @@
 		     second disclosure unreachable from the UI.
 		     What changes off `open` is only that nothing further is asked, which is
 		     what the notice beneath says. -->
-		<div class="border-border flex flex-col gap-2 border-t p-3">
+		<div class="border-border flex shrink-0 flex-col gap-2 border-t p-3">
 			<!-- Writing IN YOUR OWN WORDS, above the control that records somebody
 			     else's. `sendMessage` refuses while the engine is mid-check-in, so
 			     that case is replaced by the reason rather than offered as a box that

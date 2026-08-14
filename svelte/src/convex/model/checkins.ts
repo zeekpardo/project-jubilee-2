@@ -126,6 +126,18 @@ export async function buildFamilyProfile(
 	const campaign = await ctx.db.get('campaigns', project.campaignId);
 	const lines: string[] = [];
 
+	// WHO IS WRITING. Without this the responder has no name for the charity and
+	// fills the gap itself — a live run opened with "Hi Grace, it's [Name] from
+	// [Charity]", which is what a family would have received. The prompt forbids
+	// placeholders now too; this is the half that makes obeying it possible.
+	const settings = await ctx.db
+		.query('orgSettings')
+		.withIndex('by_orgId', (q) => q.eq('orgId', project.orgId))
+		.first();
+	if (settings?.publicName) {
+		lines.push(`You are writing on behalf of ${settings.publicName}.`);
+	}
+
 	if (contactId) {
 		const contact = await ctx.db.get('contacts', contactId);
 		if (contact && contact.orgId === project.orgId) {

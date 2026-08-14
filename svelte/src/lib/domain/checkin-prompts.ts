@@ -61,6 +61,28 @@ What you must not do.
 };
 
 /**
+ * `responder-2`. `responder-1` above is left exactly as it was — it is what
+ * earlier conversations were run against, and rewriting it would change the
+ * question they were answering.
+ *
+ * The change: an explicit ban on placeholders. `responder-1` opened a live
+ * check-in with "Hi Grace, it's [Name] from [Charity]" because nothing told it
+ * who it was, and a model with a gap in its context will fill the gap. The
+ * profile now carries the organization's name (see model/checkins.ts), and this
+ * says what to do when it does not.
+ */
+export const RESPONDER_V2: PromptVersion = {
+	role: 'responder',
+	version: 'responder-2',
+	content: `${RESPONDER_V1.content}
+
+Names and placeholders.
+- NEVER write a placeholder. No square brackets, no "[Name]", no "[Charity]", no "your organisation". A family reading one of those learns that a machine wrote the message.
+- If you have been told the organisation's name, you may use it once. If you have not, do not name it at all — "we" and "us" are enough, and a warm message needs no letterhead.
+- Do not sign the message. You are not a person and must not borrow one's name.`
+};
+
+/**
  * The draft-writing prompt, used only once a conversation's objectives are all
  * answered with confidence. A separate version from the responder because it is
  * a different job with a different reader — and because the thing it produces
@@ -293,4 +315,23 @@ export function buildDrafterInput(input: {
 }
 
 /** Every prompt version this build ships, for seeding the append-only table. */
-export const SHIPPED_PROMPT_VERSIONS: PromptVersion[] = [RESPONDER_V1, DRAFTER_V1, JUDGE_V1];
+export const SHIPPED_PROMPT_VERSIONS: PromptVersion[] = [
+	RESPONDER_V1,
+	RESPONDER_V2,
+	DRAFTER_V1,
+	JUDGE_V1
+];
+
+/**
+ * The newest shipped version of each role — what a fresh install should run.
+ *
+ * Deliberately NOT what `seedPromptVersions` activates on an org that already
+ * has one: promoting a prompt in front of families is a decision somebody
+ * makes, after replaying real conversations against it (§5). The sandbox seed
+ * uses this because a sandbox has nothing to protect.
+ */
+export function latestPromptVersions(): PromptVersion[] {
+	const byRole = new globalThis.Map<PromptRole, PromptVersion>();
+	for (const prompt of SHIPPED_PROMPT_VERSIONS) byRole.set(prompt.role, prompt);
+	return [...byRole.values()];
+}

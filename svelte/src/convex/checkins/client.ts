@@ -242,10 +242,16 @@ export function anthropicCheckinModel(): CheckinModel {
 				tools: [request.tool] as unknown as BetaToolUnion[],
 				// FORCED. The judge has exactly one way to answer, so there is no
 				// path where it returns prose the caller then has to parse.
-				tool_choice: { type: 'tool' as const, name: request.tool.name }
-				// No `output_config.effort` and no `thinking`: the Haiku tier accepts
-				// neither, and a classification behind a forced tool call has nothing
-				// to think about.
+				tool_choice: { type: 'tool' as const, name: request.tool.name },
+				// `low` EXPLICITLY, because the default is `high` and this call does
+				// not want it: the judge reads a few sentences and fills four fields
+				// behind a forced tool call. Left unset it would spend Sonnet's full
+				// effort budget on the highest-frequency call in the system for no
+				// better a rating.
+				//
+				// Still no `thinking`. On this tier omitting it means none, which is
+				// what a forced tool call wants.
+				output_config: { effort: 'low' as const }
 			});
 			assertUsable(message, 'judge');
 

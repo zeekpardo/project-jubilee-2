@@ -39,7 +39,7 @@ import {
 	storedObjectives
 } from '../model/checkins';
 import { bestStates, defaultObjectivesForFamily } from '../../lib/domain/checkin-objectives';
-import { SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
+import { latestPromptVersions, SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
 
 /** Everything this seed creates is tagged, so the wipe can find exactly it. */
 const SANDBOX_MARKER = 'checkin-sandbox';
@@ -193,6 +193,33 @@ export const seedSandbox = internalMutation({
 				notes: SANDBOX_MARKER
 			});
 			promptsAdded += 1;
+		}
+
+		// The sandbox runs the NEWEST of each role. On a real org promotion is a
+		// decision somebody makes after replaying conversations against the new
+		// wording; a sandbox has nothing to protect and everything to gain from
+		// testing what would actually ship.
+		for (const newest of latestPromptVersions()) {
+			const rows = await ctx.db
+				.query('promptVersions')
+				.withIndex('by_orgId_and_role_and_isActive', (q) =>
+					q.eq('orgId', orgId).eq('role', newest.role).eq('isActive', true)
+				)
+				.take(10);
+			for (const row of rows) {
+				if (row.version !== newest.version) {
+					await ctx.db.patch('promptVersions', row._id, { isActive: false });
+				}
+			}
+			const target = await ctx.db
+				.query('promptVersions')
+				.withIndex('by_orgId_and_version', (q) =>
+					q.eq('orgId', orgId).eq('version', newest.version)
+				)
+				.first();
+			if (target && !target.isActive) {
+				await ctx.db.patch('promptVersions', target._id, { isActive: true });
+			}
 		}
 
 		// --- families ---------------------------------------------------------

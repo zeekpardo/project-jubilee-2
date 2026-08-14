@@ -48,12 +48,24 @@ export function responderModel(): string {
 }
 
 /**
- * The rater. Haiku-tier per §3.2: it sees a handful of sentences and a list of
- * objective descriptions, returns four numbers and four short strings through a
- * forced tool call, and runs on every incoming message.
+ * The rater. It sees a handful of sentences and a list of objective
+ * descriptions, and returns a rating, an answer and a confidence for each
+ * through a forced tool call, on every incoming message.
+ *
+ * Sonnet 4.6, which is a DELIBERATE DEPARTURE from §3.2's cheap Haiku-tier
+ * model — see PLAN-ai-checkin.md §8. The plan costed this call as a
+ * classification, and it is not one: `confidence` is the judge's assessment of
+ * its own reading, and that number decides whether a family gets asked again or
+ * a person reads the transcript. A cheaper model is not merely less accurate
+ * here, it is less accurate about how accurate it is, and the cost of that
+ * lands on the family as another question they already answered.
+ *
+ * Run at `low` effort — see client.ts. The tier buys comprehension, not
+ * deliberation, and there is nothing to deliberate about behind a forced tool
+ * call.
  */
 export function judgeModel(): string {
-	return CHECKIN_JUDGE_MODEL?.trim() || 'claude-haiku-4-5';
+	return CHECKIN_JUDGE_MODEL?.trim() || 'claude-sonnet-4-6';
 }
 
 /**

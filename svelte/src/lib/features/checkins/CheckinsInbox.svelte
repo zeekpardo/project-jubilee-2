@@ -94,8 +94,22 @@
 		{/snippet}
 	</EmptyState>
 {:else}
+	<!--
+		An EXPLICIT viewport-relative height, not `flex-1`.
+		The app shell does not bound its own height — `main` measures 931px in a
+		560px window — so every `flex-1` beneath it resolves to content height,
+		nothing ever overflows, and the inner scrollers never engage. The result
+		was a thread clipped against the pane's `overflow-hidden` with no
+		scrollbar anywhere to reach the rest of it.
+		13rem is the app header, the page heading and the container padding. The
+		`min-h` stops it collapsing to nothing on a short window; the grid's own
+		`1fr` row then bounds each pane, which is what finally gives the
+		transcript something to scroll inside.
+		The alternative was making the shell height-bounded, which would change
+		the scrolling behaviour of every page in the app to fix one.
+	-->
 	<div
-		class="grid min-h-0 flex-1 grid-rows-[minmax(0,16rem)_1fr] gap-4 lg:grid-cols-[22rem_1fr] lg:grid-rows-1"
+		class="grid h-[calc(100dvh-13rem)] max-h-[calc(100dvh-13rem)] min-h-[24rem] grid-rows-[minmax(0,16rem)_1fr] gap-4 lg:grid-cols-[22rem_1fr] lg:grid-rows-1"
 	>
 		<div class="bg-card flex h-full min-h-0 flex-col overflow-hidden rounded-xl border">
 			<ConversationList {campaignId} {selectedId} onSelect={select} />

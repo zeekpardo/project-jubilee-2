@@ -11,6 +11,13 @@
 			"runtimeExecutable": "pnpm",
 			"runtimeArgs": ["dev:frontend"],
 			"port": 5173
+		},
+		{
+			"name": "jubilee-vite-alt",
+			"cwd": "svelte",
+			"runtimeExecutable": "npx",
+			"runtimeArgs": ["vite", "dev", "--port", "5199", "--strictPort"],
+			"port": 5199
 		}
 	]
 }

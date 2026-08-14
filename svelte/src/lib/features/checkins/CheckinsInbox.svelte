@@ -20,6 +20,7 @@
 	// Primitives
 	import { EmptyState } from '$lib/primitives/ui/empty-state';
 	import MessagesSquareIcon from '@lucide/svelte/icons/messages-square';
+	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 
 	// API
 	import { useQuery } from '@mmailaender/convex-svelte';
@@ -35,6 +36,21 @@
 
 	const { api } = getAuthContext();
 	const auth = useAuth();
+
+	// Whether the engine can run at all. Without a key a check-in opens, fails
+	// its first turn, and leaves an empty thread with an error buried in the
+	// model-calls tab — the failure is recorded honestly and is still invisible
+	// unless you know to go looking. Saying so up front is the difference
+	// between a misconfigured deployment and an apparently broken feature.
+	//
+	// A warning rather than a block: writing messages yourself works perfectly
+	// well without a key, and this surface is now general messaging.
+	const settingsResponse = useQuery(api.checkins.queries.checkinSettings, () =>
+		auth.isAuthenticated ? {} : 'skip'
+	);
+	const engineUnavailable = $derived(
+		settingsResponse.data ? !settingsResponse.data.apiKeyConfigured : false
+	);
 
 	// Unfiltered, and separate from the list's own subscription: this one answers
 	// "does this campaign have any check-ins at all", which is the question that
@@ -57,6 +73,19 @@
 		});
 	}
 </script>
+
+<!-- Above BOTH branches, including the empty state: a deployment with no key
+     and no conversations is exactly the one where somebody is about to open
+     their first check-in and watch nothing happen. -->
+{#if engineUnavailable}
+	<div class="border-destructive/50 bg-destructive/10 flex items-start gap-3 rounded-lg border p-3">
+		<TriangleAlertIcon class="text-destructive mt-0.5 size-4 shrink-0" aria-hidden="true" />
+		<div class="min-w-0">
+			<p class="text-sm font-medium">{m.checkins_notConfigured()}</p>
+			<p class="text-muted-foreground text-xs">{m.checkins_notConfiguredBody()}</p>
+		</div>
+	</div>
+{/if}
 
 {#if !response.isLoading && conversations.length === 0}
 	<EmptyState title={m.messages_empty()} description={m.messages_emptyBody()}>

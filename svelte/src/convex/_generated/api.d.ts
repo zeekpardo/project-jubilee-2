@@ -92,6 +92,7 @@ import type * as public_queries from "../public/queries.js";
 import type * as seed from "../seed.js";
 import type * as seed_jubilee from "../seed/jubilee.js";
 import type * as seed_portal from "../seed/portal.js";
+import type * as seed_sandbox from "../seed/sandbox.js";
 import type * as seed_transform from "../seed/transform.js";
 import type * as site_queries from "../site/queries.js";
 import type * as storage from "../storage.js";
@@ -225,6 +226,7 @@ declare const fullApi: ApiFromModules<{
   seed: typeof seed;
   "seed/jubilee": typeof seed_jubilee;
   "seed/portal": typeof seed_portal;
+  "seed/sandbox": typeof seed_sandbox;
   "seed/transform": typeof seed_transform;
   "site/queries": typeof site_queries;
   storage: typeof storage;

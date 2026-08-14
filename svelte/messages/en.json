@@ -1486,7 +1486,7 @@
 	"checkins_openEscalations": "{count} needing a person",
 	"checkins_filterAll": "All",
 	"checkins_filterKindAll": "All kinds",
-	"checkins_notConfiguredBody": "No Anthropic API key is set on this deployment, so no check-in can run. Ask an administrator to configure it.",
+	"checkins_notConfiguredBody": "No Anthropic API key is set on this deployment. Messages you write yourself still work; a check-in will open and then fail its first turn.",
 	"checkinStatus_open": "Open",
 	"checkinStatus_needs_review": "Needs a person",
 	"checkinStatus_escalated": "Escalated",
@@ -1629,5 +1629,6 @@
 	"messages_recipientHelp": "Anyone in this campaign: a family's record, or a person on a record, a trip, or the campaign itself.",
 	"messages_recipientCheckinHelp": "A check-in asks about a household, so it can only be opened on a record.",
 	"messages_groupRecords": "Records",
-	"messages_groupPeople": "People"
+	"messages_groupPeople": "People",
+	"checkins_notConfigured": "Check-ins cannot run"
 }

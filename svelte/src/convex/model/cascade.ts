@@ -1,6 +1,7 @@
 import type { MutationCtx } from '../_generated/server';
 import type { Id } from '../_generated/dataModel';
 import { deleteUpdateAssets } from './updates';
+import { deleteProjectCheckins } from './checkins';
 
 /**
  * Convex has no foreign keys or ON DELETE CASCADE, so every dependent row must
@@ -51,6 +52,12 @@ export async function deleteProjectCascade(
 		}
 		await ctx.db.delete('documents', document._id);
 	}
+
+	// Check-ins go BEFORE the posts below, not after. A machine-drafted post
+	// names the conversation it came from, and that cascade clears the link on a
+	// draft it expects to still exist — running it after the posts were deleted
+	// would leave it patching a row that is gone.
+	await deleteProjectCheckins(ctx, projectId);
 
 	// Posts about this record go with it, and their PHOTOGRAPHS GO FIRST: once
 	// the row is gone its assetIds are gone with it, and those ids are the only
@@ -255,6 +262,19 @@ export async function deleteContactCascade(
 		.collect();
 	for (const check of backgroundChecks) {
 		await ctx.db.delete('contactBackgroundChecks', check._id);
+	}
+
+	// A check-in names the person it is messaging. CLEARED, not cascaded, for
+	// the same reason a transaction's contactId is: the conversation happened,
+	// the transcript is the record of it, and it does not stop being evidence
+	// because the person's row was deleted. What it stops being is deliverable —
+	// which is the transport's problem, and the transport reads this column.
+	const checkins = await ctx.db
+		.query('checkinConversations')
+		.withIndex('by_contactId', (q) => q.eq('contactId', contactId))
+		.take(100);
+	for (const checkin of checkins) {
+		await ctx.db.patch('checkinConversations', checkin._id, { contactId: undefined });
 	}
 
 	const projectLinks = await ctx.db

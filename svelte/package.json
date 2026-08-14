@@ -69,6 +69,7 @@
 		"vitest": "^4.1.5"
 	},
 	"dependencies": {
+		"@anthropic-ai/sdk": "^0.117.1",
 		"@ark-ui/svelte": "^5.21.1",
 		"@better-auth/api-key": "1.6.9",
 		"@convex-dev/better-auth": "0.12.0",

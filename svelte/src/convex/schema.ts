@@ -555,7 +555,24 @@ const updates = defineTable({
 	publishedAt: v.optional(v.number()),
 	// Better Auth user id. "Posted by" is what makes an update feel written by a
 	// person rather than emitted by a system.
-	authorUserId: v.string()
+	//
+	// A machine-drafted post carries the sentinel `AI_AUTHOR_USER_ID` from
+	// model/checkins.ts rather than a real id — it resolves to nobody on
+	// purpose, because attributing an AI draft to whoever happened to trigger it
+	// would put a staff member's name on prose they have not read yet.
+	authorUserId: v.string(),
+
+	// The check-in this was drafted from, when a check-in drafted it. Absent on
+	// everything a person wrote.
+	//
+	// Two jobs in one column: it MARKS the post as machine-written, so a reviewer
+	// is never guessing, and it is the link back to the transcript and the
+	// decision trace that produced it. An AI draft with no path back to its
+	// evidence is not reviewable, it is just text.
+	//
+	// Cleared, not cascaded, if the conversation is deleted — the draft is still
+	// a draft somebody may want to publish.
+	checkinConversationId: v.optional(v.id('checkinConversations'))
 })
 	// Both feeds read status-first and newest-first; Convex appends
 	// _creationTime as the final key, so a published feed needs no JS sort.
@@ -1570,6 +1587,275 @@ const tripBudgetTemplates = defineTable({
 	.index('by_campaignId', ['campaignId'])
 	.index('by_orgId', ['orgId']);
 
+// ============================================================
+// AI check-ins
+// ============================================================
+// A periodic conversation with a freed family — job, school, kids, wellbeing —
+// that produces a DRAFT update for a person to review. See PLAN-ai-checkin.md.
+//
+// Four tables, and the split between them is the plan's §4 logging contract
+// rather than a normalization exercise. The API is stateless and every call
+// resends the whole context, so the log stores what was actually SENT, one row
+// per model call, linked by conversation and turn. That is simultaneously the
+// audit trail ("why did it say that") and the replay set: a new prompt version
+// is tested by re-running real logged conversations against it before it ever
+// reaches a family.
+//
+// Internal-only, for the same reason `trips` is: nothing here has an
+// isPublished, a public query, or a site route. The one thing a check-in can
+// put in front of the public is an `updates` row, and it can only ever write
+// one as a DRAFT — the publish decision stays where it already is, behind
+// `content:publish` and a second pair of eyes.
+
+// Append-only, exactly like costTemplates and taskTemplates, and for a sharper
+// version of the same reason: a logged turn records which prompt produced it,
+// and editing a prompt in place would silently rewrite the question every
+// conversation in the log was answering. Nothing patches a row in this table.
+//
+// `content` is the whole system prompt, stored rather than referenced, because
+// the code that produced it will have changed by the time anyone reads the log.
+const promptVersions = defineTable({
+	orgId: v.string(),
+	// Three roles, not two, because the drafter is a different job with a
+	// different reader: the responder writes to a family, the drafter writes
+	// about one. Collapsing them would mean only one of the two could be the
+	// active version for a campaign.
+	role: v.union(v.literal('responder'), v.literal('drafter'), v.literal('judge')),
+	// 'responder-1', 'drafter-1', 'judge-1'. Unique within an org.
+	version: v.string(),
+	content: v.string(),
+	// The model this version was written against. Not a runtime setting — the
+	// same wording behaves differently on a different tier, so "which prompt"
+	// and "which model" are one fact for replay purposes.
+	model: v.string(),
+	// Which version new conversations start from. Exactly one true per
+	// (orgId, role), enforced in the mutation layer like taskTemplates.isActive.
+	isActive: v.boolean(),
+	notes: v.optional(v.string())
+})
+	// unique(orgId, version)
+	.index('by_orgId_and_version', ['orgId', 'version'])
+	.index('by_orgId_and_role_and_isActive', ['orgId', 'role', 'isActive'])
+	.index('by_orgId', ['orgId']);
+
+// One check-in with one family.
+//
+// The OBJECTIVE SET IS SNAPSHOTTED here, the same contract budgets keep with
+// costTemplates: changing the default objectives must not retroactively change
+// what a logged conversation was asking, or the replay set is measuring a
+// moved goalpost rather than a prompt change.
+const checkinConversations = defineTable({
+	orgId: v.string(),
+	// Carried directly, never traversed — the same choice tasks, updates and
+	// tripAttendees make, and for the same reason: the admin list reads by
+	// campaign, and a query that traversed could pick up another campaign's row.
+	campaignId: v.id('campaigns'),
+	projectId: v.id('projects'),
+	// Who is actually being messaged. Optional because a conversation can be
+	// opened against a record before anyone has decided which member holds the
+	// phone; cleared rather than cascaded if that contact is deleted.
+	contactId: v.optional(v.id('contacts')),
+
+	status: v.union(
+		v.literal('open'),
+		// Waiting on a person: a low-confidence reading, a conversation that ran
+		// out of turns, or a drafting call that did not produce a draft.
+		v.literal('needs_review'),
+		// A person is handling this family directly. Terminal for the machine.
+		v.literal('escalated'),
+		v.literal('drafted'),
+		v.literal('closed')
+	),
+	// Set alongside `needs_review`, so the queue can say what it wants.
+	reviewReason: v.optional(
+		v.union(
+			v.literal('low_confidence'),
+			v.literal('exhausted'),
+			v.literal('draft_failed'),
+			// A call was refused, truncated, or came back without its forced tool
+			// call. Written by the action, not by the engine's stopping rule.
+			v.literal('model_error')
+		)
+	),
+
+	// The frozen objective set. Inline rather than a child table for the same
+	// reason taskTemplates.items is: bounded at a handful, always read whole,
+	// and meaningless apart from its parent.
+	objectives: v.array(
+		v.object({
+			key: v.string(),
+			label: v.string(),
+			description: v.string()
+		})
+	),
+
+	// Which prompts this conversation is bound to, frozen at open. A prompt
+	// promoted mid-conversation must not change the voice halfway through.
+	responderPromptVersion: v.string(),
+	drafterPromptVersion: v.string(),
+	judgePromptVersion: v.string(),
+
+	// 'en' | 'es'. Free text rather than a union: the escalation scanner reports
+	// which locales it can actually read, and a conversation in a third one is a
+	// thing to route to a person, not a value to reject at the schema.
+	locale: v.string(),
+
+	// Responder calls made. The turn cap reads this rather than counting rows,
+	// so an interrupted turn cannot buy the conversation an extra question.
+	turnsSpent: v.number(),
+
+	openedAt: v.number(),
+	lastMessageAt: v.optional(v.number()),
+	closedAt: v.optional(v.number()),
+	// The draft this conversation produced, if it got that far.
+	updateId: v.optional(v.id('updates'))
+})
+	.index('by_projectId', ['projectId'])
+	.index('by_campaignId_and_status', ['campaignId', 'status'])
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	// The contact cascade's only bounded way in. `contactId` is optional, so
+	// this index also ranges over the rows that have none — which is fine,
+	// because the cascade pins an actual id.
+	.index('by_contactId', ['contactId'])
+	.index('by_orgId', ['orgId']);
+
+// What was actually said, in order.
+//
+// NOT in PLAN-ai-checkin.md §4, and added deliberately. The plan's three tables
+// are the DECISION trace — what was sent to a model and what came back. The
+// transcript is a different fact, and the only other place it exists is
+// embedded inside each responder call's `input`, mixed with the profile and the
+// outstanding-objective list in whatever shape that prompt version happened to
+// use.
+//
+// Reconstructing the conversation by parsing prompts would make every reader —
+// the engine, the admin transcript view, the replay harness — depend on a
+// prompt's formatting, which is the one thing this design guarantees will
+// change. So the messages are stored as messages.
+//
+// It is also the seam the WhatsApp transport plugs into (§6, out of scope):
+// `outbound` rows are what something else sends, `inbound` rows are what it
+// delivers back.
+const checkinMessages = defineTable({
+	orgId: v.string(),
+	conversationId: v.id('checkinConversations'),
+	direction: v.union(v.literal('outbound'), v.literal('inbound')),
+	text: v.string(),
+	// The responder turn this belongs to. An inbound message carries the turn it
+	// will be processed as, so a message and the ratings it produced line up.
+	turnNumber: v.number(),
+	at: v.number()
+})
+	.index('by_conversationId_and_at', ['conversationId', 'at'])
+	.index('by_conversationId', ['conversationId'])
+	.index('by_orgId', ['orgId']);
+
+// The DECISION trace: every row is one model call, with the full input that
+// produced it. §4 is explicit that this stores what was sent rather than
+// deltas.
+//
+// `input` can be large — the responder's context is the family profile plus the
+// whole conversation. It is bounded by the turn cap and by the fact that a
+// WhatsApp conversation is a few hundred words, so it stays far inside the 1MB
+// document limit; `model/checkins.ts` truncates rather than letting a write
+// fail, because losing the log entry is worse than losing its tail.
+const conversationTurns = defineTable({
+	orgId: v.string(),
+	conversationId: v.id('checkinConversations'),
+	// Denormalized so the per-family audit view is one indexed read rather than
+	// a join through every conversation the family has had.
+	projectId: v.id('projects'),
+	turnNumber: v.number(),
+	role: v.union(v.literal('responder'), v.literal('judge')),
+	promptVersion: v.string(),
+	// The model that actually served it, read off the response rather than off
+	// config — config is what we asked for, this is what answered.
+	model: v.string(),
+	input: v.string(),
+	output: v.string(),
+	latencyMs: v.number(),
+	inputTokens: v.optional(v.number()),
+	outputTokens: v.optional(v.number()),
+	// Set instead of `output` when the call failed. A failed call is part of the
+	// trace — "it did not respond" is an answer to "why did it respond that way".
+	error: v.optional(v.string())
+})
+	.index('by_conversationId_and_turnNumber', ['conversationId', 'turnNumber'])
+	.index('by_conversationId', ['conversationId'])
+	.index('by_projectId', ['projectId'])
+	.index('by_orgId', ['orgId']);
+
+// One judge rating, per objective, per turn.
+//
+// A separate table from conversationTurns even though every row comes from a
+// judge row, because these are what the whole engine reads: "which objectives
+// are still outstanding" is a query over this table, and answering it by
+// parsing JSON out of a turn's `output` would make the engine's control flow
+// depend on a log format.
+const objectiveChecks = defineTable({
+	orgId: v.string(),
+	conversationId: v.id('checkinConversations'),
+	turnNumber: v.number(),
+	// A key from the conversation's snapshotted objective set.
+	objective: v.string(),
+	// The judge SCHEMA version that produced this, which is the judge prompt's
+	// version — the rating and the wording that asked for it travel together.
+	promptVersion: v.string(),
+	rating: v.number(),
+	// NULLABLE, and that is the point: forced tool use guarantees the shape of
+	// what comes back, not its truth, so the schema has to give the model
+	// somewhere to put "they have not said" other than a plausible sentence.
+	answer: v.union(v.string(), v.null()),
+	confidence: v.number()
+})
+	.index('by_conversationId', ['conversationId'])
+	.index('by_conversationId_and_objective', ['conversationId', 'objective'])
+	.index('by_orgId', ['orgId']);
+
+// A family said something that needs a person, now.
+//
+// Its own table rather than a flag on the conversation because it is a QUEUE
+// someone works, with its own resolution state, and because one conversation
+// can raise more than one — "violence and self-harm" is a different phone call
+// from either alone.
+//
+// Written by the same deterministic scan that stops the conversation, in the
+// same mutation, before any model call is scheduled. There is no path that
+// escalates without a row and no path that writes a row without stopping.
+const checkinEscalations = defineTable({
+	orgId: v.string(),
+	conversationId: v.id('checkinConversations'),
+	projectId: v.id('projects'),
+	campaignId: v.id('campaigns'),
+	// Which incoming message tripped it, by turn number.
+	turnNumber: v.number(),
+	category: v.union(
+		v.literal('violence'),
+		v.literal('abuse'),
+		v.literal('self_harm'),
+		v.literal('trafficking'),
+		v.literal('medical_emergency'),
+		v.literal('child_danger')
+	),
+	// The phrase from the scanner's list that matched, normalized. The audit
+	// trail for "why did this fire", and the input to tuning the list.
+	term: v.string(),
+	// A short quotation around the match. A POINTER to the transcript, not a
+	// copy of it — prose about a named family lives in one place.
+	excerpt: v.string(),
+	status: v.union(v.literal('open'), v.literal('acknowledged'), v.literal('resolved')),
+	// Better Auth user id.
+	acknowledgedBy: v.optional(v.string()),
+	acknowledgedAt: v.optional(v.number()),
+	resolvedBy: v.optional(v.string()),
+	resolvedAt: v.optional(v.number()),
+	note: v.optional(v.string())
+})
+	.index('by_orgId_and_status', ['orgId', 'status'])
+	.index('by_campaignId_and_status', ['campaignId', 'status'])
+	.index('by_conversationId', ['conversationId'])
+	.index('by_projectId', ['projectId']);
+
 // Custom fields engine. One pair of tables powers custom fields for every
 // entity and both scopes. A record's applicable fields are all org-scope fields
 // for its entity, plus its campaign's own — see resolveFieldDefinitions in
@@ -1696,5 +1982,11 @@ export default defineSchema({
 	customFieldCategories,
 	customFieldDefinitions,
 	campaignAssignments,
-	campaignMemberships
+	campaignMemberships,
+	promptVersions,
+	checkinConversations,
+	checkinMessages,
+	conversationTurns,
+	objectiveChecks,
+	checkinEscalations
 });

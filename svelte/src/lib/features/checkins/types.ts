@@ -13,10 +13,6 @@ export type CheckinDetail = NonNullable<FunctionReturnType<typeof api.checkins.q
 
 export type EscalationRow = FunctionReturnType<typeof api.checkins.queries.listEscalations>[number];
 
-export type PromptVersionRow = FunctionReturnType<
-	typeof api.checkins.queries.listPromptVersions
->[number];
-
 export type CheckinSettings = FunctionReturnType<typeof api.checkins.queries.checkinSettings>;
 
 export type CheckinMessageRow = CheckinDetail['messages'][number];
@@ -47,5 +43,4 @@ export function conversationKind(row: { kind?: CheckinKind }): CheckinKind {
 export type CheckinReviewReason = NonNullable<Doc<'checkinConversations'>['reviewReason']>;
 export type EscalationCategory = Doc<'checkinEscalations'>['category'];
 export type EscalationStatus = Doc<'checkinEscalations'>['status'];
-export type PromptRole = Doc<'promptVersions'>['role'];
 export type ObjectiveState = ObjectiveStateRow['state'];

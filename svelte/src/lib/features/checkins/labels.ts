@@ -17,8 +17,7 @@ import type {
 	CheckinStatus,
 	EscalationCategory,
 	EscalationStatus,
-	ObjectiveState,
-	PromptRole
+	ObjectiveState
 } from './types';
 
 /** Filter order, and the order the kind options render in. */
@@ -180,23 +179,6 @@ export function escalationStatusVariant(status: EscalationStatus): BadgeVariant 
 			return 'warning';
 		case 'resolved':
 			return 'outline';
-	}
-}
-
-export const PROMPT_ROLES = [
-	'responder',
-	'drafter',
-	'judge'
-] as const satisfies readonly PromptRole[];
-
-export function promptRoleLabel(role: PromptRole): string {
-	switch (role) {
-		case 'responder':
-			return m.checkinPromptRole_responder();
-		case 'drafter':
-			return m.checkinPromptRole_drafter();
-		case 'judge':
-			return m.checkinPromptRole_judge();
 	}
 }
 

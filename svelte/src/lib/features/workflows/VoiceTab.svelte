@@ -16,6 +16,7 @@
 	import { WORKFLOW_MODELS } from '$lib/domain/workflows';
 	import type { WorkflowDraft } from './types';
 	import { PROMPT_ROLES, promptRoleHelp, promptRoleLabel } from './labels';
+	import type { PromptRole } from './types';
 	import * as m from '$lib/i18n/messages';
 
 	let { draft }: { draft: WorkflowDraft } = $props();
@@ -37,16 +38,42 @@
 	 * change nobody asked for. It stays, shown verbatim, until an author picks
 	 * something else.
 	 */
-	const collectionFor = (current: string) => {
-		const known = WORKFLOW_MODELS.map((model) => ({
-			value: model.id,
-			label: modelLabel(model)
-		}));
-		const listed = WORKFLOW_MODELS.some((model) => model.id === current);
-		return createListCollection({
-			items: current && !listed ? [...known, { value: current, label: current }] : known
-		});
-	};
+	/**
+	 * One STABLE collection per role.
+	 *
+	 * Built in a `$derived` rather than called inline in the markup, and that is
+	 * load-bearing: `createListCollection` returns a new object every call, so an
+	 * inline call handed `Select.Root` and the `{#each}` two different
+	 * collections and made a fresh one on every render. Ark keeps its open/highlight
+	 * state against the collection it was given, so the menu simply never opened.
+	 *
+	 * Each list is the catalogue plus whatever this workflow is actually on. A
+	 * published workflow may name a model this build no longer lists — an id
+	 * since superseded, or a dated snapshot written before the catalogue existed.
+	 * Dropping it would render an empty select and then silently rewrite the
+	 * model on the next save, which is a configuration change nobody asked for.
+	 */
+	const collections = $derived(
+		Object.fromEntries(
+			PROMPT_ROLES.map((role) => {
+				const current = draft.prompts[role].model;
+				const known = WORKFLOW_MODELS.map((model) => ({
+					value: model.id,
+					label: modelLabel(model)
+				}));
+				const listed = WORKFLOW_MODELS.some((model) => model.id === current);
+				return [
+					role,
+					createListCollection({
+						items: current && !listed ? [...known, { value: current, label: current }] : known
+					})
+				];
+			})
+		) as Record<
+			PromptRole,
+			ReturnType<typeof createListCollection<{ value: string; label: string }>>
+		>
+	);
 </script>
 
 <div class="flex flex-col gap-4">
@@ -60,7 +87,7 @@
 				<div class="flex flex-col gap-2">
 					<Label for={`prompt-${role}-model`}>{m.workflows_promptModel()}</Label>
 					<Select.Root
-						collection={collectionFor(draft.prompts[role].model)}
+						collection={collections[role]}
 						value={[draft.prompts[role].model]}
 						onValueChange={(details: { value: string[] }) => {
 							// Ark fires with an empty array when a selection is cleared;
@@ -74,8 +101,10 @@
 							placeholder={m.workflows_promptModel()}
 						/>
 						<Select.Content>
-							{#each collectionFor(draft.prompts[role].model).items as item (item.value)}
-								<Select.Item {item}>{item.label}</Select.Item>
+							{#each collections[role].items as option (option.value)}
+								<Select.Item item={option}>
+									<Select.ItemText>{option.label}</Select.ItemText>
+								</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>

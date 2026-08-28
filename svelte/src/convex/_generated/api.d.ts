@@ -26,6 +26,7 @@ import type * as checkins_env from "../checkins/env.js";
 import type * as checkins_internal from "../checkins/internal.js";
 import type * as checkins_mutations from "../checkins/mutations.js";
 import type * as checkins_queries from "../checkins/queries.js";
+import type * as checkins_templates from "../checkins/templates.js";
 import type * as contacts_detail from "../contacts/detail.js";
 import type * as contacts_mutations from "../contacts/mutations.js";
 import type * as contacts_queries from "../contacts/queries.js";
@@ -160,6 +161,7 @@ declare const fullApi: ApiFromModules<{
   "checkins/internal": typeof checkins_internal;
   "checkins/mutations": typeof checkins_mutations;
   "checkins/queries": typeof checkins_queries;
+  "checkins/templates": typeof checkins_templates;
   "contacts/detail": typeof contacts_detail;
   "contacts/mutations": typeof contacts_mutations;
   "contacts/queries": typeof contacts_queries;

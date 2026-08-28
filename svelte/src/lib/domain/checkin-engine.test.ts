@@ -70,7 +70,13 @@ function scriptedModel(script: Script) {
 			return {
 				model: 'scripted-responder',
 				text: result.text ?? 'How are things going?',
-				draft: result.draft ?? null,
+				// Scenarios script a draft the way a reviewer reads one — a title and
+				// a body. The default format's single section IS `body`, so this is
+				// the translation into the tool-input shape the client now returns,
+				// not a change to what any scenario asserts.
+				draft: result.draft
+					? { title: result.draft.title, sections: { body: result.draft.body } }
+					: null,
 				latencyMs: 1
 			};
 		}

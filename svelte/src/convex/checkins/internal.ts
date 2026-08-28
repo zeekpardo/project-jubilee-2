@@ -24,7 +24,7 @@ import { v } from 'convex/values';
 // path silently skip the triggers. `internalQuery` has no wrapped counterpart
 // and comes from the generated module.
 import { internalMutation } from '../functions';
-import { internalQuery, type QueryCtx } from '../_generated/server';
+import { internalQuery, type MutationCtx, type QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
 	AI_AUTHOR_USER_ID,
@@ -33,8 +33,17 @@ import {
 	conversationMessages,
 	promptByVersion,
 	storedObjectives,
-	truncateForLog
+	truncateForLog,
+	updateFormatByVersion
 } from '../model/checkins';
+import { validateAttributes } from '../model/customFields';
+import {
+	bestStates,
+	classifyCheck,
+	type CheckinObjective,
+	type ObjectiveState
+} from '../../lib/domain/checkin-objectives';
+import { captureValueFor, type UpdateFormat } from '../../lib/domain/checkin-templates';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { ObjectiveCheck } from '../../lib/domain/checkin-objectives';
 
@@ -130,10 +139,119 @@ export const loadTurnContext = internalQuery({
 				},
 				drafter: { role: 'drafter' as const, version: drafter.version, content: drafter.content },
 				judge: { role: 'judge' as const, version: judge.version, content: judge.content }
-			}
+			},
+			// The shape this conversation's draft was promised, by version rather
+			// than by "whatever is active now" — a format promoted mid-conversation
+			// must not change the tool the draft is asked for. Undefined when the
+			// conversation predates formats or the row has since been removed; the
+			// engine falls back to the shipped single-section default, which is the
+			// tool it would have been given anyway.
+			format: (await resolveFrozenFormat(ctx, conversation)) ?? undefined
 		};
 	}
 });
+
+/**
+ * The frozen format for a conversation, in the domain shape.
+ *
+ * Returns null rather than throwing on a missing row, unlike `promptByVersion`.
+ * The difference is deliberate: a missing PROMPT means the conversation cannot
+ * be run as it was logged, so stopping is right. A missing FORMAT costs only
+ * the section layout, and refusing to advance a live check-in with a family
+ * over a cosmetic row would be the wrong trade.
+ */
+/**
+ * Write the answers whose objectives asked to be filed.
+ *
+ * Goes through `validateAttributes` rather than patching the bag directly, so a
+ * captured value is held to exactly the same field definitions a person typing
+ * into the record is held to: an unknown key throws, a `select` is coerced to
+ * its options, a number that is not one is rejected. A model's answer gets no
+ * privileged path into a family's record.
+ *
+ * Failures here are SWALLOWED, and that is the deliberate trade. This runs
+ * inside the transaction that records a turn of a live conversation with a
+ * family; a field definition that has since changed type must not be able to
+ * roll back the transcript. The write is a convenience on top of an answer that
+ * is already logged in `objectiveChecks` either way — the trace survives, and a
+ * person can still read what was said.
+ */
+async function applyCapturedValues(
+	ctx: MutationCtx,
+	input: {
+		conversation: Doc<'checkinConversations'>;
+		objectives: CheckinObjective[];
+		states: Map<string, ObjectiveState>;
+		answers: Map<string, string | null>;
+	}
+): Promise<void> {
+	const projectWrites: Record<string, string> = {};
+	const contactWrites: Record<string, string> = {};
+
+	for (const objective of input.objectives) {
+		const value = captureValueFor(objective, {
+			state: input.states.get(objective.key) ?? 'unanswered',
+			answer: input.answers.get(objective.key) ?? null
+		});
+		if (!value) continue;
+		if (value.entity === 'project') projectWrites[value.fieldKey] = value.value;
+		else contactWrites[value.fieldKey] = value.value;
+	}
+
+	const { conversation } = input;
+
+	if (Object.keys(projectWrites).length > 0 && conversation.projectId) {
+		try {
+			const project = await ctx.db.get('projects', conversation.projectId);
+			if (project) {
+				const attributes = await validateAttributes(
+					ctx,
+					conversation.orgId,
+					'project',
+					project.campaignId,
+					{ ...project.attributes, ...projectWrites }
+				);
+				await ctx.db.patch('projects', project._id, { attributes });
+			}
+		} catch {
+			// See above: the answer is already in the trace.
+		}
+	}
+
+	if (Object.keys(contactWrites).length > 0 && conversation.contactId) {
+		try {
+			const contact = await ctx.db.get('contacts', conversation.contactId);
+			if (contact) {
+				const customFields = await validateAttributes(
+					ctx,
+					conversation.orgId,
+					'contact',
+					null,
+					{ ...contact.customFields, ...contactWrites }
+				);
+				await ctx.db.patch('contacts', contact._id, { customFields });
+			}
+		} catch {
+			// See above.
+		}
+	}
+}
+
+async function resolveFrozenFormat(
+	ctx: QueryCtx,
+	conversation: Doc<'checkinConversations'>
+): Promise<UpdateFormat | null> {
+	if (!conversation.updateFormatVersion) return null;
+	const row = await updateFormatByVersion(ctx, conversation.orgId, conversation.updateFormatVersion);
+	if (!row) return null;
+	return {
+		version: row.version,
+		name: row.name,
+		titleGuidance: row.titleGuidance,
+		instructions: row.instructions,
+		sections: row.sections
+	};
+}
 
 async function resolvePublicFirstName(
 	ctx: QueryCtx,
@@ -219,6 +337,35 @@ export const commitTurn = internalMutation({
 				confidence: check.confidence
 			});
 		}
+
+		// ---- Captured answers ------------------------------------------------
+		//
+		// In the SAME transaction that logged the ratings, deliberately: a field
+		// written from a reading whose rating landed in a rolled-back turn would
+		// be a value on a family's record with no trace of what produced it.
+		//
+		// `bestStates` rather than this turn's checks alone, because the state
+		// that matters is the best any turn managed — the same rule the engine
+		// stops on. And `captureValueFor` refuses anything short of `answered`,
+		// so a reading routed to a human writes nothing here.
+		const objectives = storedObjectives(conversation);
+		if (objectives.some((objective) => objective.capture?.kind === 'field')) {
+			const allChecks = [...(await conversationChecks(ctx, conversation._id))];
+			const states = bestStates(objectives, allChecks);
+			const answers = new Map<string, string | null>();
+			for (const check of allChecks) {
+				const state = classifyCheck(check, objectives.find((o) => o.key === check.objective));
+				if (state === 'answered') answers.set(check.objective, check.answer);
+			}
+
+			await applyCapturedValues(ctx, {
+				conversation,
+				objectives,
+				states,
+				answers
+			});
+		}
+
 
 		if (args.outbound !== null) {
 			await ctx.db.insert('checkinMessages', {

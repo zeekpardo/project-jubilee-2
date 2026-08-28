@@ -166,6 +166,24 @@ const FORBIDDEN_TOOL_NAMES = ['publish_update', 'publish', 'send_update', 'send_
  * publish — which is worse than a system that fails loudly, because nobody
  * would find out until the day the filter was removed.
  */
+export function assertDraftTool(tool: ToolDefinition): ToolDefinition[] {
+	// A GENERATED tool goes through the same gate a shipped one does. The format
+	// an org authors decides the tool's PROPERTIES; it must never be able to
+	// decide its NAME, or §3.4's guarantee would be one text field away from
+	// being edited around. `draftUpdateToolFor` hardcodes the name and this
+	// re-checks it, because the two live in different files and only one of them
+	// is obviously about safety.
+	if (FORBIDDEN_TOOL_NAMES.includes(tool.name)) {
+		throw new Error(`A check-in model may never be given the ${tool.name} tool`);
+	}
+	if (tool.name !== DRAFT_UPDATE_TOOL.name) {
+		throw new Error(
+			`A generated draft tool must be called ${DRAFT_UPDATE_TOOL.name}, not ${tool.name}`
+		);
+	}
+	return [tool];
+}
+
 export function responderTools(stage: 'ask' | 'draft'): ToolDefinition[] {
 	const tools = stage === 'draft' ? [DRAFT_UPDATE_TOOL] : [];
 	for (const tool of tools) {

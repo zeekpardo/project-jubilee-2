@@ -20,6 +20,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { escalationExcerpt, scanForEscalation } from '../../lib/domain/checkin-escalation';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { CheckinObjective, ObjectiveCheck } from '../../lib/domain/checkin-objectives';
+import type { TemplateObjective } from '../../lib/domain/checkin-templates';
 
 /**
  * The `updates.authorUserId` a machine-written draft carries.
@@ -276,8 +277,122 @@ export function storedObjectives(conversation: Doc<'checkinConversations'>): Che
 	return (conversation.objectives ?? []).map((objective) => ({
 		key: objective.key,
 		label: objective.label,
-		description: objective.description
+		description: objective.description,
+		// The authored settings ride along. `bestStates` grades against them and
+		// `decideNext` reads maxAttempts, so dropping them here would silently
+		// return every conversation to the shipped constants.
+		minRating: objective.minRating,
+		minConfidence: objective.minConfidence,
+		maxAttempts: objective.maxAttempts,
+		capture: objective.capture
 	}));
+}
+
+/**
+ * The template a new check-in in this campaign resolves from.
+ *
+ * Campaign first, then the org-wide row. The fallback is what makes adopting
+ * this feature cheap: an org seeds one default and every campaign works, and a
+ * campaign that wants different questions authors its own without disturbing
+ * the others.
+ */
+export async function activeTemplate(
+	ctx: QueryCtx,
+	orgId: string,
+	campaignId: Id<'campaigns'>
+): Promise<Doc<'checkinTemplates'> | null> {
+	const forCampaign = await ctx.db
+		.query('checkinTemplates')
+		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
+			q.eq('orgId', orgId).eq('campaignId', campaignId).eq('isActive', true)
+		)
+		.first();
+	if (forCampaign) return forCampaign;
+
+	return await ctx.db
+		.query('checkinTemplates')
+		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
+			q.eq('orgId', orgId).eq('campaignId', undefined).eq('isActive', true)
+		)
+		.first();
+}
+
+/** The update shape a new check-in in this campaign will be drafted into. */
+export async function activeUpdateFormat(
+	ctx: QueryCtx,
+	orgId: string,
+	campaignId: Id<'campaigns'>
+): Promise<Doc<'updateFormats'> | null> {
+	const forCampaign = await ctx.db
+		.query('updateFormats')
+		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
+			q.eq('orgId', orgId).eq('campaignId', campaignId).eq('isActive', true)
+		)
+		.first();
+	if (forCampaign) return forCampaign;
+
+	return await ctx.db
+		.query('updateFormats')
+		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
+			q.eq('orgId', orgId).eq('campaignId', undefined).eq('isActive', true)
+		)
+		.first();
+}
+
+/** A format by version, for the frozen version a conversation names. */
+export async function updateFormatByVersion(
+	ctx: QueryCtx,
+	orgId: string,
+	version: string
+): Promise<Doc<'updateFormats'> | null> {
+	return await ctx.db
+		.query('updateFormats')
+		.withIndex('by_orgId_and_version', (q) => q.eq('orgId', orgId).eq('version', version))
+		.first();
+}
+
+/**
+ * Which of a template's objectives the record can already answer.
+ *
+ * Reads the capture target rather than the objective: `skipIfKnown` means "we
+ * were already told this", and the only place we could have been told it is
+ * the field the objective files into. An objective that files nowhere is never
+ * known, which is why `resolveObjectives` ignores skipIfKnown on those.
+ *
+ * The two entities keep their values under different column names — projects
+ * in `attributes`, contacts in `customFields` — so this is the one place that
+ * difference is spelled out for the check-in engine.
+ */
+export async function knownObjectiveKeys(
+	ctx: QueryCtx,
+	input: {
+		objectives: TemplateObjective[];
+		project: Doc<'projects'> | null;
+		contactId: Id<'contacts'> | undefined;
+	}
+): Promise<Set<string>> {
+	const known = new Set<string>();
+
+	const needsContact = input.objectives.some(
+		(objective) => objective.capture?.kind === 'field' && objective.capture.entity === 'contact'
+	);
+	const contact =
+		needsContact && input.contactId ? await ctx.db.get('contacts', input.contactId) : null;
+
+	for (const objective of input.objectives) {
+		const capture = objective.capture;
+		if (capture?.kind !== 'field') continue;
+
+		const values =
+			capture.entity === 'project' ? input.project?.attributes : contact?.customFields;
+		const value = values?.[capture.fieldKey];
+
+		// An empty string is not an answer. A `false` and a `0` are.
+		if (value === undefined || value === null || value === '') continue;
+		known.add(objective.key);
+	}
+
+	return known;
 }
 
 /**

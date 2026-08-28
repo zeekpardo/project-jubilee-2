@@ -217,11 +217,19 @@ export function anthropicCheckinModel(): CheckinModel {
 			return {
 				model: message.model,
 				text: textFrom(message),
+				// Title out, everything else through untouched. The tool's other
+				// properties were generated from the org's active format, so this
+				// client cannot know their names — and must not try to, or adding a
+				// section would mean editing a client.
 				draft:
 					draft && typeof draft === 'object'
 						? {
 								title: String((draft as Record<string, unknown>).title ?? '').trim(),
-								body: String((draft as Record<string, unknown>).body ?? '').trim()
+								sections: Object.fromEntries(
+									Object.entries(draft as Record<string, unknown>)
+										.filter(([key]) => key !== 'title')
+										.map(([key, value]) => [key, String(value ?? '').trim()])
+								)
 							}
 						: null,
 				latencyMs: Date.now() - startedAt,

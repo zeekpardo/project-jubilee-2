@@ -37,11 +37,18 @@ import {
 	buildJudgeInput,
 	buildResponderInput,
 	responderTools,
+	assertDraftTool,
 	RATE_OBJECTIVES_TOOL,
 	type CheckinMessage,
 	type PromptVersion,
 	type ToolDefinition
 } from './checkin-prompts';
+import {
+	assembleUpdateBody,
+	draftUpdateToolFor,
+	DEFAULT_UPDATE_FORMAT,
+	type UpdateFormat
+} from './checkin-templates';
 
 // ============================================================
 // The seam a real client and a scripted one both fit through
@@ -59,8 +66,15 @@ export interface ResponderResult {
 	model: string;
 	/** The message to send. Null when the model only called a tool. */
 	text: string | null;
-	/** Present only when `draft_update` was called. */
-	draft: { title: string; body: string } | null;
+	/**
+	 * Present only when `draft_update` was called.
+	 *
+	 * `sections` is the tool input minus the title — keyed by whatever the
+	 * active format declared, because the tool's schema was generated from it.
+	 * The engine folds it into one markdown body; the client does not, because
+	 * the client must not need to know what a format is.
+	 */
+	draft: { title: string; sections: Record<string, string> } | null;
 	latencyMs: number;
 	inputTokens?: number;
 	outputTokens?: number;
@@ -137,6 +151,13 @@ export interface CheckinContext {
 	/** Only ever a `publicFirstName`; absent means the draft names nobody. */
 	publicFirstName?: string;
 	prompts: { responder: PromptVersion; drafter: PromptVersion; judge: PromptVersion };
+	/**
+	 * The shape this conversation's draft is asked for, frozen at open like the
+	 * prompts. Absent means the org has authored none and the shipped
+	 * single-section default applies — which produces exactly the tool this
+	 * engine used before formats existed.
+	 */
+	format?: UpdateFormat;
 }
 
 /**
@@ -273,11 +294,15 @@ export async function advanceCheckin(
 
 	// ---- 4b. Draft ----------------------------------------------------------
 	const user = buildDrafterInput({ messages, publicFirstName: context.publicFirstName });
+	const format = context.format ?? DEFAULT_UPDATE_FORMAT;
 	const result = await model.respond({
 		promptVersion: context.prompts.drafter.version,
 		system: context.prompts.drafter.content,
-		user,
-		tools: responderTools('draft')
+		// House style rides on the USER message, not the system prompt. The
+		// drafter prompt is what protects the family being written about, and an
+		// author editing section guidance must not be able to dilute it.
+		user: format.instructions.trim() ? `${user}\n\nHouse style:\n${format.instructions.trim()}` : user,
+		tools: assertDraftTool(draftUpdateToolFor(format))
 	});
 	records.push({
 		role: 'responder',
@@ -306,5 +331,19 @@ export async function advanceCheckin(
 		};
 	}
 
-	return { escalation: null, records, checks, decision, outbound: null, draft: result.draft };
+	// The sections the format asked for, folded into the one markdown body
+	// `updates.body` stores. Assembling HERE rather than in the client is what
+	// keeps the client ignorant of formats: it hands back whatever the tool was
+	// called with, and this decides what that means.
+	return {
+		escalation: null,
+		records,
+		checks,
+		decision,
+		outbound: null,
+		draft: {
+			title: result.draft.title,
+			body: assembleUpdateBody(format, result.draft.sections)
+		}
+	};
 }

@@ -27,18 +27,29 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../functions';
 import type { MutationCtx } from '../_generated/server';
-import type { Id } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import { internal } from '../_generated/api';
 import { requireCapability } from '../model/access';
 import {
 	activePromptVersions,
+	activeTemplate,
+	activeUpdateFormat,
 	deleteConversationCascade,
 	familyChildFacts,
 	isCheckin,
+	knownObjectiveKeys,
 	recordInboundMessage,
 	requireConversation
 } from '../model/checkins';
-import { defaultObjectivesForFamily } from '../../lib/domain/checkin-objectives';
+import {
+	defaultObjectivesForFamily,
+	type CheckinObjective
+} from '../../lib/domain/checkin-objectives';
+import {
+	resolveObjectives,
+	templateObjectives,
+	type CheckinTemplate
+} from '../../lib/domain/checkin-templates';
 import { SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
 
 /**
@@ -165,6 +176,60 @@ export const activatePromptVersion = mutation({
  * the log is also the replay set, and a conversation whose objectives or
  * wording could change underneath it is not replayable.
  */
+/**
+ * The objective set, the template it came from, and the shape its draft will
+ * take — resolved once so both places that open a check-in agree.
+ *
+ * Falls back to `defaultObjectivesForFamily` when the org has authored no
+ * template. That fallback is not a stopgap: it is the household rule, which
+ * reads children off the record rather than off a captured field, and no
+ * authored template can express it. An org that has not adopted templates must
+ * keep getting exactly the conversation it had.
+ */
+async function resolveCheckinSetup(
+	ctx: MutationCtx,
+	input: {
+		orgId: string;
+		campaignId: Id<'campaigns'>;
+		project: Doc<'projects'>;
+		contactId: Id<'contacts'> | undefined;
+	}
+): Promise<{
+	objectives: CheckinObjective[];
+	templateVersion?: string;
+	updateFormatVersion?: string;
+}> {
+	const [template, format] = await Promise.all([
+		activeTemplate(ctx, input.orgId, input.campaignId),
+		activeUpdateFormat(ctx, input.orgId, input.campaignId)
+	]);
+
+	if (!template) {
+		const facts = await familyChildFacts(ctx, input.project);
+		return {
+			objectives: defaultObjectivesForFamily(facts),
+			updateFormatVersion: format?.version
+		};
+	}
+
+	const authored: CheckinTemplate = {
+		version: template.version,
+		name: template.name,
+		steps: template.steps
+	};
+	const knownKeys = await knownObjectiveKeys(ctx, {
+		objectives: templateObjectives(authored),
+		project: input.project,
+		contactId: input.contactId
+	});
+
+	return {
+		objectives: resolveObjectives(authored, { knownKeys }),
+		templateVersion: template.version,
+		updateFormatVersion: format?.version
+	};
+}
+
 export const startCheckin = mutation({
 	args: {
 		projectId: v.id('projects'),
@@ -188,7 +253,12 @@ export const startCheckin = mutation({
 		await requireNoOpenConversation(ctx, { projectId: project._id, contactId: args.contactId });
 
 		const prompts = await activePromptVersions(ctx, orgId);
-		const facts = await familyChildFacts(ctx, project);
+		const setup = await resolveCheckinSetup(ctx, {
+			orgId,
+			campaignId: project.campaignId,
+			project,
+			contactId: args.contactId
+		});
 
 		const conversationId = await ctx.db.insert('checkinConversations', {
 			orgId,
@@ -197,10 +267,12 @@ export const startCheckin = mutation({
 			contactId: args.contactId,
 			kind: 'checkin' as const,
 			status: 'open' as const,
-			objectives: defaultObjectivesForFamily(facts),
+			objectives: setup.objectives,
 			responderPromptVersion: prompts.responder.version,
 			drafterPromptVersion: prompts.drafter.version,
 			judgePromptVersion: prompts.judge.version,
+			templateVersion: setup.templateVersion,
+			updateFormatVersion: setup.updateFormatVersion,
 			locale: args.locale?.trim() || 'en',
 			turnsSpent: 0,
 			openedAt: args.now,
@@ -406,14 +478,21 @@ export const startCheckinOnConversation = mutation({
 		if (!project || project.orgId !== orgId) throw new ConvexError('Record not found');
 
 		const prompts = await activePromptVersions(ctx, orgId);
-		const facts = await familyChildFacts(ctx, project);
+		const setup = await resolveCheckinSetup(ctx, {
+			orgId,
+			campaignId: project.campaignId,
+			project,
+			contactId: conversation.contactId
+		});
 
 		await ctx.db.patch('checkinConversations', conversation._id, {
 			kind: 'checkin' as const,
-			objectives: defaultObjectivesForFamily(facts),
+			objectives: setup.objectives,
 			responderPromptVersion: prompts.responder.version,
 			drafterPromptVersion: prompts.drafter.version,
-			judgePromptVersion: prompts.judge.version
+			judgePromptVersion: prompts.judge.version,
+			templateVersion: setup.templateVersion,
+			updateFormatVersion: setup.updateFormatVersion
 		});
 
 		await ctx.scheduler.runAfter(0, internal.checkins.engine.advanceTurn, {

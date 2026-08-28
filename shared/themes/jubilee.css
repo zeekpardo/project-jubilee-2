@@ -242,7 +242,9 @@
 	--foreground: oklch(0.22 0.02 210);
 	--card: oklch(0.995 0.006 85);
 	--card-foreground: oklch(0.22 0.02 210);
-	--popover: oklch(1 0 0);
+	/* Below --card (0.995) for the same reason as sandstone: there is no room
+	   above a near-white page, so separation comes from a warm recessed tint. */
+	--popover: oklch(0.962 0.01 85);
 	--popover-foreground: oklch(0.22 0.02 210);
 	--primary: oklch(0.45 0.11 168);
 	--primary-foreground: oklch(0.98 0.01 165);
@@ -293,7 +295,9 @@
 	--foreground: oklch(0.95 0.01 85);
 	--card: oklch(0.21 0.022 210);
 	--card-foreground: oklch(0.95 0.01 85);
-	--popover: oklch(0.21 0.022 210);
+	/* Was identical to --card. Raised above it so a dropdown over a card reads
+	   as a separate surface. */
+	--popover: oklch(0.265 0.024 210);
 	--popover-foreground: oklch(0.95 0.01 85);
 	--primary: oklch(0.68 0.13 168);
 	--primary-foreground: oklch(0.14 0.02 200);

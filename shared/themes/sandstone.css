@@ -216,7 +216,12 @@
 	--foreground: oklch(21% 0.008 55deg);
 	--card: oklch(99.5% 0.003 70deg);
 	--card-foreground: oklch(21% 0.008 55deg);
-	--popover: oklch(100% 0 0);
+	/* Sits BELOW --card (99.5%), not above it. Every dropdown in this app opens
+	   over a card, and an elevated surface cannot read as elevated when the page
+	   is already at 99% — there is no headroom above it. A slightly recessed warm
+	   tint plus the existing border and shadow is what actually separates the two.
+	   Warm, not neutral: pure white against this paper reads as a colour mistake. */
+	--popover: oklch(97.2% 0.006 70deg);
 	--popover-foreground: oklch(21% 0.008 55deg);
 	--primary: oklch(66% 0.15 50deg);
 	--primary-foreground: oklch(98% 0.01 70deg);
@@ -267,7 +272,9 @@
 	--foreground: oklch(97% 0.006 70deg);
 	--card: oklch(24% 0.011 58deg);
 	--card-foreground: oklch(97% 0.006 70deg);
-	--popover: oklch(24% 0.011 58deg);
+	/* Was identical to --card, so a dropdown over a card was invisible. Raised
+	   above it here, which is the direction elevation reads in dark mode. */
+	--popover: oklch(29% 0.013 58deg);
 	--popover-foreground: oklch(97% 0.006 70deg);
 	--primary: oklch(74% 0.13 55deg);
 	--primary-foreground: oklch(18% 0.01 60deg);

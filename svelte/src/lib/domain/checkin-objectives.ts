@@ -31,7 +31,56 @@ export interface CheckinObjective {
 	/** Admin-facing. Never sent to a model. */
 	label: string;
 	description: string;
+
+	// ---- Everything below is optional, and absent means "use the constant".
+	// These exist because the objective set is now authored by the org rather
+	// than shipped in this file (see checkin-templates.ts), and an author who
+	// can write the question needs to be able to say how strictly it is marked.
+	// They are carried on the SNAPSHOT, not read from the template at judge
+	// time, for the same reason the wording is: a threshold changed mid-flight
+	// would re-grade a conversation that was already scored.
+
+	/** Per-objective override of RATING_ANSWERED. */
+	minRating?: number;
+	/** Per-objective override of CONFIDENCE_ACCEPT. */
+	minConfidence?: number;
+	/**
+	 * How many turns this objective may be rated before we stop asking it.
+	 * Absent = no per-objective limit; MAX_RESPONDER_TURNS still bounds the
+	 * conversation as a whole.
+	 */
+	maxAttempts?: number;
+	/** What to do with the answer once it is accepted. Absent = capture only. */
+	capture?: CheckinCapture;
 }
+
+/**
+ * What happens to an objective's answer once the judge accepts it.
+ *
+ * `none` is the honest default and the common case: most of what a check-in
+ * learns is prose for a human to read, not a value to file. `field` is the
+ * other half of what makes this an agent builder rather than a questionnaire —
+ * the answer lands on the record.
+ *
+ * The write is deliberately NOT modelled as a tool the responder can call.
+ * A tool call is a thing the model decides to do; this is a thing the engine
+ * does when a rating clears the bar, which means it is bounded by the same
+ * threshold everything else is and shows up in the same decision trace.
+ */
+export type CheckinCapture =
+	| { kind: 'none' }
+	| {
+			kind: 'field';
+			/** Which record the value lands on. */
+			entity: 'project' | 'contact';
+			/** A customFieldDefinitions key on that entity. */
+			fieldKey: string;
+			/**
+			 * Allowed values. When set, an answer that is not one of them is not
+			 * written — a picklist that accepts free text is not a picklist.
+			 */
+			options?: string[];
+	  };
 
 /**
  * The four objectives every check-in starts from. Free-keyed rather than a
@@ -138,11 +187,36 @@ export type ObjectiveState = 'unanswered' | 'needs_review' | 'answered';
  * and then declined to say what the answer was — and the safe reading of a
  * contradiction is that nothing was answered.
  */
-export function classifyCheck(check: ObjectiveCheck): ObjectiveState {
+export function classifyCheck(
+	check: ObjectiveCheck,
+	/**
+	 * The objective this rating is for, when the caller has it. Only its
+	 * thresholds are read. Optional so the existing single-argument calls and
+	 * the golden-set tests keep working against the constants.
+	 */
+	objective?: Pick<CheckinObjective, 'minRating' | 'minConfidence'>
+): ObjectiveState {
+	const minRating = objective?.minRating ?? RATING_ANSWERED;
+	const minConfidence = objective?.minConfidence ?? CONFIDENCE_ACCEPT;
+
 	if (check.answer === null) return 'unanswered';
-	if (!(check.rating >= RATING_ANSWERED)) return 'unanswered';
-	if (!(check.confidence >= CONFIDENCE_ACCEPT)) return 'needs_review';
+	if (!(check.rating >= minRating)) return 'unanswered';
+	if (!(check.confidence >= minConfidence)) return 'needs_review';
 	return 'answered';
+}
+
+/**
+ * How many times this objective has been put to the family.
+ *
+ * Counted from the ratings rather than stored in a column, and that is exact
+ * rather than approximate: the judge prompt says "rate every objective you are
+ * given, including ones the messages say nothing about", so a judge call
+ * produces exactly one check per outstanding objective. One row is one turn it
+ * was in play. A stored counter would be a second source of truth for a fact
+ * the decision trace already holds.
+ */
+export function attemptsFor(objectiveKey: string, checks: ObjectiveCheck[]): number {
+	return checks.filter((check) => check.objective === objectiveKey).length;
 }
 
 /** Ranked worst-first, so `bestState` can take a max. */
@@ -167,14 +241,18 @@ export function bestStates(
 	checks: ObjectiveCheck[]
 ): Map<string, ObjectiveState> {
 	const states = new Map<string, ObjectiveState>();
-	for (const objective of objectives) states.set(objective.key, 'unanswered');
+	const byKey = new Map<string, CheckinObjective>();
+	for (const objective of objectives) {
+		states.set(objective.key, 'unanswered');
+		byKey.set(objective.key, objective);
+	}
 
 	for (const check of checks) {
 		// A rating for an objective this conversation is not pursuing is ignored
 		// rather than trusted — the objective set is snapshotted on the
 		// conversation, and a key outside it came from somewhere else.
 		if (!states.has(check.objective)) continue;
-		const state = classifyCheck(check);
+		const state = classifyCheck(check, byKey.get(check.objective));
 		if (STATE_RANK[state] > STATE_RANK[states.get(check.objective)!]) {
 			states.set(check.objective, state);
 		}
@@ -226,7 +304,17 @@ export function decideNext(input: {
 	if (input.escalated) return { kind: 'escalated' };
 
 	const states = bestStates(input.objectives, input.checks);
-	const outstanding = input.objectives.filter((o) => states.get(o.key) === 'unanswered');
+
+	// An objective is only still worth asking if it has attempts left. `spent`
+	// is the ones an author capped and we have now asked as often as they
+	// allowed — the per-objective sibling of MAX_RESPONDER_TURNS, and it exists
+	// because a family who will not answer one question should not cost us the
+	// three they would have answered.
+	const unanswered = input.objectives.filter((o) => states.get(o.key) === 'unanswered');
+	const spent = unanswered.filter(
+		(o) => o.maxAttempts !== undefined && attemptsFor(o.key, input.checks) >= o.maxAttempts
+	);
+	const outstanding = unanswered.filter((o) => !spent.includes(o));
 	const uncertain = input.objectives.filter((o) => states.get(o.key) === 'needs_review');
 
 	if (outstanding.length > 0) {
@@ -245,6 +333,16 @@ export function decideNext(input: {
 	// resolve a problem that is ours. A person reads the transcript instead.
 	if (uncertain.length > 0) {
 		return { kind: 'review', reason: 'low_confidence', objectives: uncertain };
+	}
+
+	// Nothing left to ask, but something was given up on. Deliberately NOT a
+	// draft: an objective that ran out of attempts is a question the family
+	// never answered, and drafting over it would produce a confident-looking
+	// post whose gap nobody was told about. Same destination and same reason as
+	// running out of conversation-wide turns, because it is the same failure at
+	// a different scope.
+	if (spent.length > 0) {
+		return { kind: 'review', reason: 'exhausted', objectives: spent };
 	}
 
 	return { kind: 'draft' };

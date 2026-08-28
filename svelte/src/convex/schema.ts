@@ -1638,6 +1638,108 @@ const promptVersions = defineTable({
 	.index('by_orgId_and_role_and_isActive', ['orgId', 'role', 'isActive'])
 	.index('by_orgId', ['orgId']);
 
+// What a check-in asks, authored rather than shipped.
+//
+// Versioned and append-only like promptVersions, and for the same reason: a
+// conversation records which template version it was resolved from, so the
+// replay set (§5) is replayable. Editing a live template in place would move
+// the goalpost under every logged conversation that named it.
+//
+// `steps` is inline rather than a child table on the taskTemplates.items
+// precedent — bounded at a handful, always read whole, meaningless apart from
+// its parent. An org that needs hundreds of objectives has a different problem
+// than this schema.
+const checkinTemplates = defineTable({
+	orgId: v.string(),
+	// Absent = the org-wide default, used by any campaign that has not authored
+	// its own. Campaigns already differ in what they are about — a campaign
+	// whose objectLabel is "Family" and one whose objectLabel is "Trip" are not
+	// asking the same questions — so this is the level the set belongs at.
+	campaignId: v.optional(v.id('campaigns')),
+	// 'template-1'. Unique within an org, like promptVersions.version.
+	version: v.string(),
+	name: v.string(),
+	notes: v.optional(v.string()),
+	// Exactly one true per (orgId, campaignId), enforced in the mutation layer
+	// like taskTemplates.isActive and promptVersions.isActive.
+	isActive: v.boolean(),
+
+	steps: v.array(
+		v.object({
+			key: v.string(),
+			title: v.string(),
+			entryMessage: v.optional(v.string()),
+			objectives: v.array(
+				v.object({
+					key: v.string(),
+					label: v.string(),
+					description: v.string(),
+					// Per-objective overrides of RATING_ANSWERED / CONFIDENCE_ACCEPT.
+					minRating: v.optional(v.number()),
+					minConfidence: v.optional(v.number()),
+					// Stop asking this one after N turns. The conversation-wide
+					// MAX_RESPONDER_TURNS still applies on top.
+					maxAttempts: v.optional(v.number()),
+					skipIfKnown: v.optional(v.boolean()),
+					// Absent = capture only. See CheckinCapture.
+					capture: v.optional(
+						v.union(
+							v.object({ kind: v.literal('none') }),
+							v.object({
+								kind: v.literal('field'),
+								entity: v.union(v.literal('project'), v.literal('contact')),
+								fieldKey: v.string(),
+								options: v.optional(v.array(v.string()))
+							})
+						)
+					)
+				})
+			)
+		})
+	)
+})
+	// unique(orgId, version)
+	.index('by_orgId_and_version', ['orgId', 'version'])
+	.index('by_orgId_and_campaignId_and_isActive', ['orgId', 'campaignId', 'isActive'])
+	.index('by_orgId', ['orgId']);
+
+// What a drafted update looks like.
+//
+// A SEPARATE AXIS from the drafter prompt, deliberately. The prompt is the
+// drafter's ethics — what it may say about a family, what it must not invent —
+// and changes rarely and carefully. This is the newsletter's house style, and
+// adding a section to it should not mean editing a prompt whose wording is
+// what protects the people being written about.
+//
+// `sections` becomes the draft_update tool's input_schema at call time, so the
+// structure an author writes here is enforced by forced tool use rather than
+// requested in prose. See checkin-templates.ts.
+const updateFormats = defineTable({
+	orgId: v.string(),
+	campaignId: v.optional(v.id('campaigns')),
+	// 'format-1'. Unique within an org.
+	version: v.string(),
+	name: v.string(),
+	isActive: v.boolean(),
+
+	// Replaces the hardcoded "At most eight words."
+	titleGuidance: v.string(),
+	// Tone and house rules that are not structural, appended to the drafter's
+	// input rather than compiled into the schema.
+	instructions: v.string(),
+	sections: v.array(
+		v.object({
+			key: v.string(),
+			label: v.string(),
+			guidance: v.string(),
+			approxWords: v.optional(v.number())
+		})
+	)
+})
+	.index('by_orgId_and_version', ['orgId', 'version'])
+	.index('by_orgId_and_campaignId_and_isActive', ['orgId', 'campaignId', 'isActive'])
+	.index('by_orgId', ['orgId']);
+
 // One check-in with one family.
 //
 // The OBJECTIVE SET IS SNAPSHOTTED here, the same contract budgets keep with
@@ -1725,7 +1827,24 @@ const checkinConversations = defineTable({
 			v.object({
 				key: v.string(),
 				label: v.string(),
-				description: v.string()
+				description: v.string(),
+				// Carried on the SNAPSHOT, not read from the template at judge
+				// time — a threshold promoted mid-conversation would re-grade
+				// answers that were already scored under the old one.
+				minRating: v.optional(v.number()),
+				minConfidence: v.optional(v.number()),
+				maxAttempts: v.optional(v.number()),
+				capture: v.optional(
+					v.union(
+						v.object({ kind: v.literal('none') }),
+						v.object({
+							kind: v.literal('field'),
+							entity: v.union(v.literal('project'), v.literal('contact')),
+							fieldKey: v.string(),
+							options: v.optional(v.array(v.string()))
+						})
+					)
+				)
 			})
 		)
 	),
@@ -1736,6 +1855,12 @@ const checkinConversations = defineTable({
 	responderPromptVersion: v.optional(v.string()),
 	drafterPromptVersion: v.optional(v.string()),
 	judgePromptVersion: v.optional(v.string()),
+	// The authored set this conversation's objectives were resolved from, and
+	// the shape its draft will be asked for. Same freezing contract as the three
+	// prompt versions above. Absent on conversations opened before templates
+	// existed, and on `direct` conversations, which resolve nothing.
+	templateVersion: v.optional(v.string()),
+	updateFormatVersion: v.optional(v.string()),
 
 	// 'en' | 'es'. Free text rather than a union: the escalation scanner reports
 	// which locales it can actually read, and a conversation in a third one is a
@@ -2048,6 +2173,8 @@ export default defineSchema({
 	campaignAssignments,
 	campaignMemberships,
 	promptVersions,
+	checkinTemplates,
+	updateFormats,
 	checkinConversations,
 	checkinMessages,
 	conversationTurns,

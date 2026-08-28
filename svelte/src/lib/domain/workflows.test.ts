@@ -15,21 +15,25 @@ import {
 	assembleUpdateBody,
 	captureValueFor,
 	draftUpdateToolFor,
-	DEFAULT_TEMPLATE,
-	DEFAULT_UPDATE_FORMAT,
+	SHIPPED_REPORT,
+	shippedWorkflowSteps,
 	resolveObjectives,
 	templateObjectives,
 	type CheckinTemplate,
 	type UpdateFormat
-} from './checkin-templates';
+} from './workflows';
 import {
 	bestStates,
 	decideNext,
 	attemptsFor,
 	classifyCheck,
+	defaultObjectivesForFamily,
 	type CheckinObjective,
 	type ObjectiveCheck
 } from './checkin-objectives';
+
+/** A household with children of school age, so `requires` never filters. */
+const ALL_FACTS = { hasChildren: true, hasSchoolAgeChildren: true };
 
 const TEMPLATE: CheckinTemplate = {
 	version: 'template-test',
@@ -95,12 +99,15 @@ describe('templateObjectives', () => {
 
 describe('resolveObjectives', () => {
 	it('keeps everything when the record knows nothing', () => {
-		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set() });
+		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set(), facts: ALL_FACTS });
 		expect(resolved.map((o) => o.key)).toEqual(['job_status', 'job_kind', 'general_wellbeing']);
 	});
 
 	it('drops a known objective that files its answer', () => {
-		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set(['job_status']) });
+		const resolved = resolveObjectives(TEMPLATE, {
+			knownKeys: new Set(['job_status']),
+			facts: ALL_FACTS
+		});
 		expect(resolved.map((o) => o.key)).toEqual(['job_kind', 'general_wellbeing']);
 	});
 
@@ -108,19 +115,22 @@ describe('resolveObjectives', () => {
 		// general_wellbeing is skipIfKnown but files nowhere, so there is no
 		// stored value that could stand in for asking. Asking is the only way to
 		// learn it and a stale "known" flag must not silence it.
-		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set(['general_wellbeing']) });
+		const resolved = resolveObjectives(TEMPLATE, {
+			knownKeys: new Set(['general_wellbeing']),
+			facts: ALL_FACTS
+		});
 		expect(resolved.map((o) => o.key)).toContain('general_wellbeing');
 	});
 
 	it('does not carry skipIfKnown onto the snapshot', () => {
 		// It has been spent by the time the set is frozen. Keeping it would
 		// preserve a decision as though it were still pending.
-		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set() });
+		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set(), facts: ALL_FACTS });
 		expect(resolved.every((o) => !('skipIfKnown' in o))).toBe(true);
 	});
 
 	it('carries the thresholds and the capture target onto the snapshot', () => {
-		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set() });
+		const resolved = resolveObjectives(TEMPLATE, { knownKeys: new Set(), facts: ALL_FACTS });
 		const jobKind = resolved.find((o) => o.key === 'job_kind');
 		expect(jobKind?.capture).toEqual({
 			kind: 'field',
@@ -130,8 +140,13 @@ describe('resolveObjectives', () => {
 		});
 	});
 
-	it('resolves the shipped default to the four objectives it replaces', () => {
-		const resolved = resolveObjectives(DEFAULT_TEMPLATE, { knownKeys: new Set() });
+	it('resolves the shipped workflow to the four objectives it replaces', () => {
+		const shipped: CheckinTemplate = {
+			version: 'shipped',
+			name: 'Family check-in',
+			steps: shippedWorkflowSteps()
+		};
+		const resolved = resolveObjectives(shipped, { knownKeys: new Set(), facts: ALL_FACTS });
 		expect(resolved.map((o) => o.key)).toEqual([
 			'job_status',
 			'school_status',
@@ -139,6 +154,90 @@ describe('resolveObjectives', () => {
 			'general_wellbeing'
 		]);
 		expect(resolved.every((o) => o.capture === undefined)).toBe(true);
+	});
+});
+
+describe('requires — the household rule, carried across as data', () => {
+	const NO_KIDS = { hasChildren: false, hasSchoolAgeChildren: false };
+	const KIDS_NOT_YET_AT_SCHOOL = { hasChildren: true, hasSchoolAgeChildren: false };
+
+	const shipped: CheckinTemplate = {
+		version: 'shipped',
+		name: 'Family check-in',
+		steps: shippedWorkflowSteps()
+	};
+
+	it('does not ask a family with no children about their children', () => {
+		// The rule this replaced was two hardcoded keys in
+		// defaultObjectivesForFamily, and the comment there is the reason it had
+		// to survive the consolidation: a machine that was told about this family
+		// asking after children who are not there is what ends their willingness
+		// to answer at all.
+		const resolved = resolveObjectives(shipped, { knownKeys: new Set(), facts: NO_KIDS });
+		const keys = resolved.map((o) => o.key);
+		expect(keys).not.toContain('kids_update');
+		expect(keys).not.toContain('school_status');
+		expect(keys).toEqual(['job_status', 'general_wellbeing']);
+	});
+
+	it('asks about children but not school when none are school-age', () => {
+		const resolved = resolveObjectives(shipped, {
+			knownKeys: new Set(),
+			facts: KIDS_NOT_YET_AT_SCHOOL
+		});
+		const keys = resolved.map((o) => o.key);
+		expect(keys).toContain('kids_update');
+		expect(keys).not.toContain('school_status');
+	});
+
+	it('reproduces exactly what defaultObjectivesForFamily produced', () => {
+		// The consolidation must not change WHO gets asked WHAT. Both mechanisms
+		// are checked against each other here rather than trusted to agree.
+		for (const facts of [
+			{ hasChildren: true, hasSchoolAgeChildren: true },
+			KIDS_NOT_YET_AT_SCHOOL,
+			NO_KIDS
+		]) {
+			expect(resolveObjectives(shipped, { knownKeys: new Set(), facts }).map((o) => o.key)).toEqual(
+				defaultObjectivesForFamily(facts).map((o) => o.key)
+			);
+		}
+	});
+
+	it('does not carry requires onto the snapshot', () => {
+		// Spent at resolve time, like skipIfKnown. Keeping it would preserve a
+		// decision already made as though it were still pending.
+		const resolved = resolveObjectives(shipped, { knownKeys: new Set(), facts: NO_KIDS });
+		expect(resolved.every((o) => !('requires' in o))).toBe(true);
+	});
+
+	it('applies requires before skipIfKnown', () => {
+		// A stored value must not resurrect a question that does not apply: a
+		// family with no children has nothing to tell us, and the stored value
+		// would be the thing that was wrong.
+		const gated: CheckinTemplate = {
+			version: 'g',
+			name: 'g',
+			steps: [
+				{
+					key: 's',
+					title: 's',
+					objectives: [
+						{
+							key: 'kids_update',
+							label: 'Children',
+							description: 'x',
+							requires: ['hasChildren'],
+							skipIfKnown: true,
+							capture: { kind: 'field', entity: 'project', fieldKey: 'kids' }
+						}
+					]
+				}
+			]
+		};
+		expect(
+			resolveObjectives(gated, { knownKeys: new Set(['kids_update']), facts: NO_KIDS })
+		).toEqual([]);
 	});
 });
 
@@ -286,8 +385,6 @@ describe('maxAttempts', () => {
 
 describe('draftUpdateToolFor', () => {
 	const format: UpdateFormat = {
-		version: 'format-test',
-		name: 'Test',
 		titleGuidance: 'Six words at most.',
 		instructions: 'Never name a child.',
 		sections: [
@@ -315,7 +412,7 @@ describe('draftUpdateToolFor', () => {
 	});
 
 	it('reproduces the shipped shape from the default format', () => {
-		const tool = draftUpdateToolFor(DEFAULT_UPDATE_FORMAT);
+		const tool = draftUpdateToolFor(SHIPPED_REPORT);
 		expect(tool.input_schema.required).toEqual(['title', 'body']);
 		expect(tool.input_schema.properties.title).toMatchObject({
 			description: 'At most eight words.'
@@ -325,7 +422,7 @@ describe('draftUpdateToolFor', () => {
 
 describe('assembleUpdateBody', () => {
 	const twoSections: UpdateFormat = {
-		...DEFAULT_UPDATE_FORMAT,
+		...SHIPPED_REPORT,
 		sections: [
 			{ key: 'a', label: 'First', guidance: '' },
 			{ key: 'b', label: 'Second', guidance: '' }
@@ -335,7 +432,7 @@ describe('assembleUpdateBody', () => {
 	it('writes no heading for a single-section format', () => {
 		// This is what keeps an org that adopts formats from silently having
 		// every existing update restyled.
-		expect(assembleUpdateBody(DEFAULT_UPDATE_FORMAT, { body: 'One blob.' })).toBe('One blob.');
+		expect(assembleUpdateBody(SHIPPED_REPORT, { body: 'One blob.' })).toBe('One blob.');
 	});
 
 	it('heads each section when there is more than one', () => {

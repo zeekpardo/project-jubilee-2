@@ -1607,125 +1607,73 @@ const tripBudgetTemplates = defineTable({
 // one as a DRAFT — the publish decision stays where it already is, behind
 // `content:publish` and a second pair of eyes.
 
-// Append-only, exactly like costTemplates and taskTemplates, and for a sharper
-// version of the same reason: a logged turn records which prompt produced it,
-// and editing a prompt in place would silently rewrite the question every
-// conversation in the log was answering. Nothing patches a row in this table.
+// ============================================================
+// Agentic workflows
+// ============================================================
+// A workflow is a configured AI agent: which campaign it runs against, what
+// starts it, what it must find out, what it writes back, how it speaks, and
+// what shape its report takes. See PLAN-workflows.md.
 //
-// `content` is the whole system prompt, stored rather than referenced, because
-// the code that produced it will have changed by the time anyone reads the log.
-const promptVersions = defineTable({
-	orgId: v.string(),
-	// Three roles, not two, because the drafter is a different job with a
-	// different reader: the responder writes to a family, the drafter writes
-	// about one. Collapsing them would mean only one of the two could be the
-	// active version for a campaign.
-	role: v.union(v.literal('responder'), v.literal('drafter'), v.literal('judge')),
-	// 'responder-1', 'drafter-1', 'judge-1'. Unique within an org.
-	version: v.string(),
-	content: v.string(),
-	// The model this version was written against. Not a runtime setting — the
-	// same wording behaves differently on a different tier, so "which prompt"
-	// and "which model" are one fact for replay purposes.
-	model: v.string(),
-	// Which version new conversations start from. Exactly one true per
-	// (orgId, role), enforced in the mutation layer like taskTemplates.isActive.
-	isActive: v.boolean(),
-	notes: v.optional(v.string())
-})
-	// unique(orgId, version)
-	.index('by_orgId_and_version', ['orgId', 'version'])
-	.index('by_orgId_and_role_and_isActive', ['orgId', 'role', 'isActive'])
-	.index('by_orgId', ['orgId']);
+// It replaces `checkinTemplates`, `updateFormats` and three org-wide
+// `promptVersions` rows. Those were five independently-promotable things with
+// nothing asserting they belonged together, so an admin could activate a set
+// of objectives whose answers fed a report with no section for them and the
+// system would run happily and draft badly. One object owns all of it.
 
-// What a check-in asks, authored rather than shipped.
-//
-// Versioned and append-only like promptVersions, and for the same reason: a
-// conversation records which template version it was resolved from, so the
-// replay set (§5) is replayable. Editing a live template in place would move
-// the goalpost under every logged conversation that named it.
-//
-// `steps` is inline rather than a child table on the taskTemplates.items
-// precedent — bounded at a handful, always read whole, meaningless apart from
-// its parent. An org that needs hundreds of objectives has a different problem
-// than this schema.
-const checkinTemplates = defineTable({
-	orgId: v.string(),
-	// Absent = the org-wide default, used by any campaign that has not authored
-	// its own. Campaigns already differ in what they are about — a campaign
-	// whose objectLabel is "Family" and one whose objectLabel is "Trip" are not
-	// asking the same questions — so this is the level the set belongs at.
-	campaignId: v.optional(v.id('campaigns')),
-	// 'template-1'. Unique within an org, like promptVersions.version.
-	version: v.string(),
-	name: v.string(),
-	notes: v.optional(v.string()),
-	// Exactly one true per (orgId, campaignId), enforced in the mutation layer
-	// like taskTemplates.isActive and promptVersions.isActive.
-	isActive: v.boolean(),
-
-	steps: v.array(
-		v.object({
-			key: v.string(),
-			title: v.string(),
-			entryMessage: v.optional(v.string()),
-			objectives: v.array(
-				v.object({
-					key: v.string(),
-					label: v.string(),
-					description: v.string(),
-					// Per-objective overrides of RATING_ANSWERED / CONFIDENCE_ACCEPT.
-					minRating: v.optional(v.number()),
-					minConfidence: v.optional(v.number()),
-					// Stop asking this one after N turns. The conversation-wide
-					// MAX_RESPONDER_TURNS still applies on top.
-					maxAttempts: v.optional(v.number()),
-					skipIfKnown: v.optional(v.boolean()),
-					// Absent = capture only. See CheckinCapture.
-					capture: v.optional(
-						v.union(
-							v.object({ kind: v.literal('none') }),
-							v.object({
-								kind: v.literal('field'),
-								entity: v.union(v.literal('project'), v.literal('contact')),
-								fieldKey: v.string(),
-								options: v.optional(v.array(v.string()))
-							})
-						)
-					)
-				})
-			)
-		})
+/** One thing a workflow wants to find out. Shared by the draft and its snapshots. */
+const workflowObjective = v.object({
+	key: v.string(),
+	label: v.string(),
+	// The only text the judge sees. Describes a satisfying ANSWER, not a question.
+	description: v.string(),
+	// Per-objective overrides of RATING_ANSWERED / CONFIDENCE_ACCEPT.
+	minRating: v.optional(v.number()),
+	minConfidence: v.optional(v.number()),
+	// Stop asking this one after N turns. MAX_RESPONDER_TURNS still bounds the
+	// conversation as a whole.
+	maxAttempts: v.optional(v.number()),
+	skipIfKnown: v.optional(v.boolean()),
+	// Household facts that must hold before this is asked at all. NOT the same
+	// gate as skipIfKnown: that asks whether a field already holds the answer,
+	// this asks whether the question applies to this family. Carrying the old
+	// hardcoded hasChildren/hasSchoolAgeChildren rule across as data is the
+	// reason it exists — see lib/domain/workflows.ts.
+	requires: v.optional(
+		v.array(v.union(v.literal('hasChildren'), v.literal('hasSchoolAgeChildren')))
+	),
+	// Absent, or `none`, means the answer is held for the report and filed
+	// nowhere — the common case, and the reason the report exists.
+	capture: v.optional(
+		v.union(
+			v.object({ kind: v.literal('none') }),
+			v.object({
+				kind: v.literal('field'),
+				entity: v.union(v.literal('project'), v.literal('contact')),
+				fieldKey: v.string(),
+				options: v.optional(v.array(v.string()))
+			})
+		)
 	)
-})
-	// unique(orgId, version)
-	.index('by_orgId_and_version', ['orgId', 'version'])
-	.index('by_orgId_and_campaignId_and_isActive', ['orgId', 'campaignId', 'isActive'])
-	.index('by_orgId', ['orgId']);
+});
 
-// What a drafted update looks like.
-//
-// A SEPARATE AXIS from the drafter prompt, deliberately. The prompt is the
-// drafter's ethics — what it may say about a family, what it must not invent —
-// and changes rarely and carefully. This is the newsletter's house style, and
-// adding a section to it should not mean editing a prompt whose wording is
-// what protects the people being written about.
-//
-// `sections` becomes the draft_update tool's input_schema at call time, so the
-// structure an author writes here is enforced by forced tool use rather than
-// requested in prose. See checkin-templates.ts.
-const updateFormats = defineTable({
-	orgId: v.string(),
-	campaignId: v.optional(v.id('campaigns')),
-	// 'format-1'. Unique within an org.
-	version: v.string(),
-	name: v.string(),
-	isActive: v.boolean(),
+/** A named group of objectives. A unit of AUTHORING, not a stage anyone is marched through. */
+const workflowStep = v.object({
+	key: v.string(),
+	title: v.string(),
+	entryMessage: v.optional(v.string()),
+	objectives: v.array(workflowObjective)
+});
 
-	// Replaces the hardcoded "At most eight words."
+/**
+ * What the report is made of. `sections` becomes the draft_update tool's
+ * input_schema at call time, so a section here is a section the draft WILL
+ * have — enforced by the shape of a function call rather than requested in
+ * prose the model may skim.
+ */
+const workflowReport = v.object({
 	titleGuidance: v.string(),
-	// Tone and house rules that are not structural, appended to the drafter's
-	// input rather than compiled into the schema.
+	// Tone and house rules that are not structural. Appended to the drafter's
+	// brief, never compiled into the prompt that protects the family.
 	instructions: v.string(),
 	sections: v.array(
 		v.object({
@@ -1735,9 +1683,127 @@ const updateFormats = defineTable({
 			approxWords: v.optional(v.number())
 		})
 	)
+});
+
+/**
+ * The workflow's own voice. Per-workflow rather than org-wide, because a trip
+ * debrief and a family check-in should not share a responder: the care about
+ * who is being written to lives in that prompt, and it is not the same person.
+ *
+ * `content` is the whole system prompt, stored rather than referenced, for the
+ * reason promptVersions gave: the code that produced it will have changed by
+ * the time anyone reads the log.
+ */
+const workflowPrompt = v.object({
+	content: v.string(),
+	// The model this wording was written against. Not a runtime setting — the
+	// same words behave differently on a different tier, so "which prompt" and
+	// "which model" are one fact for replay purposes.
+	model: v.string()
+});
+
+/**
+ * What starts a run.
+ *
+ *   manual        — a person starts it on a record. What exists today.
+ *   stage_change  — a record entering a named pipeline stage. Stages are
+ *                   already data with a `key`, so this is a hook in the
+ *                   mutation that moves a record, not new infrastructure.
+ *   schedule      — every N months. The field exists; no cron reads it yet,
+ *                   deliberately (PLAN-workflows.md §5).
+ */
+const workflowTrigger = v.union(
+	v.object({ kind: v.literal('manual') }),
+	v.object({ kind: v.literal('stage_change'), stageKey: v.string() }),
+	v.object({ kind: v.literal('schedule'), everyMonths: v.number() })
+);
+
+/**
+ * The editable draft. One row per workflow, patched freely.
+ *
+ * NO isActive, unlike taskTemplates and promptVersions, and that is the point
+ * of the draft/version split rather than an omission. Those tables answer "of
+ * these interchangeable versions, which one is live" — there is one checklist
+ * per campaign and one responder per org. A campaign may want a family
+ * check-in AND a trip debrief running side by side, so workflows do not
+ * compete for a slot and there is nothing to deactivate. What `status`
+ * records is whether THIS workflow has been published, not whether it won.
+ */
+const workflows = defineTable({
+	orgId: v.string(),
+	// Required, unlike checkinTemplates.campaignId which allowed an org-wide
+	// default. A workflow names the records it runs against by campaign, and
+	// "all campaigns" would mean a family check-in firing on a trip.
+	campaignId: v.id('campaigns'),
+
+	name: v.string(),
+	description: v.optional(v.string()),
+
+	trigger: workflowTrigger,
+	steps: v.array(workflowStep),
+	report: workflowReport,
+	prompts: v.object({
+		responder: workflowPrompt,
+		judge: workflowPrompt,
+		drafter: workflowPrompt
+	}),
+
+	//   draft     — never published. Editable, and deletable outright.
+	//   published — has a version runs may bind to. Still editable; edits land
+	//               in the next version, not in the one already running.
+	//   archived  — hidden from pickers, versions kept. What "delete" means
+	//               once a run names one of its versions.
+	status: v.union(v.literal('draft'), v.literal('published'), v.literal('archived')),
+
+	// The version new runs bind to. Absent until first publish. A pointer
+	// rather than a flag on the version rows, so promoting is one write and
+	// two versions can never both believe they are current.
+	currentVersionId: v.optional(v.id('workflowVersions'))
 })
-	.index('by_orgId_and_version', ['orgId', 'version'])
-	.index('by_orgId_and_campaignId_and_isActive', ['orgId', 'campaignId', 'isActive'])
+	.index('by_orgId', ['orgId'])
+	.index('by_campaignId', ['campaignId'])
+	.index('by_campaignId_and_status', ['campaignId', 'status']);
+
+/**
+ * An immutable published snapshot. Written on publish, never patched.
+ *
+ * This is where the append-only contract that costTemplates, taskTemplates and
+ * promptVersions all state now lives — and it is finally at the right
+ * altitude. Those tables froze AUTHORING, so a workflow nobody had ever run
+ * could not be edited either. Freezing belongs to the act of running: a
+ * version a run names must not change, because the log is also the replay set
+ * (PLAN-ai-checkin.md §5), and a replay against a moved goalpost proves
+ * nothing. A draft nobody has run protects nothing by being immutable.
+ *
+ * The snapshot is a VALUE COPY, on the `budgets`/`costTemplates` precedent:
+ * everything needed to run and to replay is here, so reading a run's
+ * configuration never joins back to a draft that has since moved on.
+ */
+const workflowVersions = defineTable({
+	orgId: v.string(),
+	workflowId: v.id('workflows'),
+	campaignId: v.id('campaigns'),
+	// Monotonic per workflow, starting at 1. A number rather than 'v1' because
+	// nothing here parses it and ordering is the only thing asked of it.
+	version: v.number(),
+	publishedAt: v.number(),
+	// Better Auth user id. Who put these words in front of families.
+	publishedByUserId: v.string(),
+
+	name: v.string(),
+	trigger: workflowTrigger,
+	steps: v.array(workflowStep),
+	report: workflowReport,
+	prompts: v.object({
+		responder: workflowPrompt,
+		judge: workflowPrompt,
+		drafter: workflowPrompt
+	})
+})
+	// unique(workflowId, version)
+	.index('by_workflowId_and_version', ['workflowId', 'version'])
+	.index('by_workflowId', ['workflowId'])
+	.index('by_campaignId', ['campaignId'])
 	.index('by_orgId', ['orgId']);
 
 // One check-in with one family.
@@ -1852,15 +1918,12 @@ const checkinConversations = defineTable({
 	// Which prompts this conversation is bound to, frozen when the check-in
 	// starts. A prompt promoted mid-conversation must not change the voice
 	// halfway through. Absent on a `direct` conversation, which calls no model.
-	responderPromptVersion: v.optional(v.string()),
-	drafterPromptVersion: v.optional(v.string()),
-	judgePromptVersion: v.optional(v.string()),
-	// The authored set this conversation's objectives were resolved from, and
-	// the shape its draft will be asked for. Same freezing contract as the three
-	// prompt versions above. Absent on conversations opened before templates
-	// existed, and on `direct` conversations, which resolve nothing.
-	templateVersion: v.optional(v.string()),
-	updateFormatVersion: v.optional(v.string()),
+	// The published workflow version this run is bound to, frozen at open.
+	// ONE id where there were five independently-promotable version strings that
+	// could disagree: objectives resolved from template A, a report drafted
+	// against format B, and three org-wide prompts that knew about neither.
+	// Absent on a `direct` conversation, which runs nothing.
+	workflowVersionId: v.optional(v.id('workflowVersions')),
 
 	// 'en' | 'es'. Free text rather than a union: the escalation scanner reports
 	// which locales it can actually read, and a conversation in a third one is a
@@ -2172,9 +2235,8 @@ export default defineSchema({
 	customFieldDefinitions,
 	campaignAssignments,
 	campaignMemberships,
-	promptVersions,
-	checkinTemplates,
-	updateFormats,
+	workflows,
+	workflowVersions,
 	checkinConversations,
 	checkinMessages,
 	conversationTurns,

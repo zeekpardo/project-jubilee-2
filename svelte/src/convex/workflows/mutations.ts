@@ -31,7 +31,13 @@ import type { Id } from '../_generated/dataModel';
 import { requireCapability } from '../model/access';
 import { promptsInput, reportInput, stepInput, triggerInput } from './shapes';
 import { DRAFTER_V1, JUDGE_V1, RESPONDER_V2 } from '../../lib/domain/checkin-prompts';
-import { SHIPPED_REPORT, shippedWorkflowSteps } from '../../lib/domain/workflows';
+import {
+	DEFAULT_DRAFTER_MODEL,
+	DEFAULT_JUDGE_MODEL,
+	DEFAULT_RESPONDER_MODEL,
+	SHIPPED_REPORT,
+	shippedWorkflowSteps
+} from '../../lib/domain/workflows';
 
 /**
  * A key has to survive being a tool-schema property name and an objective key
@@ -125,9 +131,9 @@ export const createWorkflow = mutation({
 				sections: SHIPPED_REPORT.sections
 			},
 			prompts: {
-				responder: { content: RESPONDER_V2.content, model: 'claude-opus-5' },
-				judge: { content: JUDGE_V1.content, model: 'claude-haiku-4-5-20251001' },
-				drafter: { content: DRAFTER_V1.content, model: 'claude-opus-5' }
+				responder: { content: RESPONDER_V2.content, model: DEFAULT_RESPONDER_MODEL },
+				judge: { content: JUDGE_V1.content, model: DEFAULT_JUDGE_MODEL },
+				drafter: { content: DRAFTER_V1.content, model: DEFAULT_DRAFTER_MODEL }
 			},
 			status: 'draft' as const
 		});

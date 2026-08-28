@@ -100,6 +100,35 @@ const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
  */
 const FALLBACK_CAPABLE = ['claude-opus-5', 'claude-opus-4-8', 'claude-fable-5', 'claude-mythos-5'];
 
+/**
+ * Models that accept `output_config.effort`.
+ *
+ * Sending it to one that does not is a hard 400 — "This model does not support
+ * the effort parameter" — and it is a 400 the caller cannot see coming, because
+ * the model is now chosen by whoever authored the workflow rather than fixed in
+ * this file. The judge in particular is the cheap-tier call, so the tier most
+ * likely to be picked is exactly the tier that rejects it.
+ *
+ * A prefix list rather than exact ids: the effort parameter is a property of a
+ * model family, and pinning exact strings here would mean every new Opus point
+ * release silently losing its effort setting.
+ */
+const EFFORT_CAPABLE_PREFIXES = [
+	'claude-opus-',
+	'claude-fable-',
+	'claude-mythos-',
+	'claude-sonnet-5'
+];
+
+function supportsEffort(model: string): boolean {
+	return EFFORT_CAPABLE_PREFIXES.some((prefix) => model.startsWith(prefix));
+}
+
+/** `output_config` for a model, omitting `effort` where it would be rejected. */
+function effortParams(model: string, effort: 'low' | 'medium' | 'high'): Record<string, unknown> {
+	return supportsEffort(model) ? { output_config: { effort } } : {};
+}
+
 function fallbackParams(model: string): Record<string, unknown> {
 	if (!FALLBACK_CAPABLE.some((candidate) => model.startsWith(candidate))) return {};
 	return { betas: [FALLBACK_BETA], fallbacks: 'default' as const };
@@ -189,7 +218,10 @@ export function anthropicCheckinModel(): CheckinModel {
 	return {
 		async respond(request: ResponderRequest): Promise<ResponderResult> {
 			const startedAt = Date.now();
-			const model = responderModel();
+			// The workflow's choice wins; the env var is the fallback for a request
+			// that names none — the golden set, and any conversation opened before
+			// the model became part of the workflow.
+			const model = request.model ?? responderModel();
 			const message = await client.beta.messages.create({
 				model,
 				max_tokens: RESPONDER_MAX_TOKENS,
@@ -198,8 +230,9 @@ export function anthropicCheckinModel(): CheckinModel {
 				messages: [{ role: 'user', content: request.user }],
 				// `medium` rather than the default: writing two warm sentences to a
 				// family is not a reasoning-heavy task, and the effort budget is
-				// better spent on the drafting call than on every ask.
-				output_config: { effort: 'medium' },
+				// better spent on the drafting call than on every ask. Omitted
+				// entirely on a model that does not take it — see effortParams.
+				...effortParams(model, 'medium'),
 				...(request.tools.length > 0
 					? {
 							tools: request.tools as unknown as BetaToolUnion[],
@@ -240,7 +273,7 @@ export function anthropicCheckinModel(): CheckinModel {
 
 		async judge(request: JudgeRequest): Promise<JudgeResult> {
 			const startedAt = Date.now();
-			const judge = judgeModel();
+			const judge = request.model ?? judgeModel();
 			const message = await client.beta.messages.create({
 				model: judge,
 				max_tokens: JUDGE_MAX_TOKENS,
@@ -259,7 +292,7 @@ export function anthropicCheckinModel(): CheckinModel {
 				//
 				// Still no `thinking`. On this tier omitting it means none, which is
 				// what a forced tool call wants.
-				output_config: { effort: 'low' as const }
+				...effortParams(judge, 'low')
 			});
 			assertUsable(message, 'judge');
 

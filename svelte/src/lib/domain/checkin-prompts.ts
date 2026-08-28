@@ -30,6 +30,8 @@ export interface PromptVersion {
 	role: PromptRole;
 	version: string;
 	content: string;
+	/** The model this wording is to be run on. Absent for the shipped constants. */
+	model?: string;
 }
 
 // ============================================================
@@ -332,24 +334,16 @@ export function buildDrafterInput(input: {
 	return `${naming}\n\nTranscript:\n${transcript}`;
 }
 
-/** Every prompt version this build ships, for seeding the append-only table. */
-export const SHIPPED_PROMPT_VERSIONS: PromptVersion[] = [
-	RESPONDER_V1,
-	RESPONDER_V2,
-	DRAFTER_V1,
-	JUDGE_V1
-];
-
 /**
- * The newest shipped version of each role — what a fresh install should run.
- *
- * Deliberately NOT what `seedPromptVersions` activates on an org that already
- * has one: promoting a prompt in front of families is a decision somebody
- * makes, after replaying real conversations against it (§5). The sandbox seed
- * uses this because a sandbox has nothing to protect.
+ * The wording this build ships, and the content a new workflow is created
+ * with. No longer a versioned table: a workflow owns its three prompts, so
+ * `responder-2` is now "the responder text a workflow started from and its
+ * author may have since edited". The constants stay because they are the most
+ * carefully considered strings in this feature and there should be exactly one
+ * home for them.
  */
-export function latestPromptVersions(): PromptVersion[] {
-	const byRole = new globalThis.Map<PromptRole, PromptVersion>();
-	for (const prompt of SHIPPED_PROMPT_VERSIONS) byRole.set(prompt.role, prompt);
-	return [...byRole.values()];
-}
+export const SHIPPED_PROMPTS = {
+	responder: RESPONDER_V2,
+	judge: JUDGE_V1,
+	drafter: DRAFTER_V1
+};

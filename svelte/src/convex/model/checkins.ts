@@ -20,7 +20,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { escalationExcerpt, scanForEscalation } from '../../lib/domain/checkin-escalation';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { CheckinObjective, ObjectiveCheck } from '../../lib/domain/checkin-objectives';
-import type { TemplateObjective } from '../../lib/domain/checkin-templates';
+import type { TemplateObjective } from '../../lib/domain/workflows';
 
 /**
  * The `updates.authorUserId` a machine-written draft carries.
@@ -208,59 +208,6 @@ export async function familyChildFacts(
 	return { hasChildren, hasSchoolAgeChildren };
 }
 
-/**
- * The prompt versions a new conversation binds itself to.
- *
- * Read once at open and then frozen onto the conversation, so promoting a new
- * responder mid-conversation cannot change the voice halfway through — the
- * family would notice, and the log would stop being replayable as one unit.
- */
-export async function activePromptVersions(
-	ctx: QueryCtx,
-	orgId: string
-): Promise<{
-	responder: Doc<'promptVersions'>;
-	drafter: Doc<'promptVersions'>;
-	judge: Doc<'promptVersions'>;
-}> {
-	const active = async (role: 'responder' | 'drafter' | 'judge') =>
-		await ctx.db
-			.query('promptVersions')
-			.withIndex('by_orgId_and_role_and_isActive', (q) =>
-				q.eq('orgId', orgId).eq('role', role).eq('isActive', true)
-			)
-			.first();
-
-	const [responder, drafter, judge] = await Promise.all([
-		active('responder'),
-		active('drafter'),
-		active('judge')
-	]);
-
-	if (!responder || !drafter || !judge) {
-		throw new ConvexError(
-			'This organization has no active check-in prompts. Seed them before opening a check-in.'
-		);
-	}
-	return { responder, drafter, judge };
-}
-
-/** A prompt by version, for the frozen versions a conversation names. */
-export async function promptByVersion(
-	ctx: QueryCtx,
-	orgId: string,
-	version: string
-): Promise<Doc<'promptVersions'>> {
-	const prompt = await ctx.db
-		.query('promptVersions')
-		.withIndex('by_orgId_and_version', (q) => q.eq('orgId', orgId).eq('version', version))
-		.first();
-	if (!prompt) {
-		throw new ConvexError(`Prompt version ${version} not found`);
-	}
-	return prompt;
-}
-
 /** True when the engine owns this conversation. Absent `kind` means it does. */
 export function isCheckin(conversation: Doc<'checkinConversations'>): boolean {
 	return (conversation.kind ?? 'checkin') === 'checkin';
@@ -289,66 +236,51 @@ export function storedObjectives(conversation: Doc<'checkinConversations'>): Che
 }
 
 /**
- * The template a new check-in in this campaign resolves from.
+ * The workflow a new run in this campaign binds to, and the version it runs.
  *
- * Campaign first, then the org-wide row. The fallback is what makes adopting
- * this feature cheap: an org seeds one default and every campaign works, and a
- * campaign that wants different questions authors its own without disturbing
- * the others.
+ * Published only. A draft is editable by definition, so binding a run to one
+ * would mean the configuration could change underneath a family mid-answer —
+ * the exact thing the version snapshot exists to prevent.
+ *
+ * Returns null rather than throwing when a campaign has no published workflow.
+ * That is a real, expected state — a campaign nobody has authored one for — and
+ * the mutation that wants to start a run is the right place to refuse, with a
+ * message naming the campaign, rather than a helper throwing a sentence about
+ * a table.
  */
-export async function activeTemplate(
+export async function activeWorkflowVersion(
 	ctx: QueryCtx,
-	orgId: string,
 	campaignId: Id<'campaigns'>
-): Promise<Doc<'checkinTemplates'> | null> {
-	const forCampaign = await ctx.db
-		.query('checkinTemplates')
-		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
-			q.eq('orgId', orgId).eq('campaignId', campaignId).eq('isActive', true)
+): Promise<Doc<'workflowVersions'> | null> {
+	const workflow = await ctx.db
+		.query('workflows')
+		.withIndex('by_campaignId_and_status', (q) =>
+			q.eq('campaignId', campaignId).eq('status', 'published')
 		)
 		.first();
-	if (forCampaign) return forCampaign;
+	if (!workflow?.currentVersionId) return null;
 
-	return await ctx.db
-		.query('checkinTemplates')
-		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
-			q.eq('orgId', orgId).eq('campaignId', undefined).eq('isActive', true)
-		)
-		.first();
+	const version = await ctx.db.get('workflowVersions', workflow.currentVersionId);
+	// A pointer to a version that is gone is a bug, not a state to run in.
+	return version ?? null;
 }
 
-/** The update shape a new check-in in this campaign will be drafted into. */
-export async function activeUpdateFormat(
+/**
+ * A version by id, for the frozen version a run names.
+ *
+ * Null on miss rather than a throw. A run whose version row has been deleted
+ * cannot advance, and the caller turns that into a conversation a person picks
+ * up — which is a better outcome than an exception in a scheduled job nobody
+ * is watching.
+ */
+export async function workflowVersionById(
 	ctx: QueryCtx,
 	orgId: string,
-	campaignId: Id<'campaigns'>
-): Promise<Doc<'updateFormats'> | null> {
-	const forCampaign = await ctx.db
-		.query('updateFormats')
-		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
-			q.eq('orgId', orgId).eq('campaignId', campaignId).eq('isActive', true)
-		)
-		.first();
-	if (forCampaign) return forCampaign;
-
-	return await ctx.db
-		.query('updateFormats')
-		.withIndex('by_orgId_and_campaignId_and_isActive', (q) =>
-			q.eq('orgId', orgId).eq('campaignId', undefined).eq('isActive', true)
-		)
-		.first();
-}
-
-/** A format by version, for the frozen version a conversation names. */
-export async function updateFormatByVersion(
-	ctx: QueryCtx,
-	orgId: string,
-	version: string
-): Promise<Doc<'updateFormats'> | null> {
-	return await ctx.db
-		.query('updateFormats')
-		.withIndex('by_orgId_and_version', (q) => q.eq('orgId', orgId).eq('version', version))
-		.first();
+	versionId: Id<'workflowVersions'>
+): Promise<Doc<'workflowVersions'> | null> {
+	const version = await ctx.db.get('workflowVersions', versionId);
+	if (!version || version.orgId !== orgId) return null;
+	return version;
 }
 
 /**
@@ -383,8 +315,7 @@ export async function knownObjectiveKeys(
 		const capture = objective.capture;
 		if (capture?.kind !== 'field') continue;
 
-		const values =
-			capture.entity === 'project' ? input.project?.attributes : contact?.customFields;
+		const values = capture.entity === 'project' ? input.project?.attributes : contact?.customFields;
 		const value = values?.[capture.fieldKey];
 
 		// An empty string is not an answer. A `false` and a `0` are.

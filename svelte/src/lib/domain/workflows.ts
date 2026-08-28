@@ -1,5 +1,5 @@
 // ============================================================
-// What the org decided to ask, and what shape the report comes back in
+// What a workflow asks, and what shape its report comes back in
 // ============================================================
 // checkin-objectives.ts answers "what is an objective and when is it met".
 // This file answers the two questions above it, both of which used to be
@@ -37,6 +37,22 @@ import { DEFAULT_CHECKIN_OBJECTIVES, type CheckinObjective } from './checkin-obj
 // ============================================================
 
 /**
+ * The household facts an objective may gate on.
+ *
+ * A CLOSED list, deliberately. These are read off the record by the caller —
+ * see `familyChildFacts` — and every one of them costs a query, so a workflow
+ * author picking from four checkboxes is the whole feature. An open expression
+ * language over custom fields is a different, larger thing, and `skipIfKnown`
+ * already covers the case it would mostly be used for.
+ */
+export type HouseholdFact = 'hasChildren' | 'hasSchoolAgeChildren';
+
+export const HOUSEHOLD_FACTS: HouseholdFact[] = ['hasChildren', 'hasSchoolAgeChildren'];
+
+/** What the record can tell us, resolved once per run. */
+export type HouseholdFacts = Record<HouseholdFact, boolean>;
+
+/**
  * One objective as an author writes it, before it is resolved against a
  * particular family.
  *
@@ -47,6 +63,23 @@ import { DEFAULT_CHECKIN_OBJECTIVES, type CheckinObjective } from './checkin-obj
  * pending.
  */
 export interface TemplateObjective extends CheckinObjective {
+	/**
+	 * Household facts that must hold before this objective is asked at all.
+	 *
+	 * The general form of a rule that used to be two hardcoded keys in
+	 * `defaultObjectivesForFamily`, and it is NOT the same mechanism as
+	 * `skipIfKnown`: that one asks whether a captured FIELD already holds the
+	 * answer, this one asks whether the question applies to this household in
+	 * the first place. Collapsing them would mean a family with no children
+	 * gets asked how their children are the moment nobody has filled in a
+	 * custom field — which is exactly the failure the original rule existed to
+	 * prevent, and the reason it is worth carrying across as data rather than
+	 * quietly dropping with the code path that held it.
+	 *
+	 * Empty or absent means the objective always applies.
+	 */
+	requires?: HouseholdFact[];
+
 	/**
 	 * Do not ask when the record already holds a value for this objective's
 	 * capture target.
@@ -117,15 +150,24 @@ export function templateObjectives(template: CheckinTemplate): TemplateObjective
  */
 export function resolveObjectives(
 	template: CheckinTemplate,
-	input: { knownKeys: ReadonlySet<string> }
+	input: { knownKeys: ReadonlySet<string>; facts: HouseholdFacts }
 ): CheckinObjective[] {
 	const resolved: CheckinObjective[] = [];
 
 	for (const objective of templateObjectives(template)) {
+		// Applicability first. An objective that does not apply to this household
+		// is not asked, whatever any captured field says — a family with no
+		// children has nothing to tell us about their children, and a stored
+		// value would be the thing that was wrong, not the answer.
+		if (objective.requires?.some((fact) => !input.facts[fact])) continue;
+
 		const capturesField = objective.capture?.kind === 'field';
 		if (objective.skipIfKnown && capturesField && input.knownKeys.has(objective.key)) continue;
 
-		const { skipIfKnown: _skipIfKnown, ...snapshot } = objective;
+		// Both gates are spent by the time the set is frozen, so neither rides
+		// onto the snapshot: keeping them would preserve a decision already made
+		// as though it were still pending.
+		const { skipIfKnown: _skipIfKnown, requires: _requires, ...snapshot } = objective;
 		resolved.push(snapshot);
 	}
 
@@ -188,8 +230,9 @@ export interface UpdateSection {
  * add a section without touching a prompt whose wording protects people.
  */
 export interface UpdateFormat {
-	version: string;
-	name: string;
+	// No `version` and no `name` of its own. The report is part of a workflow
+	// version, so the version it belongs to is the only version it has — a
+	// second one could only ever disagree with the first.
 	/** Replaces the shipped "At most eight words." */
 	titleGuidance: string;
 	/** Tone and house rules that are not structural. Appended to the drafter's input. */
@@ -281,42 +324,72 @@ export function assembleUpdateBody(format: UpdateFormat, values: Record<string, 
 }
 
 // ============================================================
-// What a fresh org starts from
+// The workflow itself
 // ============================================================
 
-/**
- * The template that reproduces the behaviour this engine shipped with: the
- * four objectives from checkin-objectives.ts, in one step, capturing nothing.
- *
- * It exists so that "adopt templates" is not also "change what your check-ins
- * ask". An org that seeds this and never edits it gets the conversation it had
- * before — which is the only honest default for a feature whose whole job is
- * to let people change that conversation.
- *
- * The two objectives the old hardcoded rule dropped for families without
- * children are NOT expressed here. That rule read a household, and
- * `skipIfKnown` reads a captured field; they are different mechanisms and
- * pretending otherwise would quietly change who gets asked what. Migrating it
- * properly is a template an author writes, not a default this file guesses.
- */
-export const DEFAULT_TEMPLATE: CheckinTemplate = {
-	version: 'template-1',
-	name: 'Family check-in',
-	steps: [
-		{
-			key: 'wellbeing',
-			title: 'How the family is doing',
-			// Straight from DEFAULT_CHECKIN_OBJECTIVES, capturing nothing: the
-			// shipped conversation, expressed as data.
-			objectives: DEFAULT_CHECKIN_OBJECTIVES.map((objective) => ({ ...objective }))
-		}
-	]
-};
+/** One of the three voices. `content` is the whole system prompt. */
+export interface WorkflowPrompt {
+	content: string;
+	model: string;
+}
 
-/** The format that reproduces the shipped `DRAFT_UPDATE_TOOL` exactly. */
-export const DEFAULT_UPDATE_FORMAT: UpdateFormat = {
-	version: 'format-1',
-	name: 'Default',
+export interface WorkflowPrompts {
+	responder: WorkflowPrompt;
+	judge: WorkflowPrompt;
+	drafter: WorkflowPrompt;
+}
+
+export type WorkflowTrigger =
+	| { kind: 'manual' }
+	| { kind: 'stage_change'; stageKey: string }
+	| { kind: 'schedule'; everyMonths: number };
+
+/**
+ * Everything needed to run a workflow and to replay one.
+ *
+ * The shape a published `workflowVersions` row holds, and the shape a draft is
+ * projected into to be run. One type for both so the engine cannot tell the
+ * difference — which is what makes "preview this draft" possible later without
+ * a second code path.
+ */
+export interface WorkflowDefinition {
+	name: string;
+	trigger: WorkflowTrigger;
+	steps: CheckinStep[];
+	report: UpdateFormat;
+	prompts: WorkflowPrompts;
+}
+
+/**
+ * The workflow this build ships, and the one a new org starts from.
+ *
+ * It reproduces the behaviour that shipped before workflows existed, including
+ * the household rule — `kids_update` and `school_status` carry `requires`, so
+ * a family with no children is not asked after children who are not there.
+ * That rule used to be two hardcoded keys in `defaultObjectivesForFamily`;
+ * carrying it here as data is the whole reason `requires` exists.
+ *
+ * The prompts are filled in by the caller from `checkin-prompts.ts` rather
+ * than inlined, so the shipped wording has exactly one home.
+ */
+export function shippedWorkflowSteps(): CheckinStep[] {
+	return [
+		{
+			key: 'checkin',
+			title: 'How the family is doing',
+			objectives: DEFAULT_CHECKIN_OBJECTIVES.map((objective) => ({
+				...objective,
+				...(objective.key === 'kids_update' ? { requires: ['hasChildren' as const] } : {}),
+				...(objective.key === 'school_status'
+					? { requires: ['hasSchoolAgeChildren' as const] }
+					: {})
+			}))
+		}
+	];
+}
+
+/** The report shape that reproduces the tool this engine shipped with. */
+export const SHIPPED_REPORT: UpdateFormat = {
 	titleGuidance: 'At most eight words.',
 	instructions: '',
 	sections: [
@@ -327,3 +400,58 @@ export const DEFAULT_UPDATE_FORMAT: UpdateFormat = {
 		}
 	]
 };
+
+// ============================================================
+// The models a workflow may run on
+// ============================================================
+
+/**
+ * One choosable model. `id` is the exact string sent to the API.
+ *
+ * The ids here are COMPLETE — no date suffix. A dated variant
+ * (`claude-haiku-4-5-20251001`) is not the canonical id, and pinning one is how
+ * a workflow quietly stays on an older snapshot than its author thinks.
+ *
+ * Prices are per million tokens and exist to make the tier choice legible at
+ * the point of choosing. The judge runs on every turn of every conversation
+ * and reads only the recent messages, so it is where the volume is and where a
+ * cheaper tier pays for itself; the responder writes to a family in a fragile
+ * situation, where the failure mode is a clumsy message rather than a slower
+ * one.
+ */
+export interface WorkflowModel {
+	id: string;
+	label: string;
+	inputPerMTok: number;
+	outputPerMTok: number;
+	contextLabel: string;
+}
+
+export const WORKFLOW_MODELS: WorkflowModel[] = [
+	{
+		id: 'claude-opus-5',
+		label: 'Claude Opus 5',
+		inputPerMTok: 5,
+		outputPerMTok: 25,
+		contextLabel: '1M'
+	},
+	{
+		id: 'claude-sonnet-5',
+		label: 'Claude Sonnet 5',
+		inputPerMTok: 2,
+		outputPerMTok: 10,
+		contextLabel: '1M'
+	},
+	{
+		id: 'claude-haiku-4-5',
+		label: 'Claude Haiku 4.5',
+		inputPerMTok: 1,
+		outputPerMTok: 5,
+		contextLabel: '200K'
+	}
+];
+
+/** The tier each role starts on. See the note on WorkflowModel. */
+export const DEFAULT_RESPONDER_MODEL = 'claude-opus-5';
+export const DEFAULT_DRAFTER_MODEL = 'claude-opus-5';
+export const DEFAULT_JUDGE_MODEL = 'claude-haiku-4-5';

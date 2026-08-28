@@ -32,14 +32,22 @@ import { createContactModel } from '../model/contacts';
 import { createProjectModel } from '../model/projects';
 import { deleteProjectCascade } from '../model/cascade';
 import {
-	activePromptVersions,
+	activeWorkflowVersion,
+	knownObjectiveKeys,
 	deleteConversationCascade,
 	familyChildFacts,
 	recordInboundMessage,
 	storedObjectives
 } from '../model/checkins';
-import { bestStates, defaultObjectivesForFamily } from '../../lib/domain/checkin-objectives';
-import { latestPromptVersions, SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
+import { bestStates } from '../../lib/domain/checkin-objectives';
+import {
+	resolveObjectives,
+	templateObjectives,
+	DEFAULT_JUDGE_MODEL,
+	SHIPPED_REPORT,
+	shippedWorkflowSteps
+} from '../../lib/domain/workflows';
+import { DRAFTER_V1, JUDGE_V1, RESPONDER_V2 } from '../../lib/domain/checkin-prompts';
 
 /** Everything this seed creates is tagged, so the wipe can find exactly it. */
 const SANDBOX_MARKER = 'checkin-sandbox';
@@ -52,6 +60,8 @@ const SANDBOX_CAMPAIGN_NAME = 'Check-in sandbox';
  * / `CHECKIN_JUDGE_MODEL` at request time.
  */
 const SANDBOX_PROMPT_MODEL = 'claude-opus-5';
+/** The judge runs a cheap tier, the same split production uses. */
+const SANDBOX_JUDGE_MODEL = DEFAULT_JUDGE_MODEL;
 
 /**
  * Three shapes, chosen because they are the three the objective rules branch
@@ -162,64 +172,69 @@ export const seedSandbox = internalMutation({
 				budgetShape: 'none'
 			}));
 
-		// --- prompts ----------------------------------------------------------
-		// Inserted here rather than left to the admin screen so a first run has
-		// everything it needs. Append-only, exactly like the public mutation: a
-		// version already present is left as it is.
-		let promptsAdded = 0;
-		for (const prompt of SHIPPED_PROMPT_VERSIONS) {
-			const present = await ctx.db
-				.query('promptVersions')
-				.withIndex('by_orgId_and_version', (q) =>
-					q.eq('orgId', orgId).eq('version', prompt.version)
-				)
-				.first();
-			if (present) continue;
+		// --- workflow ---------------------------------------------------------
+		// One published workflow, so the sandbox can actually run. Seeded here
+		// rather than left to the admin screen for the same reason the prompts
+		// were: a first run should have everything it needs.
+		//
+		// Published immediately, unlike a real org where publishing is a separate
+		// decision made after replaying conversations against the new wording. A
+		// sandbox has nothing to protect and everything to gain from running the
+		// newest thing this build ships.
+		let workflowsAdded = 0;
+		const existingWorkflow = await ctx.db
+			.query('workflows')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+			.first();
 
-			const active = await ctx.db
-				.query('promptVersions')
-				.withIndex('by_orgId_and_role_and_isActive', (q) =>
-					q.eq('orgId', orgId).eq('role', prompt.role).eq('isActive', true)
-				)
-				.first();
-
-			await ctx.db.insert('promptVersions', {
+		if (!existingWorkflow) {
+			const workflowId = await ctx.db.insert('workflows', {
 				orgId,
-				role: prompt.role,
-				version: prompt.version,
-				content: prompt.content,
-				model: SANDBOX_PROMPT_MODEL,
-				isActive: !active,
-				notes: SANDBOX_MARKER
+				campaignId: campaignId,
+				name: 'Sandbox check-in',
+				description: SANDBOX_MARKER,
+				trigger: { kind: 'manual' as const },
+				steps: shippedWorkflowSteps(),
+				report: {
+					titleGuidance: SHIPPED_REPORT.titleGuidance,
+					instructions: SHIPPED_REPORT.instructions,
+					sections: SHIPPED_REPORT.sections
+				},
+				prompts: {
+					responder: { content: RESPONDER_V2.content, model: SANDBOX_PROMPT_MODEL },
+					judge: { content: JUDGE_V1.content, model: SANDBOX_JUDGE_MODEL },
+					drafter: { content: DRAFTER_V1.content, model: SANDBOX_PROMPT_MODEL }
+				},
+				status: 'draft' as const
 			});
-			promptsAdded += 1;
-		}
 
-		// The sandbox runs the NEWEST of each role. On a real org promotion is a
-		// decision somebody makes after replaying conversations against the new
-		// wording; a sandbox has nothing to protect and everything to gain from
-		// testing what would actually ship.
-		for (const newest of latestPromptVersions()) {
-			const rows = await ctx.db
-				.query('promptVersions')
-				.withIndex('by_orgId_and_role_and_isActive', (q) =>
-					q.eq('orgId', orgId).eq('role', newest.role).eq('isActive', true)
-				)
-				.take(10);
-			for (const row of rows) {
-				if (row.version !== newest.version) {
-					await ctx.db.patch('promptVersions', row._id, { isActive: false });
+			const versionId = await ctx.db.insert('workflowVersions', {
+				orgId,
+				workflowId,
+				campaignId: campaignId,
+				version: 1,
+				publishedAt: Date.now(),
+				publishedByUserId: SANDBOX_MARKER,
+				name: 'Sandbox check-in',
+				trigger: { kind: 'manual' as const },
+				steps: shippedWorkflowSteps(),
+				report: {
+					titleGuidance: SHIPPED_REPORT.titleGuidance,
+					instructions: SHIPPED_REPORT.instructions,
+					sections: SHIPPED_REPORT.sections
+				},
+				prompts: {
+					responder: { content: RESPONDER_V2.content, model: SANDBOX_PROMPT_MODEL },
+					judge: { content: JUDGE_V1.content, model: SANDBOX_JUDGE_MODEL },
+					drafter: { content: DRAFTER_V1.content, model: SANDBOX_PROMPT_MODEL }
 				}
-			}
-			const target = await ctx.db
-				.query('promptVersions')
-				.withIndex('by_orgId_and_version', (q) =>
-					q.eq('orgId', orgId).eq('version', newest.version)
-				)
-				.first();
-			if (target && !target.isActive) {
-				await ctx.db.patch('promptVersions', target._id, { isActive: true });
-			}
+			});
+
+			await ctx.db.patch('workflows', workflowId, {
+				status: 'published' as const,
+				currentVersionId: versionId
+			});
+			workflowsAdded = 1;
 		}
 
 		// --- families ---------------------------------------------------------
@@ -287,7 +302,7 @@ export const seedSandbox = internalMutation({
 			orgId,
 			campaignId,
 			campaign: SANDBOX_CAMPAIGN_NAME,
-			promptsAdded,
+			workflowsAdded,
 			families: created
 		};
 	}
@@ -397,8 +412,27 @@ export const openSandboxCheckin = internalMutation({
 			: null;
 		if (open) return { conversationId: open._id, reused: true, record: project.number };
 
-		const prompts = await activePromptVersions(ctx, orgId);
-		const facts = await familyChildFacts(ctx, project);
+		// Resolved exactly the way production resolves it, rather than assembled
+		// by hand. This site used to build its own objective set and name three
+		// prompt versions with no template and no format, so the sandbox was
+		// quietly exercising a configuration no real check-in could have.
+		const version = await activeWorkflowVersion(ctx, campaign._id);
+		if (!version) throw new ConvexError('Seed the sandbox before opening a check-in.');
+
+		const authored = {
+			version: String(version.version),
+			name: version.name,
+			steps: version.steps
+		};
+		const [facts, knownKeys] = await Promise.all([
+			familyChildFacts(ctx, project),
+			knownObjectiveKeys(ctx, {
+				objectives: templateObjectives(authored),
+				project,
+				contactId: undefined
+			})
+		]);
+		const resolved = resolveObjectives(authored, { knownKeys, facts });
 		const now = Date.now();
 
 		const conversationId = await ctx.db.insert('checkinConversations', {
@@ -407,10 +441,8 @@ export const openSandboxCheckin = internalMutation({
 			projectId: project._id,
 			kind: 'checkin' as const,
 			status: 'open' as const,
-			objectives: defaultObjectivesForFamily(facts),
-			responderPromptVersion: prompts.responder.version,
-			drafterPromptVersion: prompts.drafter.version,
-			judgePromptVersion: prompts.judge.version,
+			objectives: resolved,
+			workflowVersionId: version._id,
 			locale: 'en',
 			turnsSpent: 0,
 			openedAt: now
@@ -421,7 +453,10 @@ export const openSandboxCheckin = internalMutation({
 			conversationId,
 			reused: false,
 			record: project.number,
-			objectives: defaultObjectivesForFamily(facts).map((objective) => objective.key)
+			// The set actually frozen onto the row, re-read rather than recomputed:
+			// this used to call the resolver a second time, which could report a
+			// different set from the one the conversation was opened with.
+			objectives: resolved.map((objective) => objective.key)
 		};
 	}
 });

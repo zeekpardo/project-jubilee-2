@@ -31,10 +31,9 @@ import {
 	buildFamilyProfile,
 	conversationChecks,
 	conversationMessages,
-	promptByVersion,
+	workflowVersionById,
 	storedObjectives,
-	truncateForLog,
-	updateFormatByVersion
+	truncateForLog
 } from '../model/checkins';
 import { validateAttributes } from '../model/customFields';
 import {
@@ -43,7 +42,7 @@ import {
 	type CheckinObjective,
 	type ObjectiveState
 } from '../../lib/domain/checkin-objectives';
-import { captureValueFor, type UpdateFormat } from '../../lib/domain/checkin-templates';
+import { captureValueFor } from '../../lib/domain/workflows';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { ObjectiveCheck } from '../../lib/domain/checkin-objectives';
 
@@ -93,19 +92,25 @@ export const loadTurnContext = internalQuery({
 		// of which write all three, so a row without them means something else
 		// went wrong and the right answer is to do nothing rather than guess at an
 		// active version.
-		if (
-			!conversation.responderPromptVersion ||
-			!conversation.drafterPromptVersion ||
-			!conversation.judgePromptVersion
-		) {
+		if (!conversation.workflowVersionId) {
 			return null;
 		}
 
-		const [responder, drafter, judge] = await Promise.all([
-			promptByVersion(ctx, conversation.orgId, conversation.responderPromptVersion),
-			promptByVersion(ctx, conversation.orgId, conversation.drafterPromptVersion),
-			promptByVersion(ctx, conversation.orgId, conversation.judgePromptVersion)
-		]);
+		// ONE read where there were three. The version row holds the prompts, the
+		// report shape and the objectives as one frozen unit, so they cannot be
+		// resolved out of step with each other the way three independent lookups
+		// could.
+		const workflowVersion = await workflowVersionById(
+			ctx,
+			conversation.orgId,
+			conversation.workflowVersionId
+		);
+		if (!workflowVersion) {
+			// The version this run named is gone. Nothing can advance it faithfully,
+			// and inventing a configuration would produce a turn that claims a
+			// provenance it does not have.
+			return null;
+		}
 
 		const transcript: CheckinMessage[] = await conversationMessages(ctx, conversation._id);
 		const priorChecks: ObjectiveCheck[] = await conversationChecks(ctx, conversation._id);
@@ -131,35 +136,37 @@ export const loadTurnContext = internalQuery({
 			// The ONLY name that may reach the drafter, and only if an admin
 			// deliberately set one. Absent means the draft names nobody.
 			publicFirstName: await resolvePublicFirstName(ctx, conversation),
+			// Projected into the engine's three-PromptVersion shape rather than
+			// changing that shape. The engine's contract is "a responder, a judge
+			// and a drafter, each with a version for the log"; where those three
+			// come from is this layer's business, and one frozen row satisfies it
+			// exactly. `version` is the workflow version number, so every logged
+			// turn still names something a reader can look up.
 			prompts: {
 				responder: {
 					role: 'responder' as const,
-					version: responder.version,
-					content: responder.content
+					version: String(workflowVersion.version),
+					content: workflowVersion.prompts.responder.content,
+					model: workflowVersion.prompts.responder.model
 				},
-				drafter: { role: 'drafter' as const, version: drafter.version, content: drafter.content },
-				judge: { role: 'judge' as const, version: judge.version, content: judge.content }
+				drafter: {
+					role: 'drafter' as const,
+					version: String(workflowVersion.version),
+					content: workflowVersion.prompts.drafter.content,
+					model: workflowVersion.prompts.drafter.model
+				},
+				judge: {
+					role: 'judge' as const,
+					version: String(workflowVersion.version),
+					content: workflowVersion.prompts.judge.content,
+					model: workflowVersion.prompts.judge.model
+				}
 			},
-			// The shape this conversation's draft was promised, by version rather
-			// than by "whatever is active now" — a format promoted mid-conversation
-			// must not change the tool the draft is asked for. Undefined when the
-			// conversation predates formats or the row has since been removed; the
-			// engine falls back to the shipped single-section default, which is the
-			// tool it would have been given anyway.
-			format: (await resolveFrozenFormat(ctx, conversation)) ?? undefined
+			format: workflowVersion.report
 		};
 	}
 });
 
-/**
- * The frozen format for a conversation, in the domain shape.
- *
- * Returns null rather than throwing on a missing row, unlike `promptByVersion`.
- * The difference is deliberate: a missing PROMPT means the conversation cannot
- * be run as it was logged, so stopping is right. A missing FORMAT costs only
- * the section layout, and refusing to advance a live check-in with a family
- * over a cosmetic row would be the wrong trade.
- */
 /**
  * Write the answers whose objectives asked to be filed.
  *
@@ -222,35 +229,16 @@ async function applyCapturedValues(
 		try {
 			const contact = await ctx.db.get('contacts', conversation.contactId);
 			if (contact) {
-				const customFields = await validateAttributes(
-					ctx,
-					conversation.orgId,
-					'contact',
-					null,
-					{ ...contact.customFields, ...contactWrites }
-				);
+				const customFields = await validateAttributes(ctx, conversation.orgId, 'contact', null, {
+					...contact.customFields,
+					...contactWrites
+				});
 				await ctx.db.patch('contacts', contact._id, { customFields });
 			}
 		} catch {
 			// See above.
 		}
 	}
-}
-
-async function resolveFrozenFormat(
-	ctx: QueryCtx,
-	conversation: Doc<'checkinConversations'>
-): Promise<UpdateFormat | null> {
-	if (!conversation.updateFormatVersion) return null;
-	const row = await updateFormatByVersion(ctx, conversation.orgId, conversation.updateFormatVersion);
-	if (!row) return null;
-	return {
-		version: row.version,
-		name: row.name,
-		titleGuidance: row.titleGuidance,
-		instructions: row.instructions,
-		sections: row.sections
-	};
 }
 
 async function resolvePublicFirstName(
@@ -322,16 +310,23 @@ export const commitTurn = internalMutation({
 			});
 		}
 
+		// The judge call for this turn, which is what rated everything below.
+		// `?? 'unknown'` rather than a throw: the ratings are already computed and
+		// dropping them to preserve a label would lose the more valuable fact.
+		const judgeVersion =
+			args.records.find((record) => record.role === 'judge')?.promptVersion ?? 'unknown';
+
 		for (const check of args.checks) {
 			await ctx.db.insert('objectiveChecks', {
 				orgId: conversation.orgId,
 				conversationId: conversation._id,
 				turnNumber: args.turnNumber,
 				objective: check.objective,
-				// Present on every conversation the engine runs — see the guard in
-				// `loadTurnContext`. The fallback keeps the write total rather than
-				// dropping a rating on a row that should not exist.
-				promptVersion: conversation.judgePromptVersion ?? 'unknown',
+				// Taken from the judge's own turn record rather than re-read from the
+				// conversation, so a rating is stamped with the version that actually
+				// produced it even if the row were somehow rebound between calls.
+				// Role is implicit: only the judge writes an objectiveChecks row.
+				promptVersion: judgeVersion,
 				rating: check.rating,
 				answer: check.answer,
 				confidence: check.confidence
@@ -354,7 +349,10 @@ export const commitTurn = internalMutation({
 			const states = bestStates(objectives, allChecks);
 			const answers = new Map<string, string | null>();
 			for (const check of allChecks) {
-				const state = classifyCheck(check, objectives.find((o) => o.key === check.objective));
+				const state = classifyCheck(
+					check,
+					objectives.find((o) => o.key === check.objective)
+				);
 				if (state === 'answered') answers.set(check.objective, check.answer);
 			}
 
@@ -365,7 +363,6 @@ export const commitTurn = internalMutation({
 				answers
 			});
 		}
-
 
 		if (args.outbound !== null) {
 			await ctx.db.insert('checkinMessages', {

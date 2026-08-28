@@ -46,9 +46,9 @@ import {
 import {
 	assembleUpdateBody,
 	draftUpdateToolFor,
-	DEFAULT_UPDATE_FORMAT,
+	SHIPPED_REPORT,
 	type UpdateFormat
-} from './checkin-templates';
+} from './workflows';
 
 // ============================================================
 // The seam a real client and a scripted one both fit through
@@ -56,6 +56,17 @@ import {
 
 export interface ResponderRequest {
 	promptVersion: string;
+	/**
+	 * The model this workflow chose for this role.
+	 *
+	 * Carried on the REQUEST rather than read from the environment by the
+	 * client, because "which prompt" and "which model" are one fact: the same
+	 * wording behaves differently on a different tier, so a logged turn that
+	 * named a prompt version but ran on whatever the deployment happened to be
+	 * set to would not be replayable. Optional so the golden set, which has no
+	 * deployment behind it, can leave it unset.
+	 */
+	model?: string;
 	system: string;
 	user: string;
 	tools: ToolDefinition[];
@@ -82,6 +93,8 @@ export interface ResponderResult {
 
 export interface JudgeRequest {
 	promptVersion: string;
+	/** See ResponderRequest.model. */
+	model?: string;
 	system: string;
 	user: string;
 	tool: ToolDefinition;
@@ -234,6 +247,7 @@ export async function advanceCheckin(
 		const user = buildJudgeInput({ objectives: context.objectives, messages });
 		const result = await model.judge({
 			promptVersion: context.prompts.judge.version,
+			model: context.prompts.judge.model,
 			system: context.prompts.judge.content,
 			user,
 			tool: RATE_OBJECTIVES_TOOL
@@ -275,6 +289,7 @@ export async function advanceCheckin(
 		});
 		const result = await model.respond({
 			promptVersion: context.prompts.responder.version,
+			model: context.prompts.responder.model,
 			system: context.prompts.responder.content,
 			user,
 			tools: responderTools('ask')
@@ -294,14 +309,20 @@ export async function advanceCheckin(
 
 	// ---- 4b. Draft ----------------------------------------------------------
 	const user = buildDrafterInput({ messages, publicFirstName: context.publicFirstName });
-	const format = context.format ?? DEFAULT_UPDATE_FORMAT;
+	// A run always carries its frozen report now — `loadTurnContext` reads it off
+	// the workflow version. The fallback survives for the golden set, which
+	// exercises the engine directly without a deployment behind it.
+	const format = context.format ?? SHIPPED_REPORT;
 	const result = await model.respond({
 		promptVersion: context.prompts.drafter.version,
+		model: context.prompts.drafter.model,
 		system: context.prompts.drafter.content,
 		// House style rides on the USER message, not the system prompt. The
 		// drafter prompt is what protects the family being written about, and an
 		// author editing section guidance must not be able to dilute it.
-		user: format.instructions.trim() ? `${user}\n\nHouse style:\n${format.instructions.trim()}` : user,
+		user: format.instructions.trim()
+			? `${user}\n\nHouse style:\n${format.instructions.trim()}`
+			: user,
 		tools: assertDraftTool(draftUpdateToolFor(format))
 	});
 	records.push({

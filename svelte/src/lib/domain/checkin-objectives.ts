@@ -34,7 +34,7 @@ export interface CheckinObjective {
 
 	// ---- Everything below is optional, and absent means "use the constant".
 	// These exist because the objective set is now authored by the org rather
-	// than shipped in this file (see checkin-templates.ts), and an author who
+	// than shipped in this file (see workflows.ts), and an author who
 	// can write the question needs to be able to say how strictly it is marked.
 	// They are carried on the SNAPSHOT, not read from the template at judge
 	// time, for the same reason the wording is: a threshold changed mid-flight

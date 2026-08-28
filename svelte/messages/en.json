@@ -1784,7 +1784,7 @@
 	"workflows_roleHelp_drafter": "Turns a finished conversation into a draft for a member of staff. It has no tool that could publish anything.",
 	"workflows_promptContent": "Prompt",
 	"workflows_promptModel": "Written against",
-	"workflows_promptModelHelp": "The model this wording was tuned for. The same words behave differently on a different tier.",
+	"workflows_promptModelHelp": "The judge runs on every turn and reads only the recent messages, so a cheaper tier pays for itself there. The responder writes to a family, where the failure mode is a clumsy message rather than a slower one.",
 	"workflows_trigger": "Trigger",
 	"workflows_trigger_title": "What starts a run",
 	"workflows_trigger_body": "Whatever starts it, the same guard applies: one open run per record, and a run needs a record to be about.",
@@ -1808,5 +1808,6 @@
 	"workflows_details": "Details",
 	"workflows_restore": "Restore",
 	"workflows_restored": "Workflow restored as a draft.",
-	"workflows_objectiveUntitled": "New objective"
+	"workflows_objectiveUntitled": "New objective",
+	"workflows_modelOption": "{name} — ${input}/${output} per million tokens"
 }

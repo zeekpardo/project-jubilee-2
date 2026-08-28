@@ -3,6 +3,8 @@
 	import { getAccessContext } from '$lib/access';
 	import * as m from '$lib/i18n/messages';
 	import PromptVersionsPanel from '$lib/features/checkins/PromptVersionsPanel.svelte';
+	import CheckinTemplatePanel from '$lib/features/checkins/CheckinTemplatePanel.svelte';
+	import UpdateFormatPanel from '$lib/features/checkins/UpdateFormatPanel.svelte';
 
 	const access = getAccessContext();
 
@@ -16,5 +18,7 @@
 	description={m.checkinPrompts_subtitle()}
 	access={allowed}
 >
+	<CheckinTemplatePanel />
+	<UpdateFormatPanel />
 	<PromptVersionsPanel />
 </PageContainer>

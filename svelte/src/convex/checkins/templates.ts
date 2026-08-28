@@ -117,9 +117,7 @@ export const listTemplates = query({
 		// Filtered in JS rather than by index: the campaign-scoped and org-wide
 		// rows are both wanted here (the editor shows the fallback alongside the
 		// override), and that is a predicate no single index expresses.
-		return rows.filter(
-			(row) => row.campaignId === args.campaignId || row.campaignId === undefined
-		);
+		return rows.filter((row) => row.campaignId === args.campaignId || row.campaignId === undefined);
 	}
 });
 
@@ -135,9 +133,7 @@ export const listUpdateFormats = query({
 			.query('updateFormats')
 			.withIndex('by_orgId', (q) => q.eq('orgId', orgId))
 			.take(100);
-		return rows.filter(
-			(row) => row.campaignId === args.campaignId || row.campaignId === undefined
-		);
+		return rows.filter((row) => row.campaignId === args.campaignId || row.campaignId === undefined);
 	}
 });
 

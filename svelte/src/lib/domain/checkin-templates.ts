@@ -154,9 +154,7 @@ export function captureValueFor(
 	if (!value) return null;
 
 	if (capture.options && capture.options.length > 0) {
-		const match = capture.options.find(
-			(option) => option.toLowerCase() === value.toLowerCase()
-		);
+		const match = capture.options.find((option) => option.toLowerCase() === value.toLowerCase());
 		if (!match) return null;
 		return { entity: capture.entity, fieldKey: capture.fieldKey, value: match };
 	}
@@ -270,10 +268,7 @@ export function draftUpdateToolFor(format: UpdateFormat): GeneratedTool {
  * heading, because a heading with nothing under it reads as a broken page
  * rather than as an honest gap.
  */
-export function assembleUpdateBody(
-	format: UpdateFormat,
-	values: Record<string, string>
-): string {
+export function assembleUpdateBody(format: UpdateFormat, values: Record<string, string>): string {
 	const parts: string[] = [];
 
 	for (const section of format.sections) {

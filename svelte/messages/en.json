@@ -1807,5 +1807,6 @@
 	"workflows_problemReservedSection": "A section cannot be called “title” — that is the drafting tool’s own field.",
 	"workflows_details": "Details",
 	"workflows_restore": "Restore",
-	"workflows_restored": "Workflow restored as a draft."
+	"workflows_restored": "Workflow restored as a draft.",
+	"workflows_objectiveUntitled": "New objective"
 }

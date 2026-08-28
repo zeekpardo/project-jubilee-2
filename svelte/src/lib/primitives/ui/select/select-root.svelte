@@ -1,6 +1,20 @@
 <script lang="ts" generics="T extends CollectionItem = CollectionItem">
 	// Ark's Root, with one default changed.
 	//
+	// TRIGGER ID. Zag finds the element to position against by id —
+	// `getTriggerEl` is `getById('select:<machine id>:trigger')`. A caller that
+	// set `id` directly on `Select.Trigger` overwrote that, the lookup returned
+	// null, floating-ui never ran, and the menu stayed where the positioner's
+	// static style leaves it: `inset: 0 auto auto 0`, the top-left of the page.
+	// Every select in the app did this, which is why it looked like a styling
+	// quirk rather than a broken element reference.
+	//
+	// So the id is owned HERE and handed to the machine through `ids`, which is
+	// zag's supported override. The rendered trigger then really does carry the
+	// caller's id, so `<Label for={id}>` still points at it and the accessible
+	// name survives. `Select.Trigger` refuses an `id` of its own precisely so
+	// this cannot be undone one call site at a time.
+	//
 	// POSITIONING STRATEGY. Zag positions the menu `absolute` by default, which
 	// means its coordinates are resolved against the nearest positioned
 	// ancestor. The app shell wraps every page in
@@ -28,10 +42,14 @@
 	// `onOpenChange`, so it forwards through restProps like everything else.
 	let {
 		positioning = { strategy: 'fixed' as const },
+		triggerId,
+		ids,
 		value = $bindable(),
 		ref = $bindable(null),
 		...restProps
-	}: SelectPrimitive.RootProps<T> = $props();
+	}: SelectPrimitive.RootProps<T> & { triggerId?: string } = $props();
+
+	const mergedIds = $derived(triggerId ? { ...ids, trigger: triggerId } : ids);
 </script>
 
-<SelectPrimitive.Root {positioning} bind:value bind:ref {...restProps} />
+<SelectPrimitive.Root {positioning} ids={mergedIds} bind:value bind:ref {...restProps} />

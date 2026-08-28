@@ -99,6 +99,7 @@
 			<div class="flex flex-col gap-2">
 				<Label for="new-workflow-campaign">{m.workflows_campaign()}</Label>
 				<Select.Root
+					triggerId="new-workflow-campaign"
 					collection={campaignCollection}
 					value={campaignId ? [campaignId] : []}
 					onValueChange={(details: { value: string[] }): void => {
@@ -109,11 +110,7 @@
 						if (next) campaignId = next as Id<'campaigns'>;
 					}}
 				>
-					<Select.Trigger
-						id="new-workflow-campaign"
-						class="w-full"
-						placeholder={m.workflows_campaignPlaceholder()}
-					/>
+					<Select.Trigger class="w-full" placeholder={m.workflows_campaignPlaceholder()} />
 					<Select.Content>
 						{#each campaignCollection.items as option (option.value)}
 							<Select.Item item={option}>

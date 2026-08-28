@@ -3,11 +3,18 @@
 	import ChevronDownIcon from '@lucide/svelte/icons/chevron-down';
 	import { cn, type WithoutChild } from '$lib/primitives/utils.js';
 
+	// `id` is accepted and DELIBERATELY NOT FORWARDED. Setting it on the trigger
+	// overrides the id zag assigned, and zag finds the element it positions the
+	// menu against by that id — so a forwarded id silently breaks placement and
+	// the menu renders at the top of the page. Pass `triggerId` to
+	// `Select.Root` instead; it routes through zag's `ids` override, so the
+	// rendered trigger still carries the id and `<Label for>` still works.
 	let {
 		ref = $bindable(null),
 		class: className,
 		size = 'default',
 		placeholder,
+		id: _id,
 		...restProps
 	}: WithoutChild<SelectPrimitive.TriggerProps> & {
 		size?: 'sm' | 'default';

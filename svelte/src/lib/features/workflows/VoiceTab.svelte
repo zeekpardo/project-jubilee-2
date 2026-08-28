@@ -87,6 +87,7 @@
 				<div class="flex flex-col gap-2">
 					<Label for={`prompt-${role}-model`}>{m.workflows_promptModel()}</Label>
 					<Select.Root
+						triggerId={`prompt-${role}-model`}
 						collection={collections[role]}
 						value={[draft.prompts[role].model]}
 						onValueChange={(details: { value: string[] }) => {
@@ -95,11 +96,7 @@
 							if (details.value[0]) draft.prompts[role].model = details.value[0];
 						}}
 					>
-						<Select.Trigger
-							id={`prompt-${role}-model`}
-							class="w-full"
-							placeholder={m.workflows_promptModel()}
-						/>
+						<Select.Trigger class="w-full" placeholder={m.workflows_promptModel()} />
 						<Select.Content>
 							{#each collections[role].items as option (option.value)}
 								<Select.Item item={option}>

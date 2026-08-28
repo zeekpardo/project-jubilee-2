@@ -228,6 +228,7 @@
 			<div class="flex flex-col gap-2">
 				<Label for={`${id}-capture`}>{m.workflows_capture()}</Label>
 				<Select.Root
+					triggerId={`${id}-capture`}
 					collection={captureCollection}
 					value={[choice]}
 					onValueChange={(details: { value: string[] }): void => {
@@ -235,7 +236,7 @@
 						if (next) setChoice(next as CaptureChoice);
 					}}
 				>
-					<Select.Trigger id={`${id}-capture`} class="w-full" placeholder={m.workflows_capture()} />
+					<Select.Trigger class="w-full" placeholder={m.workflows_capture()} />
 					<Select.Content>
 						{#each captureCollection.items as option (option.value)}
 							<Select.Item item={option}>
@@ -253,6 +254,7 @@
 						<p class="text-muted-foreground text-sm">{m.workflows_captureNoFields()}</p>
 					{:else}
 						<Select.Root
+							triggerId={`${id}-field`}
 							collection={fieldCollection}
 							value={captureFieldKey ? [captureFieldKey] : []}
 							onValueChange={(details: { value: string[] }): void => {
@@ -260,11 +262,7 @@
 								if (next) setFieldKey(next);
 							}}
 						>
-							<Select.Trigger
-								id={`${id}-field`}
-								class="w-full"
-								placeholder={m.workflows_captureFieldPlaceholder()}
-							/>
+							<Select.Trigger class="w-full" placeholder={m.workflows_captureFieldPlaceholder()} />
 							<Select.Content>
 								{#each fieldCollection.items as option (option.value)}
 									<Select.Item item={option}>

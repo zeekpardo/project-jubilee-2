@@ -66,6 +66,7 @@
 		<div class="flex flex-col gap-2">
 			<Label for="trigger-kind">{m.workflows_trigger()}</Label>
 			<Select.Root
+				triggerId="trigger-kind"
 				collection={kindCollection}
 				value={[draft.trigger.kind]}
 				onValueChange={(details: { value: string[] }): void => {
@@ -73,7 +74,7 @@
 					if (next) setKind(next as WorkflowTriggerKind);
 				}}
 			>
-				<Select.Trigger id="trigger-kind" class="w-full" placeholder={m.workflows_trigger()} />
+				<Select.Trigger class="w-full" placeholder={m.workflows_trigger()} />
 				<Select.Content>
 					{#each kindCollection.items as option (option.value)}
 						<Select.Item item={option}>
@@ -92,6 +93,7 @@
 					<p class="text-muted-foreground text-sm">{m.workflows_trigger_noStages()}</p>
 				{:else}
 					<Select.Root
+						triggerId="trigger-stage"
 						collection={stageCollection}
 						value={stageKey ? [stageKey] : []}
 						onValueChange={(details: { value: string[] }): void => {
@@ -99,11 +101,7 @@
 							if (next && draft.trigger.kind === 'stage_change') draft.trigger.stageKey = next;
 						}}
 					>
-						<Select.Trigger
-							id="trigger-stage"
-							class="w-full"
-							placeholder={m.workflows_trigger_stagePlaceholder()}
-						/>
+						<Select.Trigger class="w-full" placeholder={m.workflows_trigger_stagePlaceholder()} />
 						<Select.Content>
 							{#each stageCollection.items as option (option.value)}
 								<Select.Item item={option}>

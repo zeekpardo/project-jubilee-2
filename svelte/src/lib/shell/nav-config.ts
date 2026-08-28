@@ -17,6 +17,8 @@ import CreditCard from '@lucide/svelte/icons/credit-card';
 import ListChecks from '@lucide/svelte/icons/list-checks';
 import Plane from '@lucide/svelte/icons/plane';
 import UsersRound from '@lucide/svelte/icons/users-round';
+import MessagesSquare from '@lucide/svelte/icons/messages-square';
+import BotMessageSquare from '@lucide/svelte/icons/bot-message-square';
 
 export type NavItem = {
 	key: string;
@@ -51,6 +53,15 @@ export const CAMPAIGN_NAV: NavItem[] = [
 	// work, gated on projects:read like the records they visit. See
 	// PLAN-trips.md §9.
 	{ key: 'trips', href: '/app/trips', icon: Plane, capability: 'projects:read' },
+	// "Messages" rather than "Check-ins": the surface holds conversations with
+	// families, and an AI check-in is one KIND of conversation it can open rather
+	// than the name of the place. The code namespace underneath is still
+	// `checkins` — that is what the engine is, and it is not user-facing.
+	//
+	// No capability of its own, for the same reason trips have none: a
+	// conversation is work on a record, gated on the record. See
+	// PLAN-ai-checkin.md §8.
+	{ key: 'messages', href: '/app/messages', icon: MessagesSquare, capability: 'projects:read' },
 	{ key: 'campaignContacts', href: '/app/contacts', icon: Contact, capability: 'contacts:read' },
 	{ key: 'budget', href: '/app/budget', icon: Wallet, capability: 'money:read' },
 	// Campaign settings, so campaign:edit rather than settings:manage — a
@@ -109,6 +120,15 @@ export const ADMIN_NAV: NavItem[] = [
 		key: 'memberSides',
 		href: '/app/admin/member-sides',
 		icon: UsersRound,
+		capability: 'settings:manage'
+	},
+	// The words a machine says to a family on the charity's behalf are an
+	// org-level decision, which is why this is settings:manage and sits here
+	// rather than in the campaign workspace beside the conversations it governs.
+	{
+		key: 'checkinPrompts',
+		href: '/app/admin/checkin-prompts',
+		icon: BotMessageSquare,
 		capability: 'settings:manage'
 	}
 ];

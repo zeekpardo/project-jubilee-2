@@ -45,7 +45,7 @@ import {
 	templateObjectives,
 	DEFAULT_JUDGE_MODEL,
 	SHIPPED_REPORT,
-	shippedWorkflowSteps
+	type CheckinStep
 } from '../../lib/domain/workflows';
 import { DRAFTER_V1, JUDGE_V1, RESPONDER_V2 } from '../../lib/domain/checkin-prompts';
 
@@ -129,6 +129,79 @@ async function resolveOrgId(ctx: MutationCtx, given: string | undefined): Promis
 }
 
 /**
+ * What the sandbox check-in asks.
+ *
+ * Its own set rather than `shippedWorkflowSteps()`, which stays as the thing a
+ * NEW workflow is created with. The sandbox is where the engine is exercised,
+ * so it carries the fuller conversation.
+ *
+ * EVERY `description` DESCRIBES AN ANSWER, NOT A QUESTION. It is the only text
+ * the judge is given about an objective — no family profile, no history beyond
+ * the recent turns — so "When were you rescued?" would tell it nothing about
+ * when to mark the thing answered. The responder turns these into questions in
+ * its own words; the judge grades against these.
+ */
+const SANDBOX_OBJECTIVES: CheckinStep[] = [
+	{
+		key: 'checkin',
+		title: 'Life since the kiln',
+		objectives: [
+			{
+				key: 'rescue_date',
+				label: 'When they left',
+				description:
+					'When the family left the kiln. A satisfying answer gives a time — a month, a season, a year, or how long ago it was. An exact date is not needed and should not be pressed for.'
+			},
+			{
+				key: 'wellbeing_now',
+				label: 'How they are now',
+				description:
+					'How the family is doing at the moment: health, housing, money, spirits. A satisfying answer goes past a bare greeting and says something about how life is actually going.'
+			},
+			{
+				key: 'since_rescue',
+				label: 'What has happened since',
+				description:
+					'What has changed for the family since they left. A satisfying answer names at least one concrete thing that happened — a move, a job, a birth, a loss, a milestone — rather than a general "things are fine".'
+			},
+			{
+				key: 'adapting',
+				label: 'Adapting',
+				description:
+					'How the family has found adjusting to life outside the kiln. A satisfying answer says something about what has been hard or unfamiliar, or says plainly that it has been easier than they expected.'
+			},
+			{
+				key: 'kids_update',
+				label: 'Children',
+				// The household rule, as data. A family with no children is not asked
+				// after children who are not there.
+				requires: ['hasChildren'],
+				description:
+					'How the children are doing — health, school, growth, anything the family wants to share about them. A satisfying answer says something specific about at least one child.'
+			},
+			{
+				key: 'work_conditions',
+				label: 'Work life',
+				description:
+					'What the work is like day to day: the hours, how they are treated, whether it is steady, whether they are paid when they should be. A satisfying answer describes the experience of the work, not only that work exists.'
+			},
+			{
+				key: 'first_experience',
+				label: 'Something new',
+				description:
+					'Something the family has done, seen or had for the first time since being freed. A satisfying answer names one specific thing. "Nothing yet" is a complete and acceptable answer — do not treat it as unanswered.'
+			},
+			{
+				key: 'job_status',
+				label: 'Work',
+				description:
+					'What work the adults in the family are doing now. A satisfying answer names the work, or says plainly that nobody is working yet.'
+			}
+		]
+	}
+];
+
+/**
  * Create the sandbox. Idempotent by campaign slug — running it twice adds
  * nothing and returns what is already there, so it is safe to re-run when you
  * cannot remember whether you did.
@@ -194,7 +267,7 @@ export const seedSandbox = internalMutation({
 				name: 'Sandbox check-in',
 				description: SANDBOX_MARKER,
 				trigger: { kind: 'manual' as const },
-				steps: shippedWorkflowSteps(),
+				steps: SANDBOX_OBJECTIVES,
 				report: {
 					titleGuidance: SHIPPED_REPORT.titleGuidance,
 					instructions: SHIPPED_REPORT.instructions,
@@ -217,7 +290,7 @@ export const seedSandbox = internalMutation({
 				publishedByUserId: SANDBOX_MARKER,
 				name: 'Sandbox check-in',
 				trigger: { kind: 'manual' as const },
-				steps: shippedWorkflowSteps(),
+				steps: SANDBOX_OBJECTIVES,
 				report: {
 					titleGuidance: SHIPPED_REPORT.titleGuidance,
 					instructions: SHIPPED_REPORT.instructions,
@@ -350,7 +423,32 @@ export const wipeSandbox = internalMutation({
 			await deleteConversationCascade(ctx, conversation._id);
 		}
 
-		return { removed: projects.length, campaignId: campaign._id };
+		// The workflow and its published versions. Not reached by anything above:
+		// the campaign SURVIVES a wipe, so `deleteCampaignCascade` — which does
+		// sweep these — never runs. Without this, a wipe followed by a reseed
+		// silently keeps the old objective set, because seeding is idempotent on
+		// "does a workflow already exist" and would find the stale one.
+		const versions = await ctx.db
+			.query('workflowVersions')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
+			.take(100);
+		for (const version of versions) {
+			await ctx.db.delete('workflowVersions', version._id);
+		}
+
+		const sandboxWorkflows = await ctx.db
+			.query('workflows')
+			.withIndex('by_campaignId', (q) => q.eq('campaignId', campaign._id))
+			.take(100);
+		for (const workflow of sandboxWorkflows) {
+			await ctx.db.delete('workflows', workflow._id);
+		}
+
+		return {
+			removed: projects.length,
+			workflowsRemoved: sandboxWorkflows.length,
+			campaignId: campaign._id
+		};
 	}
 });
 

@@ -27,144 +27,89 @@
 import { ConvexError, v } from 'convex/values';
 import { mutation } from '../functions';
 import type { MutationCtx } from '../_generated/server';
-import type { Id } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import { internal } from '../_generated/api';
 import { requireCapability } from '../model/access';
 import {
-	activePromptVersions,
+	activeWorkflowVersion,
 	deleteConversationCascade,
 	familyChildFacts,
 	isCheckin,
+	knownObjectiveKeys,
 	recordInboundMessage,
 	requireConversation
 } from '../model/checkins';
-import { defaultObjectivesForFamily } from '../../lib/domain/checkin-objectives';
-import { SHIPPED_PROMPT_VERSIONS } from '../../lib/domain/checkin-prompts';
-
-/**
- * Insert every prompt version this build ships, and make each the active one
- * for its role if the org has none.
- *
- * Idempotent by version string, and APPEND-ONLY: a version that already exists
- * is left exactly as it is, never patched to match the source. That is the
- * whole contract — the file in the repo is the current draft, the row in the
- * table is what a conversation was actually run against, and when they differ
- * the row wins. Editing a live prompt is done by adding `responder-2`.
- */
-export const seedPromptVersions = mutation({
-	args: { model: v.string() },
-	handler: async (ctx, args) => {
-		const { orgId } = await requireCapability(ctx, 'settings:manage');
-
-		let inserted = 0;
-		for (const prompt of SHIPPED_PROMPT_VERSIONS) {
-			const existing = await ctx.db
-				.query('promptVersions')
-				.withIndex('by_orgId_and_version', (q) =>
-					q.eq('orgId', orgId).eq('version', prompt.version)
-				)
-				.first();
-			if (existing) continue;
-
-			const active = await ctx.db
-				.query('promptVersions')
-				.withIndex('by_orgId_and_role_and_isActive', (q) =>
-					q.eq('orgId', orgId).eq('role', prompt.role).eq('isActive', true)
-				)
-				.first();
-
-			await ctx.db.insert('promptVersions', {
-				orgId,
-				role: prompt.role,
-				version: prompt.version,
-				content: prompt.content,
-				model: args.model,
-				isActive: !active,
-				notes: 'Seeded from the shipped prompt set'
-			});
-			inserted += 1;
-		}
-		return inserted;
-	}
-});
-
-/**
- * Add a new prompt version. There is no update mutation and there never will
- * be — see PLAN-ai-checkin.md §2.
- */
-export const createPromptVersion = mutation({
-	args: {
-		role: v.union(v.literal('responder'), v.literal('drafter'), v.literal('judge')),
-		version: v.string(),
-		content: v.string(),
-		model: v.string(),
-		notes: v.optional(v.string())
-	},
-	handler: async (ctx, args) => {
-		const { orgId } = await requireCapability(ctx, 'settings:manage');
-
-		const version = args.version.trim();
-		if (!version) throw new ConvexError('A prompt version needs a version name');
-		if (!args.content.trim()) throw new ConvexError('A prompt version needs content');
-
-		const clash = await ctx.db
-			.query('promptVersions')
-			.withIndex('by_orgId_and_version', (q) => q.eq('orgId', orgId).eq('version', version))
-			.first();
-		if (clash) throw new ConvexError(`Prompt version ${version} already exists`);
-
-		// Inserted INACTIVE. Writing a new prompt and putting it in front of
-		// families are two decisions, and §5 says the second one comes after
-		// replaying real logged conversations against it.
-		return await ctx.db.insert('promptVersions', {
-			orgId,
-			role: args.role,
-			version,
-			content: args.content,
-			model: args.model,
-			isActive: false,
-			notes: args.notes
-		});
-	}
-});
-
-/** Promote a version. Exactly one active per (org, role), enforced here. */
-export const activatePromptVersion = mutation({
-	args: { promptVersionId: v.id('promptVersions') },
-	handler: async (ctx, args) => {
-		const { orgId } = await requireCapability(ctx, 'settings:manage');
-
-		const prompt = await ctx.db.get('promptVersions', args.promptVersionId);
-		if (!prompt || prompt.orgId !== orgId) throw new ConvexError('Prompt version not found');
-
-		const others = await ctx.db
-			.query('promptVersions')
-			.withIndex('by_orgId_and_role_and_isActive', (q) =>
-				q.eq('orgId', orgId).eq('role', prompt.role).eq('isActive', true)
-			)
-			.take(20);
-		for (const other of others) {
-			if (other._id === prompt._id) continue;
-			await ctx.db.patch('promptVersions', other._id, { isActive: false });
-		}
-
-		// Conversations already open keep the version they froze at open — they
-		// name it on their own row, and nothing here reads back through this table
-		// to find it. A family does not get a different voice mid-conversation
-		// because an admin promoted a prompt while they were typing.
-		await ctx.db.patch('promptVersions', prompt._id, { isActive: true });
-		return prompt._id;
-	}
-});
+import type { CheckinObjective } from '../../lib/domain/checkin-objectives';
+import {
+	resolveObjectives,
+	templateObjectives,
+	type CheckinTemplate
+} from '../../lib/domain/workflows';
 
 /**
  * Open a check-in with one family and send the first message.
  *
- * The objective set and the three prompt versions are FROZEN onto the row here.
+ * The objective set and the workflow version are FROZEN onto the row here.
  * Both are snapshots for the same reason `budgets` snapshot a cost template:
  * the log is also the replay set, and a conversation whose objectives or
  * wording could change underneath it is not replayable.
  */
+/**
+ * The objective set for one run, and the workflow version it is bound to.
+ *
+ * REFUSES when the campaign has no published workflow, where the old code fell
+ * back to a hardcoded objective set. That fallback existed because objectives
+ * used to be a constant in this repo and a campaign could not have authored
+ * anything; now that a workflow is the only description of what to ask, running
+ * without one would mean guessing what an org wanted said to a family. An
+ * explicit refusal naming the campaign is the honest failure.
+ *
+ * The household rule the fallback used to carry has not been dropped — it moved
+ * into the shipped workflow as `requires` on the two child objectives, which is
+ * why `facts` is still read here and passed to the resolver.
+ */
+async function resolveCheckinSetup(
+	ctx: MutationCtx,
+	input: {
+		orgId: string;
+		campaignId: Id<'campaigns'>;
+		project: Doc<'projects'>;
+		contactId: Id<'contacts'> | undefined;
+	}
+): Promise<{ objectives: CheckinObjective[]; workflowVersionId: Id<'workflowVersions'> }> {
+	const version = await activeWorkflowVersion(ctx, input.campaignId);
+	if (!version) {
+		throw new ConvexError(
+			'This campaign has no published workflow. Publish one before starting a check-in.'
+		);
+	}
+
+	const authored: CheckinTemplate = {
+		version: String(version.version),
+		name: version.name,
+		steps: version.steps
+	};
+
+	const [facts, knownKeys] = await Promise.all([
+		familyChildFacts(ctx, input.project),
+		knownObjectiveKeys(ctx, {
+			objectives: templateObjectives(authored),
+			project: input.project,
+			contactId: input.contactId
+		})
+	]);
+
+	const objectives = resolveObjectives(authored, { knownKeys, facts });
+	if (objectives.length === 0) {
+		// Every objective was filtered out — a workflow whose questions all
+		// require facts this family does not have. Drafting from a conversation
+		// that asks nothing would produce a post about nobody.
+		throw new ConvexError('No objectives apply to this record under the published workflow.');
+	}
+
+	return { objectives, workflowVersionId: version._id };
+}
+
 export const startCheckin = mutation({
 	args: {
 		projectId: v.id('projects'),
@@ -187,8 +132,12 @@ export const startCheckin = mutation({
 
 		await requireNoOpenConversation(ctx, { projectId: project._id, contactId: args.contactId });
 
-		const prompts = await activePromptVersions(ctx, orgId);
-		const facts = await familyChildFacts(ctx, project);
+		const setup = await resolveCheckinSetup(ctx, {
+			orgId,
+			campaignId: project.campaignId,
+			project,
+			contactId: args.contactId
+		});
 
 		const conversationId = await ctx.db.insert('checkinConversations', {
 			orgId,
@@ -197,10 +146,8 @@ export const startCheckin = mutation({
 			contactId: args.contactId,
 			kind: 'checkin' as const,
 			status: 'open' as const,
-			objectives: defaultObjectivesForFamily(facts),
-			responderPromptVersion: prompts.responder.version,
-			drafterPromptVersion: prompts.drafter.version,
-			judgePromptVersion: prompts.judge.version,
+			objectives: setup.objectives,
+			workflowVersionId: setup.workflowVersionId,
 			locale: args.locale?.trim() || 'en',
 			turnsSpent: 0,
 			openedAt: args.now,
@@ -405,15 +352,17 @@ export const startCheckinOnConversation = mutation({
 		const project = await ctx.db.get('projects', conversation.projectId);
 		if (!project || project.orgId !== orgId) throw new ConvexError('Record not found');
 
-		const prompts = await activePromptVersions(ctx, orgId);
-		const facts = await familyChildFacts(ctx, project);
+		const setup = await resolveCheckinSetup(ctx, {
+			orgId,
+			campaignId: project.campaignId,
+			project,
+			contactId: conversation.contactId
+		});
 
 		await ctx.db.patch('checkinConversations', conversation._id, {
 			kind: 'checkin' as const,
-			objectives: defaultObjectivesForFamily(facts),
-			responderPromptVersion: prompts.responder.version,
-			drafterPromptVersion: prompts.drafter.version,
-			judgePromptVersion: prompts.judge.version
+			objectives: setup.objectives,
+			workflowVersionId: setup.workflowVersionId
 		});
 
 		await ctx.scheduler.runAfter(0, internal.checkins.engine.advanceTurn, {

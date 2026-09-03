@@ -30,6 +30,8 @@ export interface PromptVersion {
 	role: PromptRole;
 	version: string;
 	content: string;
+	/** The model this wording is to be run on. Absent for the shipped constants. */
+	model?: string;
 }
 
 // ============================================================
@@ -166,6 +168,24 @@ const FORBIDDEN_TOOL_NAMES = ['publish_update', 'publish', 'send_update', 'send_
  * publish — which is worse than a system that fails loudly, because nobody
  * would find out until the day the filter was removed.
  */
+export function assertDraftTool(tool: ToolDefinition): ToolDefinition[] {
+	// A GENERATED tool goes through the same gate a shipped one does. The format
+	// an org authors decides the tool's PROPERTIES; it must never be able to
+	// decide its NAME, or §3.4's guarantee would be one text field away from
+	// being edited around. `draftUpdateToolFor` hardcodes the name and this
+	// re-checks it, because the two live in different files and only one of them
+	// is obviously about safety.
+	if (FORBIDDEN_TOOL_NAMES.includes(tool.name)) {
+		throw new Error(`A check-in model may never be given the ${tool.name} tool`);
+	}
+	if (tool.name !== DRAFT_UPDATE_TOOL.name) {
+		throw new Error(
+			`A generated draft tool must be called ${DRAFT_UPDATE_TOOL.name}, not ${tool.name}`
+		);
+	}
+	return [tool];
+}
+
 export function responderTools(stage: 'ask' | 'draft'): ToolDefinition[] {
 	const tools = stage === 'draft' ? [DRAFT_UPDATE_TOOL] : [];
 	for (const tool of tools) {
@@ -314,24 +334,16 @@ export function buildDrafterInput(input: {
 	return `${naming}\n\nTranscript:\n${transcript}`;
 }
 
-/** Every prompt version this build ships, for seeding the append-only table. */
-export const SHIPPED_PROMPT_VERSIONS: PromptVersion[] = [
-	RESPONDER_V1,
-	RESPONDER_V2,
-	DRAFTER_V1,
-	JUDGE_V1
-];
-
 /**
- * The newest shipped version of each role — what a fresh install should run.
- *
- * Deliberately NOT what `seedPromptVersions` activates on an org that already
- * has one: promoting a prompt in front of families is a decision somebody
- * makes, after replaying real conversations against it (§5). The sandbox seed
- * uses this because a sandbox has nothing to protect.
+ * The wording this build ships, and the content a new workflow is created
+ * with. No longer a versioned table: a workflow owns its three prompts, so
+ * `responder-2` is now "the responder text a workflow started from and its
+ * author may have since edited". The constants stay because they are the most
+ * carefully considered strings in this feature and there should be exactly one
+ * home for them.
  */
-export function latestPromptVersions(): PromptVersion[] {
-	const byRole = new globalThis.Map<PromptRole, PromptVersion>();
-	for (const prompt of SHIPPED_PROMPT_VERSIONS) byRole.set(prompt.role, prompt);
-	return [...byRole.values()];
-}
+export const SHIPPED_PROMPTS = {
+	responder: RESPONDER_V2,
+	judge: JUDGE_V1,
+	drafter: DRAFTER_V1
+};

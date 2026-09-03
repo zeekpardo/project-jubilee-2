@@ -433,6 +433,33 @@ export async function deleteCampaignCascade(
 		await ctx.db.delete('costTemplates', cost._id);
 	}
 
+	// The campaign's workflows and every version they published. Nothing else
+	// reaches these and nothing else could: a workflow belongs to the campaign,
+	// and a run holds an id INTO a version rather than the other way round — so
+	// without this sweep both outlive the campaign that owned them. The old
+	// checkinTemplates/updateFormats rows had exactly this gap and it went
+	// unnoticed because nothing ever read them back.
+	//
+	// Versions go with the workflow rather than being kept for replay: the runs
+	// that named them are deleted a few lines above, by the conversation cascade
+	// this same function already ran. A version whose every run is gone is not
+	// an audit trail, it is a row nobody can reach.
+	const workflowVersions = await ctx.db
+		.query('workflowVersions')
+		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const version of workflowVersions) {
+		await ctx.db.delete('workflowVersions', version._id);
+	}
+
+	const campaignWorkflows = await ctx.db
+		.query('workflows')
+		.withIndex('by_campaignId', (q) => q.eq('campaignId', campaignId))
+		.collect();
+	for (const workflow of campaignWorkflows) {
+		await ctx.db.delete('workflows', workflow._id);
+	}
+
 	const taskTemplates = await ctx.db
 		.query('taskTemplates')
 		.withIndex('by_campaignId_and_version', (q) => q.eq('campaignId', campaignId))

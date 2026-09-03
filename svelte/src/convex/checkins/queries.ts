@@ -243,25 +243,16 @@ export const listEscalations = query({
 	}
 });
 
-/** The append-only prompt log, newest first. */
-export const listPromptVersions = query({
-	args: {},
-	handler: async (ctx) => {
-		const orgId = await readableOrgId(ctx, 'settings:manage');
-		if (!orgId) return [];
-		return await ctx.db
-			.query('promptVersions')
-			.withIndex('by_orgId', (q) => q.eq('orgId', orgId))
-			.order('desc')
-			.take(LIST_MAX);
-	}
-});
-
 /**
  * Whether this deployment can run a check-in at all.
  *
  * Reports rather than throws, so an unconfigured deployment renders "not
  * connected" — the same shape the Stripe admin surface has.
+ *
+ * `publishedWorkflows` replaces the three per-role prompt versions this used to
+ * report. Those were three facts because prompts were three independently
+ * promotable rows; a workflow carries its own voice, so the only question left
+ * is whether anything is published to run.
  */
 export const checkinSettings = query({
 	args: {},
@@ -269,16 +260,14 @@ export const checkinSettings = query({
 		const orgId = await readableOrgId(ctx, 'projects:read');
 		if (!orgId) return null;
 
-		const prompts = await ctx.db
-			.query('promptVersions')
+		const published = await ctx.db
+			.query('workflows')
 			.withIndex('by_orgId', (q) => q.eq('orgId', orgId))
 			.take(LIST_MAX);
 
 		return {
 			apiKeyConfigured: checkinsConfigured(),
-			activeResponder: prompts.find((p) => p.role === 'responder' && p.isActive)?.version ?? null,
-			activeDrafter: prompts.find((p) => p.role === 'drafter' && p.isActive)?.version ?? null,
-			activeJudge: prompts.find((p) => p.role === 'judge' && p.isActive)?.version ?? null
+			publishedWorkflows: published.filter((workflow) => workflow.status === 'published').length
 		};
 	}
 });

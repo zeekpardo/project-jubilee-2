@@ -57,7 +57,12 @@ export const advanceTurn = internalAction({
 					turnsSpent: context.turnsSpent,
 					profile: context.profile,
 					publicFirstName: context.publicFirstName,
-					prompts: context.prompts
+					prompts: context.prompts,
+					// Forwarded, and it was not. `loadTurnContext` has resolved the
+					// frozen format since formats shipped, and dropping it here meant
+					// `advanceCheckin` fell through to DEFAULT_UPDATE_FORMAT on every
+					// draft — an authored report shape that silently never applied.
+					format: context.format
 				},
 				anthropicCheckinModel()
 			);

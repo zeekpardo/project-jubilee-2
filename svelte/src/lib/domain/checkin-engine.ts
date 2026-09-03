@@ -37,11 +37,18 @@ import {
 	buildJudgeInput,
 	buildResponderInput,
 	responderTools,
+	assertDraftTool,
 	RATE_OBJECTIVES_TOOL,
 	type CheckinMessage,
 	type PromptVersion,
 	type ToolDefinition
 } from './checkin-prompts';
+import {
+	assembleUpdateBody,
+	draftUpdateToolFor,
+	SHIPPED_REPORT,
+	type UpdateFormat
+} from './workflows';
 
 // ============================================================
 // The seam a real client and a scripted one both fit through
@@ -49,6 +56,17 @@ import {
 
 export interface ResponderRequest {
 	promptVersion: string;
+	/**
+	 * The model this workflow chose for this role.
+	 *
+	 * Carried on the REQUEST rather than read from the environment by the
+	 * client, because "which prompt" and "which model" are one fact: the same
+	 * wording behaves differently on a different tier, so a logged turn that
+	 * named a prompt version but ran on whatever the deployment happened to be
+	 * set to would not be replayable. Optional so the golden set, which has no
+	 * deployment behind it, can leave it unset.
+	 */
+	model?: string;
 	system: string;
 	user: string;
 	tools: ToolDefinition[];
@@ -59,8 +77,15 @@ export interface ResponderResult {
 	model: string;
 	/** The message to send. Null when the model only called a tool. */
 	text: string | null;
-	/** Present only when `draft_update` was called. */
-	draft: { title: string; body: string } | null;
+	/**
+	 * Present only when `draft_update` was called.
+	 *
+	 * `sections` is the tool input minus the title — keyed by whatever the
+	 * active format declared, because the tool's schema was generated from it.
+	 * The engine folds it into one markdown body; the client does not, because
+	 * the client must not need to know what a format is.
+	 */
+	draft: { title: string; sections: Record<string, string> } | null;
 	latencyMs: number;
 	inputTokens?: number;
 	outputTokens?: number;
@@ -68,6 +93,8 @@ export interface ResponderResult {
 
 export interface JudgeRequest {
 	promptVersion: string;
+	/** See ResponderRequest.model. */
+	model?: string;
 	system: string;
 	user: string;
 	tool: ToolDefinition;
@@ -137,6 +164,13 @@ export interface CheckinContext {
 	/** Only ever a `publicFirstName`; absent means the draft names nobody. */
 	publicFirstName?: string;
 	prompts: { responder: PromptVersion; drafter: PromptVersion; judge: PromptVersion };
+	/**
+	 * The shape this conversation's draft is asked for, frozen at open like the
+	 * prompts. Absent means the org has authored none and the shipped
+	 * single-section default applies — which produces exactly the tool this
+	 * engine used before formats existed.
+	 */
+	format?: UpdateFormat;
 }
 
 /**
@@ -213,6 +247,7 @@ export async function advanceCheckin(
 		const user = buildJudgeInput({ objectives: context.objectives, messages });
 		const result = await model.judge({
 			promptVersion: context.prompts.judge.version,
+			model: context.prompts.judge.model,
 			system: context.prompts.judge.content,
 			user,
 			tool: RATE_OBJECTIVES_TOOL
@@ -254,6 +289,7 @@ export async function advanceCheckin(
 		});
 		const result = await model.respond({
 			promptVersion: context.prompts.responder.version,
+			model: context.prompts.responder.model,
 			system: context.prompts.responder.content,
 			user,
 			tools: responderTools('ask')
@@ -273,11 +309,21 @@ export async function advanceCheckin(
 
 	// ---- 4b. Draft ----------------------------------------------------------
 	const user = buildDrafterInput({ messages, publicFirstName: context.publicFirstName });
+	// A run always carries its frozen report now — `loadTurnContext` reads it off
+	// the workflow version. The fallback survives for the golden set, which
+	// exercises the engine directly without a deployment behind it.
+	const format = context.format ?? SHIPPED_REPORT;
 	const result = await model.respond({
 		promptVersion: context.prompts.drafter.version,
+		model: context.prompts.drafter.model,
 		system: context.prompts.drafter.content,
-		user,
-		tools: responderTools('draft')
+		// House style rides on the USER message, not the system prompt. The
+		// drafter prompt is what protects the family being written about, and an
+		// author editing section guidance must not be able to dilute it.
+		user: format.instructions.trim()
+			? `${user}\n\nHouse style:\n${format.instructions.trim()}`
+			: user,
+		tools: assertDraftTool(draftUpdateToolFor(format))
 	});
 	records.push({
 		role: 'responder',
@@ -306,5 +352,19 @@ export async function advanceCheckin(
 		};
 	}
 
-	return { escalation: null, records, checks, decision, outbound: null, draft: result.draft };
+	// The sections the format asked for, folded into the one markdown body
+	// `updates.body` stores. Assembling HERE rather than in the client is what
+	// keeps the client ignorant of formats: it hands back whatever the tool was
+	// called with, and this decides what that means.
+	return {
+		escalation: null,
+		records,
+		checks,
+		decision,
+		outbound: null,
+		draft: {
+			title: result.draft.title,
+			body: assembleUpdateBody(format, result.draft.sections)
+		}
+	};
 }

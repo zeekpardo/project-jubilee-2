@@ -24,7 +24,7 @@ const ITEM_LABELS: Record<string, () => string> = {
 	donations: m.nav_donations,
 	memberSides: m.nav_memberSides,
 	messages: m.nav_messages,
-	checkinPrompts: m.nav_checkinPrompts
+	workflows: m.workflows_title
 };
 
 export function sectionLabel(key: string): string {

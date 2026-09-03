@@ -126,8 +126,8 @@ export const ADMIN_NAV: NavItem[] = [
 	// org-level decision, which is why this is settings:manage and sits here
 	// rather than in the campaign workspace beside the conversations it governs.
 	{
-		key: 'checkinPrompts',
-		href: '/app/admin/checkin-prompts',
+		key: 'workflows',
+		href: '/app/admin/workflows',
 		icon: BotMessageSquare,
 		capability: 'settings:manage'
 	}

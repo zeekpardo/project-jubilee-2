@@ -298,6 +298,7 @@
 			<div class="flex flex-col gap-2">
 				<Label for="new-message-kind">{m.messages_kind()}</Label>
 				<Select.Root
+					triggerId="new-message-kind"
 					collection={kindCollection}
 					value={[kind]}
 					onValueChange={(details: { value: string[] }): void => {
@@ -305,11 +306,7 @@
 						if (next) changeKind(next as CheckinKind);
 					}}
 				>
-					<Select.Trigger
-						id="new-message-kind"
-						class="w-full"
-						placeholder={m.messages_kindDirect()}
-					/>
+					<Select.Trigger class="w-full" placeholder={m.messages_kindDirect()} />
 					<Select.Content>
 						{#each kindCollection.items as option (option.value)}
 							<Select.Item item={option}>
@@ -327,6 +324,7 @@
 				<div class="flex flex-col gap-2">
 					<Label for="new-message-target">{m.messages_record()}</Label>
 					<Select.Root
+						triggerId="new-message-target"
 						collection={targetCollection}
 						value={[target]}
 						onValueChange={(details: { value: string[] }): void => {
@@ -338,7 +336,6 @@
 						}}
 					>
 						<Select.Trigger
-							id="new-message-target"
 							class="w-full"
 							placeholder={kind === 'checkin'
 								? m.messages_recordPlaceholder()
@@ -385,17 +382,14 @@
 				<div class="flex flex-col gap-2">
 					<Label for="new-message-contact">{m.checkinStart_contact()}</Label>
 					<Select.Root
+						triggerId="new-message-contact"
 						collection={contactCollection}
 						value={[contactId]}
 						onValueChange={(details: { value: string[] }): void => {
 							contactId = details.value[0] ?? NO_CONTACT;
 						}}
 					>
-						<Select.Trigger
-							id="new-message-contact"
-							class="w-full"
-							placeholder={m.projects_selectContact()}
-						/>
+						<Select.Trigger class="w-full" placeholder={m.projects_selectContact()} />
 						<Select.Content>
 							{#each contactCollection.items as option (option.value)}
 								<Select.Item item={option}>
@@ -411,6 +405,7 @@
 			<div class="flex flex-col gap-2">
 				<Label for="new-message-locale">{m.checkinStart_locale()}</Label>
 				<Select.Root
+					triggerId="new-message-locale"
 					collection={localeCollection}
 					value={[locale]}
 					onValueChange={(details: { value: string[] }): void => {
@@ -418,11 +413,7 @@
 						if (next) locale = next;
 					}}
 				>
-					<Select.Trigger
-						id="new-message-locale"
-						class="w-full"
-						placeholder={m.checkinStart_locale()}
-					/>
+					<Select.Trigger class="w-full" placeholder={m.checkinStart_locale()} />
 					<Select.Content>
 						{#each localeCollection.items as option (option.value)}
 							<Select.Item item={option}>

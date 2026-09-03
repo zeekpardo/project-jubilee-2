@@ -134,6 +134,9 @@ import type * as url from "../url.js";
 import type * as users_actions from "../users/actions.js";
 import type * as users_mutations from "../users/mutations.js";
 import type * as users_queries from "../users/queries.js";
+import type * as workflows_mutations from "../workflows/mutations.js";
+import type * as workflows_queries from "../workflows/queries.js";
+import type * as workflows_shapes from "../workflows/shapes.js";
 
 import type {
   ApiFromModules,
@@ -268,6 +271,9 @@ declare const fullApi: ApiFromModules<{
   "users/actions": typeof users_actions;
   "users/mutations": typeof users_mutations;
   "users/queries": typeof users_queries;
+  "workflows/mutations": typeof workflows_mutations;
+  "workflows/queries": typeof workflows_queries;
+  "workflows/shapes": typeof workflows_shapes;
 }>;
 
 /**

@@ -143,17 +143,14 @@
 			<div class="flex flex-col gap-2">
 				<Label for="new-trip-project">{objectLabel}</Label>
 				<Select.Root
+					triggerId="new-trip-project"
 					collection={projectCollection}
 					value={[projectId]}
 					onValueChange={(details: { value: string[] }): void => {
 						projectId = details.value[0] ?? NO_PROJECT;
 					}}
 				>
-					<Select.Trigger
-						id="new-trip-project"
-						class="w-full"
-						placeholder={m.trips_projectNone()}
-					/>
+					<Select.Trigger class="w-full" placeholder={m.trips_projectNone()} />
 					<Select.Content>
 						{#each projectCollection.items as option (option.value)}
 							<Select.Item item={option}>

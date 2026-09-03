@@ -24,17 +24,25 @@ import { v } from 'convex/values';
 // path silently skip the triggers. `internalQuery` has no wrapped counterpart
 // and comes from the generated module.
 import { internalMutation } from '../functions';
-import { internalQuery, type QueryCtx } from '../_generated/server';
+import { internalQuery, type MutationCtx, type QueryCtx } from '../_generated/server';
 import type { Doc, Id } from '../_generated/dataModel';
 import {
 	AI_AUTHOR_USER_ID,
 	buildFamilyProfile,
 	conversationChecks,
 	conversationMessages,
-	promptByVersion,
+	workflowVersionById,
 	storedObjectives,
 	truncateForLog
 } from '../model/checkins';
+import { validateAttributes } from '../model/customFields';
+import {
+	bestStates,
+	classifyCheck,
+	type CheckinObjective,
+	type ObjectiveState
+} from '../../lib/domain/checkin-objectives';
+import { captureValueFor } from '../../lib/domain/workflows';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { ObjectiveCheck } from '../../lib/domain/checkin-objectives';
 
@@ -84,19 +92,25 @@ export const loadTurnContext = internalQuery({
 		// of which write all three, so a row without them means something else
 		// went wrong and the right answer is to do nothing rather than guess at an
 		// active version.
-		if (
-			!conversation.responderPromptVersion ||
-			!conversation.drafterPromptVersion ||
-			!conversation.judgePromptVersion
-		) {
+		if (!conversation.workflowVersionId) {
 			return null;
 		}
 
-		const [responder, drafter, judge] = await Promise.all([
-			promptByVersion(ctx, conversation.orgId, conversation.responderPromptVersion),
-			promptByVersion(ctx, conversation.orgId, conversation.drafterPromptVersion),
-			promptByVersion(ctx, conversation.orgId, conversation.judgePromptVersion)
-		]);
+		// ONE read where there were three. The version row holds the prompts, the
+		// report shape and the objectives as one frozen unit, so they cannot be
+		// resolved out of step with each other the way three independent lookups
+		// could.
+		const workflowVersion = await workflowVersionById(
+			ctx,
+			conversation.orgId,
+			conversation.workflowVersionId
+		);
+		if (!workflowVersion) {
+			// The version this run named is gone. Nothing can advance it faithfully,
+			// and inventing a configuration would produce a turn that claims a
+			// provenance it does not have.
+			return null;
+		}
 
 		const transcript: CheckinMessage[] = await conversationMessages(ctx, conversation._id);
 		const priorChecks: ObjectiveCheck[] = await conversationChecks(ctx, conversation._id);
@@ -122,18 +136,110 @@ export const loadTurnContext = internalQuery({
 			// The ONLY name that may reach the drafter, and only if an admin
 			// deliberately set one. Absent means the draft names nobody.
 			publicFirstName: await resolvePublicFirstName(ctx, conversation),
+			// Projected into the engine's three-PromptVersion shape rather than
+			// changing that shape. The engine's contract is "a responder, a judge
+			// and a drafter, each with a version for the log"; where those three
+			// come from is this layer's business, and one frozen row satisfies it
+			// exactly. `version` is the workflow version number, so every logged
+			// turn still names something a reader can look up.
 			prompts: {
 				responder: {
 					role: 'responder' as const,
-					version: responder.version,
-					content: responder.content
+					version: String(workflowVersion.version),
+					content: workflowVersion.prompts.responder.content,
+					model: workflowVersion.prompts.responder.model
 				},
-				drafter: { role: 'drafter' as const, version: drafter.version, content: drafter.content },
-				judge: { role: 'judge' as const, version: judge.version, content: judge.content }
-			}
+				drafter: {
+					role: 'drafter' as const,
+					version: String(workflowVersion.version),
+					content: workflowVersion.prompts.drafter.content,
+					model: workflowVersion.prompts.drafter.model
+				},
+				judge: {
+					role: 'judge' as const,
+					version: String(workflowVersion.version),
+					content: workflowVersion.prompts.judge.content,
+					model: workflowVersion.prompts.judge.model
+				}
+			},
+			format: workflowVersion.report
 		};
 	}
 });
+
+/**
+ * Write the answers whose objectives asked to be filed.
+ *
+ * Goes through `validateAttributes` rather than patching the bag directly, so a
+ * captured value is held to exactly the same field definitions a person typing
+ * into the record is held to: an unknown key throws, a `select` is coerced to
+ * its options, a number that is not one is rejected. A model's answer gets no
+ * privileged path into a family's record.
+ *
+ * Failures here are SWALLOWED, and that is the deliberate trade. This runs
+ * inside the transaction that records a turn of a live conversation with a
+ * family; a field definition that has since changed type must not be able to
+ * roll back the transcript. The write is a convenience on top of an answer that
+ * is already logged in `objectiveChecks` either way — the trace survives, and a
+ * person can still read what was said.
+ */
+async function applyCapturedValues(
+	ctx: MutationCtx,
+	input: {
+		conversation: Doc<'checkinConversations'>;
+		objectives: CheckinObjective[];
+		states: Map<string, ObjectiveState>;
+		answers: Map<string, string | null>;
+	}
+): Promise<void> {
+	const projectWrites: Record<string, string> = {};
+	const contactWrites: Record<string, string> = {};
+
+	for (const objective of input.objectives) {
+		const value = captureValueFor(objective, {
+			state: input.states.get(objective.key) ?? 'unanswered',
+			answer: input.answers.get(objective.key) ?? null
+		});
+		if (!value) continue;
+		if (value.entity === 'project') projectWrites[value.fieldKey] = value.value;
+		else contactWrites[value.fieldKey] = value.value;
+	}
+
+	const { conversation } = input;
+
+	if (Object.keys(projectWrites).length > 0 && conversation.projectId) {
+		try {
+			const project = await ctx.db.get('projects', conversation.projectId);
+			if (project) {
+				const attributes = await validateAttributes(
+					ctx,
+					conversation.orgId,
+					'project',
+					project.campaignId,
+					{ ...project.attributes, ...projectWrites }
+				);
+				await ctx.db.patch('projects', project._id, { attributes });
+			}
+		} catch {
+			// See above: the answer is already in the trace.
+		}
+	}
+
+	if (Object.keys(contactWrites).length > 0 && conversation.contactId) {
+		try {
+			const contact = await ctx.db.get('contacts', conversation.contactId);
+			if (contact) {
+				const customFields = await validateAttributes(ctx, conversation.orgId, 'contact', null, {
+					...contact.customFields,
+					...contactWrites
+				});
+				await ctx.db.patch('contacts', contact._id, { customFields });
+			}
+		} catch {
+			// See above.
+		}
+	}
+}
 
 async function resolvePublicFirstName(
 	ctx: QueryCtx,
@@ -204,19 +310,57 @@ export const commitTurn = internalMutation({
 			});
 		}
 
+		// The judge call for this turn, which is what rated everything below.
+		// `?? 'unknown'` rather than a throw: the ratings are already computed and
+		// dropping them to preserve a label would lose the more valuable fact.
+		const judgeVersion =
+			args.records.find((record) => record.role === 'judge')?.promptVersion ?? 'unknown';
+
 		for (const check of args.checks) {
 			await ctx.db.insert('objectiveChecks', {
 				orgId: conversation.orgId,
 				conversationId: conversation._id,
 				turnNumber: args.turnNumber,
 				objective: check.objective,
-				// Present on every conversation the engine runs — see the guard in
-				// `loadTurnContext`. The fallback keeps the write total rather than
-				// dropping a rating on a row that should not exist.
-				promptVersion: conversation.judgePromptVersion ?? 'unknown',
+				// Taken from the judge's own turn record rather than re-read from the
+				// conversation, so a rating is stamped with the version that actually
+				// produced it even if the row were somehow rebound between calls.
+				// Role is implicit: only the judge writes an objectiveChecks row.
+				promptVersion: judgeVersion,
 				rating: check.rating,
 				answer: check.answer,
 				confidence: check.confidence
+			});
+		}
+
+		// ---- Captured answers ------------------------------------------------
+		//
+		// In the SAME transaction that logged the ratings, deliberately: a field
+		// written from a reading whose rating landed in a rolled-back turn would
+		// be a value on a family's record with no trace of what produced it.
+		//
+		// `bestStates` rather than this turn's checks alone, because the state
+		// that matters is the best any turn managed — the same rule the engine
+		// stops on. And `captureValueFor` refuses anything short of `answered`,
+		// so a reading routed to a human writes nothing here.
+		const objectives = storedObjectives(conversation);
+		if (objectives.some((objective) => objective.capture?.kind === 'field')) {
+			const allChecks = [...(await conversationChecks(ctx, conversation._id))];
+			const states = bestStates(objectives, allChecks);
+			const answers = new Map<string, string | null>();
+			for (const check of allChecks) {
+				const state = classifyCheck(
+					check,
+					objectives.find((o) => o.key === check.objective)
+				);
+				if (state === 'answered') answers.set(check.objective, check.answer);
+			}
+
+			await applyCapturedValues(ctx, {
+				conversation,
+				objectives,
+				states,
+				answers
 			});
 		}
 

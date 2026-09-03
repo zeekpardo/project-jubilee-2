@@ -20,6 +20,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import { escalationExcerpt, scanForEscalation } from '../../lib/domain/checkin-escalation';
 import type { CheckinMessage } from '../../lib/domain/checkin-prompts';
 import type { CheckinObjective, ObjectiveCheck } from '../../lib/domain/checkin-objectives';
+import type { TemplateObjective } from '../../lib/domain/workflows';
 
 /**
  * The `updates.authorUserId` a machine-written draft carries.
@@ -207,59 +208,6 @@ export async function familyChildFacts(
 	return { hasChildren, hasSchoolAgeChildren };
 }
 
-/**
- * The prompt versions a new conversation binds itself to.
- *
- * Read once at open and then frozen onto the conversation, so promoting a new
- * responder mid-conversation cannot change the voice halfway through — the
- * family would notice, and the log would stop being replayable as one unit.
- */
-export async function activePromptVersions(
-	ctx: QueryCtx,
-	orgId: string
-): Promise<{
-	responder: Doc<'promptVersions'>;
-	drafter: Doc<'promptVersions'>;
-	judge: Doc<'promptVersions'>;
-}> {
-	const active = async (role: 'responder' | 'drafter' | 'judge') =>
-		await ctx.db
-			.query('promptVersions')
-			.withIndex('by_orgId_and_role_and_isActive', (q) =>
-				q.eq('orgId', orgId).eq('role', role).eq('isActive', true)
-			)
-			.first();
-
-	const [responder, drafter, judge] = await Promise.all([
-		active('responder'),
-		active('drafter'),
-		active('judge')
-	]);
-
-	if (!responder || !drafter || !judge) {
-		throw new ConvexError(
-			'This organization has no active check-in prompts. Seed them before opening a check-in.'
-		);
-	}
-	return { responder, drafter, judge };
-}
-
-/** A prompt by version, for the frozen versions a conversation names. */
-export async function promptByVersion(
-	ctx: QueryCtx,
-	orgId: string,
-	version: string
-): Promise<Doc<'promptVersions'>> {
-	const prompt = await ctx.db
-		.query('promptVersions')
-		.withIndex('by_orgId_and_version', (q) => q.eq('orgId', orgId).eq('version', version))
-		.first();
-	if (!prompt) {
-		throw new ConvexError(`Prompt version ${version} not found`);
-	}
-	return prompt;
-}
-
 /** True when the engine owns this conversation. Absent `kind` means it does. */
 export function isCheckin(conversation: Doc<'checkinConversations'>): boolean {
 	return (conversation.kind ?? 'checkin') === 'checkin';
@@ -276,8 +224,106 @@ export function storedObjectives(conversation: Doc<'checkinConversations'>): Che
 	return (conversation.objectives ?? []).map((objective) => ({
 		key: objective.key,
 		label: objective.label,
-		description: objective.description
+		description: objective.description,
+		// The authored settings ride along. `bestStates` grades against them and
+		// `decideNext` reads maxAttempts, so dropping them here would silently
+		// return every conversation to the shipped constants.
+		minRating: objective.minRating,
+		minConfidence: objective.minConfidence,
+		maxAttempts: objective.maxAttempts,
+		capture: objective.capture
 	}));
+}
+
+/**
+ * The workflow a new run in this campaign binds to, and the version it runs.
+ *
+ * Published only. A draft is editable by definition, so binding a run to one
+ * would mean the configuration could change underneath a family mid-answer —
+ * the exact thing the version snapshot exists to prevent.
+ *
+ * Returns null rather than throwing when a campaign has no published workflow.
+ * That is a real, expected state — a campaign nobody has authored one for — and
+ * the mutation that wants to start a run is the right place to refuse, with a
+ * message naming the campaign, rather than a helper throwing a sentence about
+ * a table.
+ */
+export async function activeWorkflowVersion(
+	ctx: QueryCtx,
+	campaignId: Id<'campaigns'>
+): Promise<Doc<'workflowVersions'> | null> {
+	const workflow = await ctx.db
+		.query('workflows')
+		.withIndex('by_campaignId_and_status', (q) =>
+			q.eq('campaignId', campaignId).eq('status', 'published')
+		)
+		.first();
+	if (!workflow?.currentVersionId) return null;
+
+	const version = await ctx.db.get('workflowVersions', workflow.currentVersionId);
+	// A pointer to a version that is gone is a bug, not a state to run in.
+	return version ?? null;
+}
+
+/**
+ * A version by id, for the frozen version a run names.
+ *
+ * Null on miss rather than a throw. A run whose version row has been deleted
+ * cannot advance, and the caller turns that into a conversation a person picks
+ * up — which is a better outcome than an exception in a scheduled job nobody
+ * is watching.
+ */
+export async function workflowVersionById(
+	ctx: QueryCtx,
+	orgId: string,
+	versionId: Id<'workflowVersions'>
+): Promise<Doc<'workflowVersions'> | null> {
+	const version = await ctx.db.get('workflowVersions', versionId);
+	if (!version || version.orgId !== orgId) return null;
+	return version;
+}
+
+/**
+ * Which of a template's objectives the record can already answer.
+ *
+ * Reads the capture target rather than the objective: `skipIfKnown` means "we
+ * were already told this", and the only place we could have been told it is
+ * the field the objective files into. An objective that files nowhere is never
+ * known, which is why `resolveObjectives` ignores skipIfKnown on those.
+ *
+ * The two entities keep their values under different column names — projects
+ * in `attributes`, contacts in `customFields` — so this is the one place that
+ * difference is spelled out for the check-in engine.
+ */
+export async function knownObjectiveKeys(
+	ctx: QueryCtx,
+	input: {
+		objectives: TemplateObjective[];
+		project: Doc<'projects'> | null;
+		contactId: Id<'contacts'> | undefined;
+	}
+): Promise<Set<string>> {
+	const known = new Set<string>();
+
+	const needsContact = input.objectives.some(
+		(objective) => objective.capture?.kind === 'field' && objective.capture.entity === 'contact'
+	);
+	const contact =
+		needsContact && input.contactId ? await ctx.db.get('contacts', input.contactId) : null;
+
+	for (const objective of input.objectives) {
+		const capture = objective.capture;
+		if (capture?.kind !== 'field') continue;
+
+		const values = capture.entity === 'project' ? input.project?.attributes : contact?.customFields;
+		const value = values?.[capture.fieldKey];
+
+		// An empty string is not an answer. A `false` and a `0` are.
+		if (value === undefined || value === null || value === '') continue;
+		known.add(objective.key);
+	}
+
+	return known;
 }
 
 /**
